@@ -21,6 +21,7 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 - Provide a CLI with scan, estimate, resume, history, analyze, serve, profiles, and recent-run operations. Estimates are labeled sampling estimates and bounded by the cap.
 - Provide a working local browser UI for configuration, estimation, scanning, cancellation, resume, reports, graph exploration, imports, saved profiles, and export downloads. Render names as text, support keyboard navigation, show actual progress, and retain UI state through polling.
 - Give each scan/resume operation a unique operation ID, independent of its run ID and server instance. Process each terminal result once, including repeated failures before creating a run and repeated cancellation of the same run.
+- Show actionable failure messages in the browser and saved report; keep stack traces in the run log.
 - Bind the browser server to loopback, validate Host and mutation origins, keep API keys out of report files and browser responses, and restrict file downloads to known run artifacts.
 - Run automated domain, provider, persistence, CLI, and HTTP integration checks against real local fixtures. Run browser checks at desktop and narrow widths. CI verifies the locked dependency install, types, lint, and tests.
 - Keep CI checkout credentials out of subsequent dependency and project execution. Enforce safety comments for assertions, including comments before exported declarations.

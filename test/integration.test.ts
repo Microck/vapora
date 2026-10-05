@@ -91,6 +91,9 @@ test("capped scan saves observations, real optional signals, reports, and resume
       const friendCalls = fixture.requests.filter((r) => r.path === friendPath).length;
       await assert.rejects(denied.runPromise(Scanner.run(saved)), /denied access/);
       assert.equal(fixture.requests.filter((r) => r.path === friendPath).length, friendCalls);
+      const failure = await denied.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(saved.id); }));
+      assert.equal(failure.error, "Steam denied access. Check the API key and this endpoint's permissions.");
+      assert.match(await readFile(join(root, "outputs", saved.id, "run.log"), "utf8"), /ApiError: Steam denied access/);
     } finally { await denied.dispose(); }
     const completed = await runtime.runPromise(Scanner.run(saved));
     assert.equal(completed.status, "complete"); assert.equal(completed.players.length, 4); assert.equal(completed.truncated, true);
@@ -160,7 +163,8 @@ test("local server validates host and origin, protects keys, and runs a complete
     for (const target of ["https://evil.test/id/a", "https://steamcommunity.com/profiles/alice"]) {
       assert.equal((await request("/api/scan", JSON.stringify({ target, settings }))).status, 202);
       const state = await terminalState();
-      assert.equal(state.job.status, "failed"); assert.equal(state.job.id, null); assert.ok(state.job.error);
+      assert.equal(state.job.status, "failed"); assert.equal(state.job.id, null);
+      assert.equal(state.job.error, target.includes("evil.test") ? "Only steamcommunity.com profile URLs are accepted." : "The profile URL must contain a SteamID64.");
       assert.ok(state.job.operationId); failed.push(state.job.operationId);
     }
     assert.notEqual(failed[0], failed[1]);

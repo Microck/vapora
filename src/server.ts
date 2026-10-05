@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
-import { InputError, Settings } from "./model.js";
+import { InputError, Settings, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
@@ -60,7 +60,7 @@ export async function start(options: Options) {
     job = { operationId: randomUUID(), status: "running", id: null, error: null, progress: null };
     const fiber = runtime.runFork(workflow.pipe(Effect.onExit((exit) => Effect.sync(() => {
       job = { ...job, status: exit._tag === "Success" ? "complete" : Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
-        error: exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause) ? Cause.pretty(exit.cause) : null };
+        error: exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause) ? failureMessage(exit.cause) : null };
       cancelJob = null;
     }))));
     cancelJob = () => Effect.runPromise(Fiber.interrupt(fiber));

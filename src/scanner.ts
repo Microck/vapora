@@ -1,5 +1,5 @@
 import { Cause, Effect } from "effect";
-import { InputError, newPlayer } from "./model.js";
+import { InputError, failureMessage, newPlayer } from "./model.js";
 import type { Player, Scan, Settings, SteamId } from "./model.js";
 import * as Identifiers from "./ids.js";
 import * as Steam from "./steam.js";
@@ -118,10 +118,10 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
   return yield* workflow.pipe(Effect.onExit((exit) => Effect.gen(function* () {
     if (exit._tag === "Success") return;
     const cancelled = Cause.hasInterrupts(exit.cause);
-    const reason = cancelled ? null : Cause.pretty(exit.cause);
+    const reason = cancelled ? null : failureMessage(exit.cause);
     scan = { ...scan, status: cancelled ? "cancelled" : "failed", error: reason, updatedAt: new Date().toISOString() };
     yield* store.save(scan);
-    yield* store.log(scan.id, cancelled ? "Cancelled; checkpoint saved" : `Failed: ${reason}`);
+    yield* store.log(scan.id, cancelled ? "Cancelled; checkpoint saved" : `Failed: ${Cause.pretty(exit.cause)}`);
   })));
 });
 

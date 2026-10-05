@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Cause, Schema } from "effect";
 
 export const STEAM_BASE = 76561197960265728n;
 export const SteamId = Schema.String.check(
@@ -65,6 +65,12 @@ export const Scan = Schema.Struct({
 export interface Scan extends Schema.Schema.Type<typeof Scan> {}
 export class InputError extends Schema.TaggedError<InputError>()("InputError", { message: Schema.String }) {}
 export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", { message: Schema.String }) {}
+
+/** Typed failures carry user-facing text. Diagnostic traces belong in the run log. */
+export function failureMessage<E extends { readonly message: string }>(cause: Cause.Cause<E>): string {
+  const failure = Cause.findError(cause);
+  return failure._tag === "Success" ? failure.success.message : "The scan failed unexpectedly. Restart Vapora and try again.";
+}
 
 export function newPlayer(id: SteamId, level: number, settings: Settings): Player {
   return {
