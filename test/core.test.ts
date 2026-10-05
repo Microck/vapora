@@ -12,7 +12,10 @@ test("individual account IDs round-trip without Number precision loss", async ()
     assert.deepEqual(await Effect.runPromise(Identifiers.parse(input)), { kind: "id", id: seed });
   }
   assert.deepEqual(await Effect.runPromise(Identifiers.parse("https://steamcommunity.com/id/alice/?x=1")), { kind: "vanity", vanity: "alice" });
-  for (const input of ["", "https://steamcommunity.com.evil/id/alice", "https://evil.test/id/alice", "[U:2:1]", "STEAM_0:2:1", "76561197960265728", "99999999999999999", "https://steamcommunity.com/profiles/alice", "https://alice@steamcommunity.com/id/alice", "https://steamcommunity.com/id/a/b"]) {
+  for (const vanity of ["12345", seed, "STEAM_example"]) {
+    assert.deepEqual(await Effect.runPromise(Identifiers.parse(`https://steamcommunity.com/id/${vanity}/`)), { kind: "vanity", vanity });
+  }
+  for (const input of ["", "12345", "https://steamcommunity.com.evil/id/alice", "https://evil.test/id/alice", "[U:2:1]", "STEAM_0:2:1", "76561197960265728", "99999999999999999", "https://steamcommunity.com/profiles/alice", "https://alice@steamcommunity.com/id/alice", "https://steamcommunity.com/id/a/b", "https://steamcommunity.com/id/STEAM_0:1:1"]) {
     await assert.rejects(Effect.runPromise(Identifiers.parse(input)));
   }
 });

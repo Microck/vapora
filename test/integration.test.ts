@@ -73,7 +73,9 @@ test("capped scan saves observations, real optional signals, reports, and resume
   try {
     const settings = { ...defaults, maxNodes: 4, depth: 2, includeGroups: true, includeGames: true };
     fixture.omittedBans.add(second);
-    const initial = await runtime.runPromise(Scanner.create(seed, settings));
+    const initial = await runtime.runPromise(Scanner.create("https://steamcommunity.com/id/12345", settings));
+    assert.equal(initial.seed, seed);
+    assert.ok(fixture.requests.some((r) => r.path.includes("ResolveVanityURL")));
     const arrived = fixture.hold(friendPath, second);
     const fiber = runtime.runFork(Scanner.run(initial));
     await arrived;
@@ -131,6 +133,14 @@ test("local server validates host and origin, protects keys, and runs a complete
   const request = (path: string, payload?: string) => fetch(`${server.origin}${path}`, payload === undefined ? { headers: { "user-agent": userAgent } } : {
     method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: payload,
   });
+  const terminalState = async (origin = server.origin) => {
+    for (let attempts = 0; attempts < 100; attempts++) {
+      const state = Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
+      if (state.job.status !== "running") return state;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error("The server operation timed out.");
+  };
   try {
     assert.equal((await request("/")).status, 200);
     const foreignHostStatus = await new Promise<number>((resolve, reject) => {
@@ -146,6 +156,21 @@ test("local server validates host and origin, protects keys, and runs a complete
     const settings = { ...defaults, depth: 1, maxNodes: 3 };
     assert.equal((await request("/api/profiles", JSON.stringify({ name: "test", settings }))).status, 200);
     assert.deepEqual(await (await request("/api/profiles/test")).json(), settings);
+    const failed = [];
+    for (const target of ["https://evil.test/id/a", "https://steamcommunity.com/profiles/alice"]) {
+      assert.equal((await request("/api/scan", JSON.stringify({ target, settings }))).status, 202);
+      const state = await terminalState();
+      assert.equal(state.job.status, "failed"); assert.equal(state.job.id, null); assert.ok(state.job.error);
+      assert.ok(state.job.operationId); failed.push(state.job.operationId);
+    }
+    assert.notEqual(failed[0], failed[1]);
+    const anotherSession = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url });
+    try {
+      await fetch(`${anotherSession.origin}/api/scan`, { method: "POST", headers: { origin: anotherSession.origin, "content-type": "application/json", "user-agent": userAgent }, body: JSON.stringify({ target: "https://evil.test/id/a", settings }) });
+      const failure = await terminalState(anotherSession.origin);
+      assert.equal(failure.job.status, "failed"); assert.ok(failure.job.operationId);
+      assert.ok(!failed.includes(failure.job.operationId));
+    } finally { await anotherSession.close(); }
     const arrived = fixture.hold(friendPath, seed);
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 202);
     await arrived;
@@ -155,13 +180,9 @@ test("local server validates host and origin, protects keys, and runs a complete
     const state = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
     assert.equal(state.job.status, "cancelled"); assert.ok(state.job.id);
     assert.equal((await request("/api/resume", JSON.stringify({ id: state.job.id }))).status, 202);
-    let current = state;
-    for (let attempts = 0; attempts < 100; attempts++) {
-      current = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
-      if (current.job.status !== "running") break;
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
-    }
+    const current = await terminalState();
     assert.equal(current.job.status, "complete", current.job.error ?? "run timed out");
+    assert.notEqual(current.job.operationId, state.job.operationId);
     const view = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(view.scan.players.length, 3);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=gephi%2Fnodes.csv`)).status, 200);
@@ -179,5 +200,22 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
     assert.match((await execute(process.execPath, [cli, "profiles", "--root", root])).stdout, /tiny/);
     await assert.rejects(execute(process.execPath, [cli, "profile-save", "bad", "--root", root, "--depth", "20"]), /Invalid settings/);
     await assert.rejects(execute(process.execPath, [cli, "unknown", "--root", root]), /Unknown command/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+test("assertion lint accepts justified exports and rejects undocumented assertions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-lint-")); const execute = promisify(execFile);
+  try {
+    const fixture = join(root, "assertion.ts");
+    const assertion = 'export const parsed = JSON.parse(\'{"value":1}\') as { value: number };\n';
+    const linter = fileURLToPath(new URL("../../node_modules/oxlint/bin/oxlint", import.meta.url));
+    const config = fileURLToPath(new URL("../../.oxlintrc.json", import.meta.url));
+    const args = [linter, "--config", config, fixture];
+    await writeFile(fixture, assertion);
+    await assert.rejects(execute(process.execPath, args), (error) => {
+      const failure = Schema.decodeUnknownSync(Schema.Struct({ code: Schema.Number, stdout: Schema.String }))(error);
+      assert.equal(failure.code, 1); assert.match(failure.stdout, /SAFETY:/); return true;
+    });
+    await writeFile(fixture, "// SAFETY: the literal JSON has this known structure.\n" + assertion);
+    await execute(process.execPath, args);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

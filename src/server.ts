@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -43,7 +44,7 @@ const decode = <T>(schema: Schema.ConstraintDecoder<T>, contents: string) => Sch
 export async function start(options: Options) {
   const runtime = ManagedRuntime.make(Storage.layer(options.root));
   let key = options.key;
-  let job: Job = { status: "idle", id: null, error: null, progress: null };
+  let job: Job = { operationId: null, status: "idle", id: null, error: null, progress: null };
   let cancelJob: (() => Promise<void>) | null = null;
   let estimating = false;
   let origin = "";
@@ -56,7 +57,7 @@ export async function start(options: Options) {
     baseUrl: options.steamBaseUrl, retryBaseMs: options.retryBaseMs });
   const observe: Scanner.Observe = (progress) => { job = { ...job, id: progress.id, progress }; };
   const launch = (workflow: Effect.Effect<Scan, Steam.ApiError | InputError | StorageError, Storage.Service>) => {
-    job = { status: "running", id: null, error: null, progress: null };
+    job = { operationId: randomUUID(), status: "running", id: null, error: null, progress: null };
     const fiber = runtime.runFork(workflow.pipe(Effect.onExit((exit) => Effect.sync(() => {
       job = { ...job, status: exit._tag === "Success" ? "complete" : Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
         error: exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause) ? Cause.pretty(exit.cause) : null };

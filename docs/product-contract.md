@@ -4,11 +4,12 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 
 ## Required behavior
 
-- Accept individual SteamID64, SteamID2, SteamID3, Steam community profile URLs, and vanity names. Reject other hosts, malformed IDs, and unsupported account types before scanning.
+- Accept individual SteamID64, SteamID2, SteamID3, Steam community profile URLs, and vanity names. `/id/` URL segments always identify vanity names, including numeric names; `/profiles/` segments identify SteamID64. Reject other hosts, malformed IDs, and unsupported account types before scanning.
 - Offer inner-circle and community presets, validated custom configuration, and named saved profiles.
 - Scan public friendship networks breadth first to the configured depth and hard node cap. Depth 1 includes the seed and its direct friends. Query admitted boundary nodes for analysis, without admitting nodes beyond the limit.
 - Distinguish private/unavailable friend lists from empty public lists. Keep admitted profiles even when private. A bad API key, exhausted retry, or malformed provider payload must fail visibly.
 - Pace every API request, retry only transient read failures with a bounded policy, honor bounded Retry-After delays, and interrupt in-flight requests when cancelled.
+- Send the required `OpenAI File Downloader, XaiImageApiFetch/1.0` user-agent on Steam requests.
 - Save atomic checkpoints after completed scan units. Resume the exact frontier, settings, and seed without reprocessing completed units. Cancelled or failed runs remain resumable. A hard cap must not leave dangling graph edges.
 - Verify API authority at the start of each scan or resume. Keep a returned-but-missing ban record distinct from a record that has not been requested.
 - Diagnose damaged saved runs individually while continuing to list healthy runs and allowing new scans. Never repair or delete damaged files automatically.
@@ -19,8 +20,10 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 - Support local normalized SteamHistory JSON and NDJSON imports with validated timestamps and individual Steam IDs. Preserve profile/history details and rank friendship durations separately from network scores.
 - Provide a CLI with scan, estimate, resume, history, analyze, serve, profiles, and recent-run operations. Estimates are labeled sampling estimates and bounded by the cap.
 - Provide a working local browser UI for configuration, estimation, scanning, cancellation, resume, reports, graph exploration, imports, saved profiles, and export downloads. Render names as text, support keyboard navigation, show actual progress, and retain UI state through polling.
+- Give each scan/resume operation a unique operation ID, independent of its run ID and server instance. Process each terminal result once, including repeated failures before creating a run and repeated cancellation of the same run.
 - Bind the browser server to loopback, validate Host and mutation origins, keep API keys out of report files and browser responses, and restrict file downloads to known run artifacts.
 - Run automated domain, provider, persistence, CLI, and HTTP integration checks against real local fixtures. Run browser checks at desktop and narrow widths. CI verifies the locked dependency install, types, lint, and tests.
+- Keep CI checkout credentials out of subsequent dependency and project execution. Enforce safety comments for assertions, including comments before exported declarations.
 
 ## Analysis limits
 

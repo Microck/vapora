@@ -30,7 +30,9 @@ function hasSafetyComment(sourceCode: SourceCode, node: TypeAssertion): boolean 
     ) {
       return true;
     }
-    if (commentOwnerKinds.has(current.type) || current.parent.type === "Program") return false;
+    // Comments before `export` belong to the export wrapper rather than its declaration.
+    if (current.parent.type === "Program") return false;
+    if (commentOwnerKinds.has(current.type) && current.parent.type !== "ExportNamedDeclaration") return false;
     current = current.parent;
   }
 }

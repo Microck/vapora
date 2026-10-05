@@ -1,10 +1,11 @@
 # Rewrite verification
 
-`npm run verify` checks types, Oxlint, and 11 domain/integration tests. The tests use actual local HTTP responses and filesystem writes. They cover identifiers, settings, graph metrics, privacy, CSV escaping, history intervals, pacing/retries, malformed provider data, checkpoint interruption/resume, invalid-key resume, damaged-run isolation, local HTTP boundaries, exports, and CLI exits.
+`npm run verify` checks types, Oxlint, and 12 domain/integration tests. The tests use actual local HTTP responses, filesystem writes, and the real Oxlint CLI. They cover identifiers, numeric vanity URLs, settings, graph metrics, privacy, CSV escaping, history intervals, pacing/retries, malformed provider data, checkpoint interruption/resume, invalid-key resume, damaged-run isolation, local HTTP boundaries, distinct operation identities, exports, CLI exits, and assertion-comment enforcement.
 
 Chrome checks used the same local Steam fixture through the real browser UI:
 
 - Estimate and capped scan with optional owned games.
+- Numeric vanity URL resolution, consecutive failed-scan notices, and repeated cancellation/resume of the same run. Each cancellation reloads its report.
 - Friend filtering, saved-profile save/load, graph keyboard selection and retained focus.
 - All six scan exports and the attached history export returned HTTP 200.
 - Normalized history file upload and report rendering.

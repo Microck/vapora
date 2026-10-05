@@ -18,9 +18,13 @@ npm start
 
 Open the local URL printed in the terminal. The server binds to `127.0.0.1`; use the printed address rather than `localhost`. It does not expose the app to your network.
 
+Run it on a trusted local machine. Native programs and other accounts on that machine can access the session. Host and Origin checks protect against cross-origin browser requests.
+
 Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Enter it in the UI for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
 Choose a target, preset, and optional signals, then scan. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
+
+Use `/id/NAME` for numeric vanity names. `/profiles/ID` and bare numbers identify Steam accounts by SteamID64.
 
 ## scanning
 

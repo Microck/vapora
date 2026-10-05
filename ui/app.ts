@@ -213,7 +213,8 @@ async function refresh() {
       profiles.replaceChildren(new Option("Choose a saved profile", ""), ...currentState.profiles.map((name) => new Option(name, name))); profiles.value = value;
     }
     const job = currentState.job;
-    const terminal = `${job.id}:${job.status}`;
+    // Run IDs can be absent or reused. Deduplicate terminal results by operation identity.
+    const terminal = `${job.operationId}:${job.status}`;
     if (job.status !== "running" && job.status !== "idle" && terminal !== lastJob) {
       lastJob = terminal;
       if (job.id) await openRun(job.id);
