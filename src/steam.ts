@@ -56,9 +56,10 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
         retryAfterMs: Number.isFinite(delay) ? Math.max(0, Math.min(delay, 300000)) : 0,
       }));
     }
-    return yield* response.json.pipe(Effect.timeout("25 seconds"), Effect.mapError((error) => new ApiError({
-      message: error._tag === "TimeoutError" ? "Steam's response body timed out. Resume the saved run." : "Steam returned invalid JSON. The run checkpoint is preserved.",
-      status: response.status, retryable: error._tag === "TimeoutError", retryAfterMs: 0,
+    // Transfer errors are transient; JSON decoding happens outside the retry boundary.
+    return yield* response.text.pipe(Effect.timeout("25 seconds"), Effect.mapError(() => new ApiError({
+      message: "Steam's response body could not be read. Retry or resume the saved run.",
+      status: response.status, retryable: true, retryAfterMs: 0,
     })));
   });
   const policy = Schedule.exponential(options.retryBaseMs ?? 1000).pipe(
@@ -68,7 +69,7 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
   const get = <T>(path: string, parameters: Readonly<Record<string, string>>, schema: Schema.ConstraintDecoder<T>) =>
     request(path, parameters).pipe(
       Effect.retry({ schedule: policy, while: (error) => error.retryable }),
-      Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
       Effect.mapError((error) => error._tag === "ApiError" ? error : new ApiError({
         message: `Steam returned an unexpected response for ${path}.`, status: 200, retryable: false, retryAfterMs: 0,
       })),

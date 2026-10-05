@@ -31,8 +31,18 @@ test("HTTP provider handles private lists, transient retries, denied keys, and m
     assert.equal((await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).groups(seed); }))).status, "unavailable");
     await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).groups(second); }));
     assert.equal(fixture.requests.filter((r) => r.path.includes("GetUserGroupList")).length, 1);
+    const summaryCalls = fixture.requests.filter((r) => r.path === summaryPath).length;
+    fixture.interruptedBodies.set(summaryPath, 1);
+    const summaries = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); }));
+    assert.equal(summaries[0]?.steamid, seed);
+    assert.equal(fixture.requests.filter((r) => r.path === summaryPath).length - summaryCalls, 2);
     fixture.malformed.set(summaryPath, '{"invalid":true}');
     await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); })), /unexpected response/);
+    fixture.malformed.clear();
+    fixture.malformed.set(summaryPath, '{"response":');
+    const beforeInvalidJson = fixture.requests.length;
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); })), /unexpected response/);
+    assert.equal(fixture.requests.length - beforeInvalidJson, 1);
     fixture.malformed.clear();
     fixture.malformed.set("/IPlayerService/GetOwnedGames/v1/", '{"response":{"game_count":1,"games":[{"appid":-1}]}}');
     await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).games(seed); })), /unexpected response/);

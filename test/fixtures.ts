@@ -30,6 +30,7 @@ export async function steamFixture() {
   const failures = new Map<string, { status: number; remaining: number; retryAfter?: string }>();
   const malformed = new Map<string, string>();
   const omittedBans = new Set<SteamId>();
+  const interruptedBodies = new Map<string, number>();
   const held = new Map<string, () => void>();
   const waiters = new Map<string, () => void>();
   const server = createServer((request, response) => {
@@ -44,6 +45,12 @@ export async function steamFixture() {
     }
     const invalid = malformed.get(url.pathname);
     if (invalid !== undefined) { response.end(invalid); return; }
+    const interruptions = interruptedBodies.get(url.pathname) ?? 0;
+    if (interruptions > 0) {
+      interruptedBodies.set(url.pathname, interruptions - 1);
+      response.writeHead(200); response.write('{"response":');
+      setTimeout(() => response.destroy(), 10); return;
+    }
     const reply = () => {
       if (url.pathname.includes("ResolveVanityURL")) { response.end(JSON.stringify({ response: { success: 1, steamid: seed } })); return; }
       if (url.pathname.includes("GetFriendList")) {
@@ -71,7 +78,7 @@ export async function steamFixture() {
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   return {
-    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, friends,
+    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, interruptedBodies, friends,
     hold: (path: string, id: string) => {
       held.set(path + id, () => {});
       return new Promise<void>((resolve) => waiters.set(path + id, resolve));
