@@ -7,7 +7,7 @@ Checked on 2026-10-06 against the current TypeScript app and shared browser/Elec
 | Workflow | Evidence | Result |
 | --- | --- | --- |
 | Authenticated live Steam collection | Authorized Microck profile, depth 1, five-account cap, groups/games enabled, private-skip policy enabled | Complete; five names/avatars and public friend lists, groups public, four game observations public and one private; partial coverage correctly disclosed; six nonempty exports |
-| Live browser results | Real scan displayed in browser, profile images loaded, network and narrow view, renderer error log | Passed |
+| Live browser results | A second bounded scan started from the actual browser Analyze control against Steam; completion/checkpoint/report, real profile images and six exports checked; reopened after server restart | Passed with five accounts and five avatars, correct partial coverage and no renderer errors |
 | CLI | Current live scan copied into isolated storage: recent, analyze, completed resume, profile save/list, standalone/attached fresh normalized history; authenticated depth-1 estimate | Passed; offline commands preserve saved observations; estimate queries only the target |
 | Key handling and target inputs | Missing key, invalid form value, denied provider key twice, replacement key, six target formats, invalid profile host | Passed; failures visible and attempts distinct; key field clears after saving |
 | Collection settings | Depth 5, skip checkbox, groups/games, ranking dialog and Enter, Apply/reload, named profile save/load, All/Report/Gephi | Passed; file filters do not change collection settings |
@@ -20,7 +20,7 @@ Checked on 2026-10-06 against the current TypeScript app and shared browser/Elec
 | Responsive layout | Scan, Results, History and Settings at 320, 390, 560, 720, 940, 1078 and 1280px | No page-level horizontal overflow or browser JavaScript errors; wide tables retain their own scroll area |
 | Linux desktop | Real Electron window under Xvfb with a window manager, fresh storage, fixture HTTP provider | All nine native workflow groups passed |
 | macOS desktop | Disposable Apple Silicon VM, real Electron window, fresh storage, fixture HTTP provider | All nine native workflow groups passed |
-| Windows desktop | Disposable Windows 10 ARM64 QEMU VM | Pending dependency installation; not yet verified |
+| Windows desktop | Disposable Windows 10 ARM64 QEMU VM | Not verified: Electron extraction failed before app startup; the clean VM lacked its required Visual C++ runtime |
 
 The nine native groups cover isolated launch, lookup/avatar, active-scan close with a cancelled resumable checkpoint, restart/default persistence/resume without repeating the seed, graph and six exports, actual maximize/restore, output-folder IPC for root/selected run, actual minimize/restore and clean close with exit code 0. Native window state was checked in Electron's main process. macOS screenshots reflect the VM's 800px desktop; the window adapts to that screen.
 
@@ -60,6 +60,12 @@ These are captures of the running current app with fresh fixture identities, ope
 ![Linux desktop after restart and resume](screenshots/e2e-linux-resumed.png)
 
 ![macOS desktop after restart and resume](screenshots/e2e-macos-resumed.png)
+
+## Windows test-environment limit
+
+The Windows 10 ARM64 VM ran Node 24.13.0 and completed the locked dependency install, typecheck and lint. Native startup did not reach Vapora: Electron downloads its binary on first use, and its bundled ZIP extractor failed with `ERR_DLOPEN_FAILED`. The ARM64 extractor binary exists and links `VCRUNTIME140.dll`; that DLL was absent from the VM. The generic loader message mentions optional dependencies, but this package bundles its native binaries and does not use the suggested optional package. The lockfile was not changed to accommodate that misleading message.
+
+Microsoft runtime installation did not complete in the test VM. The local installer bytes matched the SHA-256 in Microsoft's download URL. The probe was ended and the owned VM released; this is an unverified native platform, not a desktop pass. The Windows 11 test VM could not be allocated because the Hyper-V host lacked free memory. Windows core CI passed on the current PR, which does not establish a native desktop launch. A working Windows desktop with the required runtime is needed to finish that platform check.
 
 ## Limits
 

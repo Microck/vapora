@@ -40,7 +40,7 @@ The desktop app uses the same UI and scan core. Its minimize, maximize/restore, 
 
 Desktop data defaults to the local Vapora app-data directory. Set `VAPORA_ROOT` to choose a directory, including the browser's `--root` directory. `.env` and `STEAM_API_KEY` work in both launches. Do not run concurrent scans into the same saved run.
 
-Electron needs its install script to download the native runtime. If your npm configuration disables install scripts, run `npm rebuild electron --ignore-scripts=false` before launching. Linux also needs a graphical desktop and its usual GTK/NSS libraries.
+Electron downloads its native binary on the first launch. Windows needs the Microsoft Visual C++ runtime for its CPU architecture ([x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe)); a missing `VCRUNTIME140.dll` prevents Electron's native archive extractor from loading. Linux also needs a graphical desktop and its usual GTK/NSS libraries.
 
 ## scanning
 
