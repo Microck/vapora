@@ -40,6 +40,40 @@ All current captures were opened and visually inspected:
 - [Saved-run ranking](screenshots/ranking.png)
 - [Run info](screenshots/run-info.png)
 
-The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. No authenticated live Steam scan has been run; the current environment and project have no configured Steam API key. Native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
+The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. No authenticated live Steam scan has been run. A local ignored Steam API key is now configured and its loading has been checked, but provider acceptance and a live scan remain unverified. Native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
+
+## Interface review
+
+Scope: the current Scan, Results, History, connection, graph, profile inspector and dialogs, using the supplied green Steam reference. This is the running application review, not a change review. The stack remains plain TypeScript and CSS. The product contract, this verification document and the workspace instructions establish the design conventions. Original fonts, source assets, olive surfaces, joined tabs and beveled controls remain intentional.
+
+| Domain | Evidence inspected | Result |
+| --- | --- | --- |
+| Accessibility | Keyboard focus, native dialog restoration, arrow-key table scrolling, accessibility-tree names, forced colors and depth target dimensions | Corrected depth target width, Details name and high-contrast icons |
+| Layout | Desktop/narrow views, long and unbroken names, report column alignment and coverage separators | Corrected numeric alignment, long-name avatar alignment and wrapped coverage borders |
+| Writing | Scan/report/dialog labels and evidence scale | Removed the repeated score denominator from each friend row |
+| Typography | Bundled fonts, narrow form sizes and long-name wrapping | Corrected mobile inputs and wrapped identity line heights |
+| Colors | Computed foreground/background pairs, including selected tabs, notices and table rows | Corrected gold text and selection contrast |
+| UI polish | Original eye size, square controls, tabs, selected states and source icons | Retained the reference structure; no decorative motion added |
+
+All findings below were corrected:
+
+| Severity | Domain | Location | Before | After | Why |
+| --- | --- | --- | --- | --- | --- |
+| HIGH | Colors | `ui/style.css:9` | Gold `#c4b550` on olive `#4c5844` measured 3.61:1; white selection text measured 3.70:1 | Gold `#d8cc75` measures 4.60:1; white on selection `#746b30` measures 5.40:1 | Normal text must remain readable in active and selected states |
+| HIGH | Accessibility | `ui/style.css:83` | Adjacent depth buttons were 20px wide without spacing | Buttons measure 24 x 32px | Adjacent targets need distinct usable hit areas |
+| MEDIUM | Typography | `ui/style.css:206` | Narrow inputs inherited 13-16px text depending on their section | Narrow inputs/selects consistently use 16px | Avoid small input text and unwanted iOS input zoom |
+| MEDIUM | Accessibility | `ui/style.css:233` | White brand/bitmap icons disappeared against a forced white canvas | Original icons keep a dark backing in forced colors | The icon-only controls must stay visible in high contrast |
+| LOW | Layout / writing | `ui/style.css:172`, `ui/index.html:178`, `ui/app.ts:155` | Numeric values aligned left and every score repeated `/ 100` | Values and headers align right; the scale appears once in the heading | Compare rows more easily with less repeated text |
+| LOW | Layout / typography | `ui/style.css:110`, `ui/style.css:256` | Long inspector names centered their avatar midway through wrapped text; line height was 1.3 | Avatar aligns with the first line; wrapped identity line height is 1.4 | Keep the avatar tied to the start of the name and wrapped text readable |
+| LOW | Accessibility | `ui/app.ts:154` | Visible Details button announced Inspect | Announces Details for the profile name | Accessible names include their visible labels |
+| LOW | Layout | `ui/style.css:273`, `ui/style.css:286` | Coverage borders continued at some wrapped row ends | Three- and two-column row ends omit their trailing border | Keep the compact coverage table consistent across widths |
+
+Additional browser checks used real local HTTP fixtures with deliberately long names at 320px, 1078px and a 539 x 300px viewport equivalent to the reference window's 200% zoom layout. They found no page overflow or unnamed exposed controls. Native dialogs returned focus to their trigger; ArrowRight scrolled the friends table. Rendered normal-text pairs measured at least 4.60:1. Forced colors were checked through Chrome's emulation; this is not a claim of full WCAG conformance.
+
+Screenshot capture now waits for the visible images to finish loading and for the bundled fonts. The first fresh Results capture caught the transient empty avatar frames before their HTTP responses arrived; it was replaced after adding the readiness check. The final browser/desktop captures retain the fixture avatars throughout.
+
+Not verified: an actual iOS Safari session, physical screen-reader speech output, native Windows/macOS high-contrast rendering, or live Steam data. The simplification pass found only mechanical styling/label changes, so there was no substantive application logic to refactor and no review agents were dispatched.
+
+Verdict: Approve within the inspected scope. No unresolved high-severity findings in that scope.
 
 Current saved settings require `skipPrivate`; checkpoints also require a nullable avatar field. Earlier local files remain untouched and are reported as invalid. Start a fresh scan or explicitly save a new settings profile; there is no automatic migration.

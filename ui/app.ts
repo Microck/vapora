@@ -151,8 +151,8 @@ function renderFriends() {
   for (const friend of friends) {
     const row = document.createElement("tr"); const profile = playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
     const inspect = document.createElement("button"); inspect.type = "button"; inspect.className = "inspect-button"; inspect.textContent = "Details";
-    inspect.setAttribute("aria-label", `Inspect ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
-    cell(row, `${friend.evidenceScore.toFixed(1)} / 100`); cell(row, friend.mutual); cell(row, number(friend.jaccard, 3));
+    inspect.setAttribute("aria-label", `Details for ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
+    cell(row, friend.evidenceScore.toFixed(1)); cell(row, friend.mutual); cell(row, number(friend.jaccard, 3));
     cell(row, number(friend.sharedGroups)); cell(row, number(friend.sharedGames)); cell(row, friend.friendsStatus); rows.append(row);
   }
   get("friend-empty").hidden = friends.length > 0;

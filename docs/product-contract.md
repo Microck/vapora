@@ -35,6 +35,7 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 - Provide browser and Electron desktop launches using the same server, scanner and renderer. Desktop window buttons minimize, maximize/restore and close the real window; Open output folder opens the selected run directory or outputs root. Browser mode hides native window controls and provides export downloads. Isolate the desktop renderer from Node and expose only fixed, main-frame-authorized IPC operations. Closing desktop cancels active collection and saves the checkpoint.
 - Bind the browser server to loopback, validate Host and mutation origins, keep API keys out of report files and browser responses, and restrict file downloads to known run artifacts.
 - Run automated domain, provider, persistence, CLI, and HTTP integration checks against real local fixtures. Run browser checks at desktop and narrow widths. CI verifies the locked dependency install, types, lint, and tests.
+- Preserve the classic olive surfaces, original fonts/assets and compact structure while keeping normal text contrast at least 4.5:1. Adjacent depth controls are at least 24px wide; inputs use at least 16px text on narrow screens. Numeric table columns align with their headings, and the evidence scale appears once in its column heading.
 - Keep CI checkout credentials out of subsequent dependency and project execution. Enforce safety comments for assertions, including comments before exported declarations.
 
 ## Analysis limits
