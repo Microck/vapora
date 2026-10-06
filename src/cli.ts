@@ -25,10 +25,10 @@ const help = `Vapora 2 | Public Steam friend networks
   vapora history FILE [--run RUN_ID]     Analyze normalized SteamHistory JSON/NDJSON
 
 Options:
-  --preset inner|community   --profile NAME   --depth 1..3   --max-nodes 1..1000
+  --preset inner|community   --profile NAME   --depth 1..5   --max-nodes 1..1000
   --rpm 1..120               --groups         --games       --hub-percentile 0.5..1
   --mutual-weight N          --jaccard-weight N             --group-weight N
-  --game-weight N            --root DIRECTORY --port PORT   --help
+  --game-weight N            --skip-private   --root DIRECTORY --port PORT   --help
 
 Set STEAM_API_KEY in your environment or .env. The browser can also use a session-only key.
 Run npm start -- COMMAND after npm run build. Profiles and runs stay under --root.
@@ -40,6 +40,7 @@ export async function main(args = process.argv.slice(2)) {
     help: { type: "boolean", short: "h" }, preset: { type: "string" }, profile: { type: "string" },
     depth: { type: "string" }, "max-nodes": { type: "string" }, rpm: { type: "string" },
     groups: { type: "boolean" }, games: { type: "boolean" }, "hub-percentile": { type: "string" },
+    "skip-private": { type: "boolean" },
     "mutual-weight": { type: "string" }, "jaccard-weight": { type: "string" }, "group-weight": { type: "string" }, "game-weight": { type: "string" },
     root: { type: "string" }, port: { type: "string" }, run: { type: "string" },
   } });
@@ -84,6 +85,7 @@ export async function main(args = process.argv.slice(2)) {
       maxNodes: values["max-nodes"] === undefined ? settings.maxNodes : Number(values["max-nodes"]),
       requestsPerMinute: values.rpm === undefined ? settings.requestsPerMinute : Number(values.rpm),
       includeGroups: values.groups ?? settings.includeGroups, includeGames: values.games ?? settings.includeGames,
+      skipPrivate: values["skip-private"] ?? settings.skipPrivate,
       hubPercentile: values["hub-percentile"] === undefined ? settings.hubPercentile : Number(values["hub-percentile"]),
       weights: {
         mutual: values["mutual-weight"] === undefined ? settings.weights.mutual : Number(values["mutual-weight"]),

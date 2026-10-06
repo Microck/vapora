@@ -5,86 +5,248 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Vapora | Steam friend networks</title>
+  <link rel="icon" href="/vapora.ico">
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <a class="skip" href="#results">Skip to results</a>
-  <header><a class="wordmark" href="/">vapora<span>02</span></a><span>public Steam friend networks</span><span id="connection">Connecting</span></header>
+  <a class="skip" href="#results">Skip to workspace</a>
+  <header class="titlebar">
+    <img class="brand" src="/vapora.svg" width="20" height="11" alt="Vapora">
+    <div id="window-controls" class="window-controls" hidden>
+      <button id="window-minimize" type="button" aria-label="Minimize">─</button>
+      <button id="window-maximize" type="button" aria-label="Maximize or restore">□</button>
+      <button id="window-close" type="button" aria-label="Close">×</button>
+    </div>
+  </header>
+  <div class="toolbar">
+    <nav class="workspace-tabs" aria-label="Workspace">
+      <button type="button" data-screen="scan" aria-controls="scan-screen" aria-current="page">Scan</button>
+      <button type="button" data-screen="results" aria-controls="results-screen">Results</button>
+    </nav>
+    <div class="toolbar-actions">
+      <span id="key-indicator" class="sr-only">Checking key</span>
+      <button class="key-button icon-button" type="button" data-screen="settings" aria-controls="settings-screen" aria-describedby="key-indicator" aria-label="Steam API key" title="Steam API key"><img src="/key.png" width="20" height="20" alt=""></button>
+      <button id="output-folder" type="button">Exports</button>
+    </div>
+  </div>
   <div id="notice" role="alert" hidden></div>
-  <div class="workspace">
-    <aside>
-      <form id="scan-form">
-        <h1>Explore a network</h1>
-        <label for="target">Steam profile</label>
-        <input id="target" name="target" placeholder="Profile URL, Steam ID, or vanity" required autocomplete="off">
-        <label for="preset">Preset</label>
-        <select id="preset"><option value="community">Community map</option><option value="inner">Inner circle</option><option value="custom">Custom</option></select>
-        <div class="field-pair"><label>Depth<input id="depth" type="number" min="1" max="3" value="2" required></label><label>Node cap<input id="maxNodes" type="number" min="1" max="1000" value="500" required></label></div>
-        <label>Requests / minute<input id="rpm" type="number" min="1" max="120" value="120" required></label>
-        <label class="check"><input id="games" type="checkbox">Shared game libraries</label>
-        <label class="check"><input id="groups" type="checkbox">Shared groups</label>
-        <p class="hint">Groups may require publisher access. Private data stays unavailable.</p>
-        <details><summary>Ranking and hubs</summary>
-          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
-          <div class="field-pair"><label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label><label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label></div>
-          <div class="field-pair"><label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label><label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label></div>
-        </details>
-        <div class="actions"><button class="primary" id="scan-button" type="submit">Scan network</button><button id="estimate-button" type="button">Estimate</button></div>
-        <p id="estimate-result" role="status" class="hint"></p>
+  <section id="progress-section" class="scan-progress" aria-label="Active scan" hidden>
+    <h2 id="progress-title">Scanning</h2>
+    <progress id="progress" max="1" value="0" aria-label="Profiles scanned"></progress>
+    <p id="progress-text" role="status"></p>
+    <button id="cancel-button" type="button">Cancel and save</button>
+  </section>
+  <main id="results" tabindex="-1">
+    <section id="scan-screen" class="screen" aria-labelledby="scan-heading">
+      <h1 id="scan-heading" class="sr-only">New scan</h1>
+      <div class="scan-grid">
+        <form id="scan-form">
+          <fieldset class="panel parameters">
+            <legend class="sr-only">Parameters</legend>
+            <div class="params">
+              <div class="fields">
+                <div class="field"><span id="depth-label">Depth <span class="info" title="Depth 1 includes direct friends. Boundary lists are read without expanding beyond the selected depth.">i</span></span>
+                  <input id="depth" type="hidden" value="2">
+                  <div id="depth-buttons" role="group" aria-labelledby="depth-label">
+                    <button type="button" data-depth="1" aria-pressed="false">1</button><button type="button" data-depth="2" aria-pressed="true">2</button><button type="button" data-depth="3" aria-pressed="false">3</button><button type="button" data-depth="4" aria-pressed="false">4</button><button type="button" data-depth="5" aria-pressed="false">5</button>
+                  </div>
+                </div>
+                <div class="field"><label for="maxNodes">Nodes <span class="info" title="Hard limit including the target, from 1 to 1000.">i</span></label><input id="maxNodes" type="number" min="1" max="1000" value="500" required></div>
+                <div class="field"><label for="rpm">Requests/min <span class="info" title="Paces every Steam request, from 1 to 120 per minute.">i</span></label><input id="rpm" type="number" min="1" max="120" value="120" required></div>
+              </div>
+              <div class="signals">
+                <label class="check"><input id="skip-private" type="checkbox" title="Keep known links, but skip collecting private accounts' own data">Skip private profiles</label>
+                <label class="check"><input id="groups" type="checkbox">Link via shared groups</label>
+                <label class="check"><input id="games" type="checkbox">Link via shared games</label>
+              </div>
+            </div>
+            <button id="open-scan-ranking" type="button" aria-haspopup="dialog">Ranking options</button>
+            <button id="apply-settings" type="button" title="Save these settings as the default profile">Apply</button>
+          </fieldset>
+          <div class="panel mode-output">
+            <fieldset id="output-mode">
+              <legend>Outputs <span class="info" title="Select the outputs shown here. Scan parameters and collected data stay the same.">i</span></legend>
+              <div class="segmented">
+                <label><input type="radio" name="output-mode" value="all" checked><span>All</span></label>
+                <label><input type="radio" name="output-mode" value="report"><span>Report</span></label>
+                <label><input type="radio" name="output-mode" value="gephi"><span>Gephi</span></label>
+              </div>
+            </fieldset>
+            <section class="output-files" aria-label="Output files">
+              <h2>Output</h2>
+              <div id="output-tree" class="output-tree"></div>
+            </section>
+          </div>
+        </form>
+        <aside class="rail" aria-label="Recent runs and saved settings">
+          <div class="panel rail-recent"><div id="recent" aria-label="Recent runs"></div></div>
+          <div class="panel rail-settings">
+            <button id="save-settings" class="icon-button" type="button" aria-label="Save settings" title="Save settings"><img src="/save.svg" width="22" height="22" alt=""></button>
+            <button id="open-settings" class="icon-button" type="button" aria-label="Load settings" title="Load settings"><img src="/presets.png" width="22" height="22" alt=""></button>
+          </div>
+        </aside>
+        <section class="panel target-panel" aria-label="Target profile">
+          <div class="target-row">
+            <label for="target">Target</label>
+            <input id="target" name="target" form="scan-form" required autocomplete="off" aria-describedby="target-help" title="Steam ID, profile URL, or vanity name">
+            <button id="lookup-target" class="icon-button" type="button" aria-label="Look up target profile" title="Look up target profile">✓</button>
+          </div>
+          <p id="target-help" class="sr-only">SteamID64, SteamID2, [U:1:ID], profile URL, or vanity name. Use the check button to resolve a profile.</p>
+          <div class="identity">
+            <p id="target-name" class="target-name"></p>
+            <p id="target-id" class="sr-only" hidden></p>
+            <img id="target-avatar" class="avatar" src="/placeholder.jpg" width="210" height="210" alt="" referrerpolicy="no-referrer">
+          </div>
+          <div class="target-actions">
+            <button id="scan-button" type="submit" form="scan-form" aria-describedby="key-indicator">Analyze</button>
+            <button id="estimate-button" type="button">Estimate</button>
+          </div>
+          <p id="estimate-result" class="hint" role="status"></p>
+        </section>
+      </div>
+    </section>
+    <dialog id="save-dialog" aria-labelledby="save-heading">
+      <form id="profile-form" class="stack-form">
+        <h2 id="save-heading">Save settings</h2>
+        <label for="profile-name">Profile name</label>
+        <input id="profile-name" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" required>
+        <div class="dialog-actions"><button type="button" data-close="save-dialog">Cancel</button><button type="submit">Save</button></div>
       </form>
-      <section>
-        <h2>API key</h2>
-        <p id="key-status" class="hint">Checking key status</p>
-        <form id="key-form"><label for="key">Steam Web API key</label><input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required><button type="submit">Use key for this session</button></form>
-        <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a>
+    </dialog>
+    <dialog id="load-dialog" aria-labelledby="load-heading">
+      <h2 id="load-heading">Load settings</h2>
+      <label for="profiles" class="sr-only">Saved profiles</label>
+      <select id="profiles"><option value="">Choose profile</option></select>
+      <div class="dialog-actions"><button type="button" data-close="load-dialog">Cancel</button><button id="load-profile" type="button">Load</button></div>
+    </dialog>
+
+    <dialog id="scan-ranking-dialog" aria-labelledby="scan-ranking-heading">
+      <form id="scan-ranking-form">
+        <h2 id="scan-ranking-heading">Ranking options</h2>
+        <div class="weights">
+          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
+          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+        </div>
+        <div class="dialog-actions"><button type="submit">Done</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="run-info-dialog" aria-labelledby="run-info-heading">
+      <h2 id="run-info-heading">Run info</h2>
+      <p id="report-details"></p><div id="warnings"></div>
+      <div class="dialog-actions"><button type="button" data-close="run-info-dialog">Close</button></div>
+    </dialog>
+
+    <section id="results-screen" class="screen" aria-label="Scan results" hidden>
+      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">Import history</button><button type="button" data-screen="scan">New scan</button></div>
+      <section id="run-library" class="panel" aria-label="Saved runs">
+        <div class="section-line"><h2>Saved runs</h2><label>Find run<input id="run-search" type="search" placeholder="Name or Steam ID"></label><label>Status<select id="run-status"><option value="all">All</option><option value="complete">Complete</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="running">Unfinished</option></select></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Created</th><th>Status</th><th>Profiles</th><th>Run</th></tr></thead><tbody id="run-rows"></tbody></table></div>
+        <p id="run-empty" class="hint" hidden>No matching runs.</p>
+        <div id="run-issues"></div>
       </section>
-      <section>
-        <h2>Saved settings</h2>
-        <label for="profiles">Profile</label><select id="profiles"><option value="">Choose a saved profile</option></select>
-        <button id="load-profile" type="button">Load settings</button>
-        <form id="profile-form"><label for="profile-name">Save current settings as</label><input id="profile-name" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" placeholder="Profile name" required><button type="submit">Save profile</button></form>
-      </section>
-      <section><h2>Recent runs</h2><div id="recent"><p class="hint">No saved runs yet.</p></div></section>
-    </aside>
-    <main id="results" tabindex="-1">
-      <section id="progress-section" hidden>
-        <div class="section-line"><h2 id="progress-title">Scanning</h2><button id="cancel-button" type="button">Cancel and save</button></div>
-        <p id="progress-text" role="status"></p><progress id="progress" max="1" value="0" aria-label="Profiles scanned"></progress>
-      </section>
-      <section id="empty">
-        <div class="empty-mark" aria-hidden="true">v.</div><h2>Follow the connections.</h2>
-        <p>Scan a public Steam profile to explore friendships, communities, and shared interests.</p>
-        <p class="hint">Depth 1 includes direct friends. Depth 2 adds their friends. Scans save progress and can resume.</p>
+      <section id="empty" class="panel empty-state">
+        <h1>Select a saved run or start a scan</h1>
+
+        <button type="button" data-screen="scan" aria-controls="scan-screen">Go to Scan</button>
       </section>
       <section id="report" hidden>
-        <div class="section-line"><div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div><button id="resume-button" type="button" hidden>Resume run</button></div>
-        <p id="report-status"></p>
+        <div class="panel report-heading">
+          <div class="report-identity"><img id="report-avatar" class="profile-avatar" src="/placeholder.jpg" width="40" height="40" alt="" referrerpolicy="no-referrer"><div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div></div>
+          <p id="report-status"></p>
+          <button id="open-run-info" type="button" aria-haspopup="dialog">Run info</button>
+          <button id="resume-button" type="button" hidden>Resume run</button>
+        </div>
         <dl id="coverage"></dl>
-        <div id="warnings"></div>
-        <nav class="tabs" aria-label="Report views"><button type="button" data-view="friends" aria-current="page">Friends</button><button type="button" data-view="network">Network</button><button type="button" data-view="locations">Location signals</button><button type="button" data-view="exports">Exports</button></nav>
+        <p id="coverage-warning" class="coverage-warning" role="status" hidden></p>
+        <p id="report-error" role="alert" hidden></p>
+        <nav class="tabs" aria-label="Report views">
+          <button type="button" data-view="friends" aria-current="page">Friends</button>
+          <button type="button" data-view="network">Network</button>
+          <button type="button" data-view="locations">Locations</button>
+          <button type="button" data-view="exports">Exports</button>
+          <button type="button" data-view="ranking">Ranking</button>
+          <button id="open-history" type="button" hidden>Attached history</button>
+        </nav>
+        <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
-          <p class="hint">Evidence score is relative to the highest observed score. Unknown signals display as “unknown”.</p>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div><p id="friend-empty" hidden>No friends match this filter.</p>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col" title="Relative network evidence on a 0 to 100 scale, not a friendship probability">Evidence / 100</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
+          <p id="friend-empty" class="hint" hidden>No friends match this filter.</p>
         </section>
         <section id="network-view" class="view" hidden>
-          <div class="section-line"><h2>Friendship network</h2><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
-          <p class="hint">Select a node to inspect it. Static layout, colored by community. All connections are available in the exports.</p>
+          <div class="section-line"><h2>Friendship network</h2><label>Find profile<input id="network-search" type="search" placeholder="Name or Steam ID"></label><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
           <div class="graph-toolbar"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-reset" type="button">Reset view</button><span id="graph-count"></span></div>
+          <div id="network-matches" class="network-matches"></div>
+          <div id="community-legend" class="community-legend" aria-label="Communities"></div>
           <svg id="graph" viewBox="0 0 1000 650" role="group" aria-label="Interactive friendship network"></svg>
-          <div id="node-detail" role="status">Select a node.</div>
+
+
         </section>
-        <section id="locations-view" class="view" hidden><h2>Self-reported location signals</h2><p class="hint">Weighted shares among observed friends. Steam country, state, and city codes do not verify the target's residence.</p><div class="table-wrap"><table><thead><tr><th>Country</th><th>State code</th><th>City ID</th><th>Friends</th><th>Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div><p id="location-empty" hidden>No admitted friends expose location fields.</p></section>
-        <section id="exports-view" class="view" hidden><h2>Run exports</h2><div id="downloads"></div><p class="hint">In Gephi, import nodes.csv as nodes, then edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p></section>
+        <section id="locations-view" class="view" hidden>
+          <h2 title="Self-reported Steam codes among observed friends; they do not verify residence">Self-reported location signals</h2>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div>
+          <p id="location-empty" class="hint" hidden>No admitted friends expose location fields.</p>
+        </section>
+        <section id="exports-view" class="view" hidden>
+          <h2>Run exports</h2>
+          <div id="downloads" class="file-list"></div>
+        </section>
+        <section id="ranking-view" class="view" hidden>
+          <h2 title="Recompute this run using its saved observations, without Steam requests">Ranking settings</h2>
+          <form id="ranking-form"><div class="weights">
+            <label>Hub percentile<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required></label>
+            <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required></label>
+          </div><button id="save-ranking" type="submit">Save ranking</button></form>
+        </section>
+        </div><aside id="profile-inspector" class="panel profile-inspector" aria-label="Profile details" hidden>
+          <div class="inspector-heading"><h2>Profile</h2><button id="close-inspector" type="button" aria-label="Close profile details">×</button></div>
+          <div class="inspector-identity"><img id="inspect-avatar" class="profile-avatar" width="48" height="48" alt="" referrerpolicy="no-referrer"><div><h2 id="inspect-name"></h2><a id="inspect-link" target="_blank" rel="noreferrer">Steam profile ↗</a></div></div>
+          <dl id="inspect-facts"></dl>
+        </aside></div>
       </section>
+    </section>
+
+    <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
+      <div class="page-heading"><h1 id="history-heading">SteamHistory</h1><button type="button" data-screen="results">Back to Results</button></div>
       <section id="history-section">
-        <h2>SteamHistory import</h2><p class="hint">Import normalized JSON or NDJSON. Friendship duration is a separate signal.</p>
-        <form id="history-form"><label for="history-file">History file, up to 2 MB</label><input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" required><label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label><button type="submit">Analyze history</button></form>
-        <div id="history-result" hidden><h3 id="history-name"></h3><p id="history-warning" class="hint"></p><a id="history-download" hidden>Download history.json</a><div class="table-wrap"><table><thead><tr><th>Friend</th><th>Duration</th><th>Relative duration</th><th>Current</th></tr></thead><tbody id="history-rows"></tbody></table></div></div>
+        <fieldset class="panel narrow-panel">
+          <legend>Import history</legend>
+          <form id="history-form" class="stack-form">
+            <label for="history-file">History file, up to 2 MB</label>
+            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" title="Normalized JSON or NDJSON with steamID64, lastChecked and historic.friends" required>
+            <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
+            <button type="submit">Analyze history</button>
+          </form>
+        </fieldset>
+        <div id="history-result" hidden>
+          <h2 id="history-name"></h2><a id="history-download" hidden>Download history.json</a>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Duration</th><th scope="col">Relative duration</th><th scope="col">Current</th></tr></thead><tbody id="history-rows"></tbody></table></div>
+        </div>
       </section>
-      <footer>Vapora uses public Steam data. Scores are clues, not conclusions.</footer>
-    </main>
-  </div>
+    </section>
+
+    <section id="settings-screen" class="screen" aria-labelledby="connection-heading" hidden>
+      <div class="page-heading"><h1 id="connection-heading">Steam API key</h1><button type="button" data-screen="scan">Back to Scan</button></div>
+      <fieldset class="panel narrow-panel">
+        <legend class="sr-only">API key</legend>
+        <p id="key-status" class="hint" role="status">Checking key status</p>
+        <form id="key-form" class="stack-form">
+          <label for="key">Steam Web API key</label>
+          <input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required>
+          <button type="submit">Use key</button>
+        </form>
+        <p class="hint"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a></p>
+      </fieldset>
+
+    </section>
+  </main>
 </body>
 </html>

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
-import { InputError, Settings, failureMessage } from "./model.js";
+import { InputError, Settings, Ranking, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
@@ -20,6 +20,22 @@ const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
 const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)) });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
+const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranking });
+// Only bundled UI assets are public. Never resolve request paths against the filesystem.
+const files = new Map([
+  ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
+  ["/app.js", { name: "app.js", type: "text/javascript; charset=utf-8" }],
+  ["/style.css", { name: "style.css", type: "text/css; charset=utf-8" }],
+  ["/vapora.svg", { name: "vapora.svg", type: "image/svg+xml" }],
+  ["/vapora.ico", { name: "vapora.ico", type: "image/x-icon" }],
+  ["/placeholder.jpg", { name: "placeholder.jpg", type: "image/jpeg" }],
+  ["/key.png", { name: "key.png", type: "image/png" }],
+  ["/save.svg", { name: "save.svg", type: "image/svg+xml" }],
+  ["/presets.png", { name: "presets.png", type: "image/png" }],
+  ["/checkbox-off.png", { name: "checkbox-off.png", type: "image/png" }],
+  ["/checkbox-on.png", { name: "checkbox-on.png", type: "image/png" }],
+]);
+for (const weight of ["regular", "medium", "bold"]) files.set(`/fonts/motiva-sans-${weight}.ttf`, { name: `fonts/motiva-sans-${weight}.ttf`, type: "font/ttf" });
 
 async function body(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -65,10 +81,12 @@ export async function start(options: Options) {
     }))));
     cancelJob = () => Effect.runPromise(Fiber.interrupt(fiber));
   };
+  // A configured local Steam fixture can serve HTTP avatars; normal images require HTTPS.
+  const avatarOrigin = options.steamBaseUrl ? ` ${new URL(options.steamBaseUrl).origin}` : "";
   const server = createServer((request, response) => {
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader("referrer-policy", "no-referrer");
-    response.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    response.setHeader("content-security-policy", `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:${avatarOrigin}; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     void dispatch(request, response).catch((error) => {
       if (response.headersSent) { response.destroy(); return; }
       const message = error instanceof Error ? error.message : "The request failed. Check the run log.";
@@ -90,16 +108,18 @@ export async function start(options: Options) {
     if (url.pathname === "/api/state") {
       const recent = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).recent(); }));
       const profiles = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).profiles(); }));
-      json(response, 200, { hasKey: Boolean(key), profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => ({
-        id: scan.id, seed: scan.seed, name: scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed,
-        createdAt: scan.createdAt, status: scan.status, nodes: scan.players.length,
-      })) } satisfies State);
+      json(response, 200, { hasKey: Boolean(key), profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => {
+        const target = scan.players.find((p) => p.id === scan.seed);
+        return { id: scan.id, seed: scan.seed, name: target?.name ?? scan.seed, avatar: target?.avatar ?? null,
+          createdAt: scan.createdAt, status: scan.status, nodes: scan.players.length };
+      }) } satisfies State);
       return;
     }
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
       const scan = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(runMatch[1] ?? ""); }));
-      json(response, 200, { scan, report: Analysis.analyze(scan) } satisfies RunView);
+      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(scan.id); }));
+      json(response, 200, { scan, report: Analysis.analyze(scan), history } satisfies RunView);
       return;
     }
     const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -117,11 +137,10 @@ export async function start(options: Options) {
       response.end(contents);
       return;
     }
-    const files = new Map([["/", "index.html"], ["/app.js", "app.js"], ["/style.css", "style.css"]]);
     const file = files.get(url.pathname);
     if (!file) { json(response, 404, { error: "Page not found." }); return; }
-    const contents = await readFile(fileURLToPath(new URL(`../ui/${file}`, import.meta.url)));
-    response.writeHead(200, { "content-type": file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8" });
+    const contents = await readFile(fileURLToPath(new URL(`../ui/${file.name}`, import.meta.url)));
+    response.writeHead(200, { "content-type": file.type });
     response.end(contents);
   }
   async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {
@@ -132,12 +151,17 @@ export async function start(options: Options) {
       key = payload.key;
       json(response, 200, { ok: true }); return;
     }
-    if (path === "/api/scan" || path === "/api/estimate") {
+    if (path === "/api/scan" || path === "/api/estimate" || path === "/api/target") {
       const payload = await Effect.runPromise(decode(ScanRequest, contents));
       ensureReady();
-      if (path === "/api/estimate") {
+      if (path === "/api/estimate" || path === "/api/target") {
         estimating = true;
-        try { json(response, 200, await runtime.runPromise(Scanner.estimate(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))))); }
+        try {
+          const result = path === "/api/target"
+            ? await runtime.runPromise(Scanner.lookup(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))))
+            : await runtime.runPromise(Scanner.estimate(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))));
+          json(response, 200, result);
+        }
         finally { estimating = false; }
       } else {
         launch(Effect.gen(function* () {
@@ -166,6 +190,18 @@ export async function start(options: Options) {
       const payload = await Effect.runPromise(decode(ProfileRequest, contents));
       await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).saveProfile(payload.name, payload.settings); }));
       json(response, 200, { ok: true }); return;
+    }
+    if (path === "/api/analyze") {
+      const payload = await Effect.runPromise(decode(AnalyzeRequest, contents));
+      if (busy()) throw new InputError({ message: "Wait for the active operation before saving ranking settings." });
+      estimating = true;
+      try {
+        // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
+        const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
+        const view = await runtime.runPromise(Analysis.reanalyze(payload.id, payload.ranking));
+        json(response, 200, { ...view, history } satisfies RunView);
+      } finally { estimating = false; }
+      return;
     }
     if (path === "/api/history") {
       const payload = await Effect.runPromise(decode(HistoryRequest, contents));

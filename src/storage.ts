@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { InputError, Scan, Settings, StorageError, RunId } from "./model.js";
 
 import type { Artifact } from "./model.js";
+import { HistoryReport } from "./history.js";
 export { artifacts } from "./model.js";
 const ProfileName = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/));
 const io = <T>(message: string, action: () => Promise<T>) => Effect.tryPromise({ try: action, catch: () => new StorageError({ message }) });
@@ -19,6 +20,7 @@ export interface Interface {
   readonly recent: () => Effect.Effect<Recent, StorageError>;
   readonly writeArtifact: (id: string, artifact: Artifact, contents: string) => Effect.Effect<void, StorageError | InputError>;
   readonly readArtifact: (id: string, artifact: Artifact) => Effect.Effect<string, StorageError | InputError>;
+  readonly history: (id: string) => Effect.Effect<typeof HistoryReport.Type | null, StorageError | InputError>;
   readonly log: (id: string, message: string) => Effect.Effect<void, StorageError | InputError>;
   readonly saveProfile: (name: string, settings: Settings) => Effect.Effect<void, StorageError | InputError>;
   readonly profile: (name: string) => Effect.Effect<Settings, StorageError | InputError>;
@@ -91,6 +93,17 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
     readArtifact: Effect.fn("Storage.readArtifact")(function* (id: string, artifact: Artifact) {
       const path = yield* runPath(id);
       return yield* io(`This run has no ${artifact}. Finish or resume the run first.`, () => readFile(join(path, artifact), "utf8"));
+    }),
+    history: Effect.fn("Storage.history")(function* (id: string) {
+      const path = yield* runPath(id);
+      const contents = yield* io("Could not read attached history.", () => readFile(join(path, "history.json"), "utf8").catch((error) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      }));
+      if (contents === null) return null;
+      return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryReport))(contents).pipe(
+        Effect.mapError(() => new StorageError({ message: "Attached history is invalid. Import a valid history file again." })),
+      );
     }),
     log: Effect.fn("Storage.log")(function* (id: string, message: string) {
       const path = yield* runPath(id);

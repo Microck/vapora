@@ -1,6 +1,6 @@
 import { Cause, Effect } from "effect";
 import { InputError, failureMessage, newPlayer } from "./model.js";
-import type { Player, Scan, Settings, SteamId } from "./model.js";
+import type { Player, Scan, Settings } from "./model.js";
 import * as Identifiers from "./ids.js";
 import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
@@ -12,7 +12,8 @@ export type Observe = (progress: Progress) => void;
 const summary = (player: Player, record: Steam.Summary | undefined): Player => ({
   ...player,
   name: record?.personaname ?? player.id,
-  visibility: record ? (record.communityvisibilitystate === 3 ? "public" : "private") : "unavailable",
+  avatar: record?.avatarfull ?? null,
+  visibility: record?.communityvisibilitystate === undefined ? "unavailable" : record.communityvisibilitystate === 3 ? "public" : "private",
   country: record?.loccountrycode ?? null, state: record?.locstatecode ?? null, city: record?.loccityid ?? null,
 });
 
@@ -29,6 +30,17 @@ export const create = Effect.fn("Scanner.create")(function* (target: string, set
   yield* store.create(scan);
   yield* store.log(scan.id, `Started scan of ${seed}`);
   return scan;
+});
+
+/** Explicit target lookup returns Steam identity without creating a run or collecting lists. */
+export const lookup = Effect.fn("Scanner.lookup")(function* (target: string, settings: Settings) {
+  const steam = yield* Steam.Service;
+  const parsed = yield* Identifiers.parse(target);
+  const id = parsed.kind === "id" ? parsed.id : yield* steam.resolve(parsed.vanity);
+  const records = yield* steam.summaries([id]);
+  const record = records.find((p) => p.steamid === id);
+  if (!record) return yield* Effect.fail(new InputError({ message: "Steam did not return this account. Check the ID and API key." }));
+  return summary(newPlayer(id, 0, settings), record);
 });
 
 /** A frontier item leaves the checkpoint only after all its observations have succeeded. */
@@ -54,9 +66,28 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
     scan = { ...scan, players: scan.players.map((p) => p.id === scan.seed ? summary(p, record) : p) };
     yield* checkpoint("Scanning friends");
     while (scan.queue.length) {
+      // Batch frontier summaries before collection so the private-profile policy is enforceable.
+      // Saved visibility prevents completed batches from being repeated on resume.
+      const frontier = new Set(scan.queue);
+      const summaryIds = scan.players.filter((p) => frontier.has(p.id) && p.visibility === "pending").slice(0, 100).map((p) => p.id);
+      if (summaryIds.length) {
+        const summaries = yield* steam.summaries(summaryIds);
+        const records = new Map(summaries.map((record) => [record.steamid, record]));
+        scan = { ...scan, players: scan.players.map((p) => summaryIds.includes(p.id) ? summary(p, records.get(p.id)) : p) };
+        yield* checkpoint("Checking profile visibility");
+      }
       const id = scan.queue[0];
       const player = scan.players.find((p) => p.id === id);
       if (!player) return yield* Effect.fail(new InputError({ message: "Checkpoint frontier has no matching profile." }));
+      if (scan.settings.skipPrivate && player.visibility === "private") {
+        const skipped: Player = { ...player, friendsStatus: "skipped", bansStatus: "skipped",
+          groupsStatus: player.groupsStatus === "pending" ? "skipped" : player.groupsStatus,
+          gamesStatus: player.gamesStatus === "pending" ? "skipped" : player.gamesStatus };
+        scan = { ...scan, players: scan.players.map((p) => p.id === id ? skipped : p), queue: scan.queue.slice(1) };
+        yield* store.log(scan.id, `${id}: private profile skipped by collection policy; incoming links retained`);
+        yield* checkpoint("Skipping private profile");
+        continue;
+      }
       const friends = yield* steam.friends(player.id);
       const players = scan.players.map((p) => p.id === player.id ? { ...p, friends: friends.values, friendsStatus: friends.status } : p);
       const known = new Set(players.map((p) => p.id));
@@ -75,20 +106,16 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
       yield* store.log(scan.id, `${player.id}: ${friends.status} friend list, ${friends.values.length} observed friends`);
       yield* checkpoint("Scanning friends");
     }
-    const pending = scan.players.filter((p) => p.visibility === "pending" || p.bansStatus === "pending").map((p) => p.id);
+    const pending = scan.players.filter((p) => p.bansStatus === "pending").map((p) => p.id);
     for (let offset = 0; offset < pending.length; offset += 100) {
       const batch = pending.slice(offset, offset + 100);
-      const members = scan.players.filter((p) => batch.includes(p.id));
-      const summaryIds = members.filter((p) => p.visibility === "pending").map((p) => p.id);
-      const banIds = members.filter((p) => p.bansStatus === "pending").map((p) => p.id);
-      const summaries = summaryIds.length ? yield* steam.summaries(summaryIds) : [];
-      const bans = banIds.length ? yield* steam.bans(banIds) : [];
+      const bans = yield* steam.bans(batch);
       scan = { ...scan, players: scan.players.map((player) => {
         if (!batch.includes(player.id)) return player;
         const ban = bans.find((b) => b.SteamId === player.id);
-        return { ...(player.visibility === "pending" ? summary(player, summaries.find((p) => p.steamid === player.id)) : player),
-          bans: player.bansStatus === "pending" ? (ban ? { vac: ban.VACBanned, game: ban.NumberOfGameBans, community: ban.CommunityBanned } : null) : player.bans,
-          bansStatus: player.bansStatus === "pending" ? (ban ? "public" : "unavailable") : player.bansStatus,
+        return { ...player,
+          bans: ban ? { vac: ban.VACBanned, game: ban.NumberOfGameBans, community: ban.CommunityBanned } : null,
+          bansStatus: ban ? "public" : "unavailable",
         };
       }) };
       yield* checkpoint("Enriching profiles");
@@ -127,14 +154,19 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
 
 export const estimate = Effect.fn("Scanner.estimate")(function* (target: string, settings: Settings) {
   const steam = yield* Steam.Service;
-  const parsed = yield* Identifiers.parse(target);
-  const seed: SteamId = parsed.kind === "id" ? parsed.id : yield* steam.resolve(parsed.vanity);
-  const verified = yield* steam.summaries([seed]);
-  if (!verified.some((p) => p.steamid === seed)) return yield* Effect.fail(new InputError({ message: "Steam did not return this account. Check the ID and API key." }));
+  const player = yield* lookup(target, settings);
+  const seed = player.id;
+  if (settings.skipPrivate && player.visibility === "private") {
+    return { seed, available: false, directFriends: null, sampleSize: 0, estimatedNodes: null, cappedAt: settings.maxNodes,
+      note: "The private target was skipped by your collection policy." };
+  }
   const friends = yield* steam.friends(seed);
   if (friends.status !== "public") return { seed, available: false, directFriends: null, sampleSize: 0, estimatedNodes: null, cappedAt: settings.maxNodes };
   const sampleIds = friends.values.slice(0, 5);
-  const observations = settings.depth > 1 ? yield* Effect.forEach(sampleIds, steam.friends) : [];
+  const sampleSummaries = settings.depth > 1 && settings.skipPrivate && sampleIds.length ? yield* steam.summaries(sampleIds) : [];
+  const publicCandidates = sampleIds.filter((id) => !settings.skipPrivate ||
+    summary(newPlayer(id, 1, settings), sampleSummaries.find((record) => record.steamid === id)).visibility !== "private");
+  const observations = settings.depth > 1 ? yield* Effect.forEach(publicCandidates, steam.friends) : [];
   const known = new Set([seed, ...friends.values]);
   let added = 0;
   const publicSamples = observations.filter((r) => r.status === "public");
@@ -146,6 +178,6 @@ export const estimate = Effect.fn("Scanner.estimate")(function* (target: string,
   return {
     seed, available: true, directFriends: friends.values.length, sampleSize: publicSamples.length,
     estimatedNodes: Math.min(settings.maxNodes, Math.round(estimate)), cappedAt: settings.maxNodes,
-    note: settings.depth === 3 ? "Samples the first two levels; depth 3 may reach the cap." : "Sampling estimate; private lists and overlapping friends affect coverage.",
+    note: settings.depth > 2 ? `Samples only the first two levels, not the full depth ${settings.depth}. Private or skipped profiles and overlap limit coverage.` : "Sampling estimate; private lists and overlapping friends affect coverage.",
   };
 });
