@@ -10,7 +10,7 @@ These are read-only layout prototypes from an OMP Opus 5.5 draft, refined agains
 | B | Compact properties dialog: target at the top, settings in tabs, actions at the bottom | [Scan](screenshots/options/option-b-scan.png) | [Results](screenshots/options/option-b-results.png) | [Mobile](screenshots/options/option-b-mobile.png) |
 | C | Library split view: runs and saved settings on the left, workspace on the right | [Scan](screenshots/options/option-c-scan.png) | [Results](screenshots/options/option-c-results.png) | [Mobile](screenshots/options/option-c-mobile.png) |
 
-[Switchable preview](https://github.com/Microck/vapora/blob/df4837c8391efb58aa4403c060f9657079d84022/docs/prototypes/steam-ui-options.html). Download the single HTML file and open it in a browser. It embeds all assets. The bottom bar switches A/B/C, and `?variant=A`, `B` or `C` opens a specific option.
+[Switchable preview](https://github.com/Microck/vapora/blob/c740e6c7d9b4e1944dab313369779b40bf3cfd3b/docs/prototypes/steam-ui-options.html). Download the single HTML file and open it in a browser. It embeds all assets. The bottom bar switches A/B/C, and `?variant=A`, `B` or `C` opens a specific option.
 
 The prototype source stays on `design/steam-ui-options`, outside the PR to `main`. Choose a layout before replacing the app's layout. The app keeps one implementation.
 
