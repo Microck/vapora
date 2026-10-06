@@ -73,8 +73,19 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     assert.equal(response.status, 200, asset); assert.ok((await response.arrayBuffer()).byteLength);
   }
   await page.type("#target", seed);
+  assert.equal(await page.$eval("#target", (input) => {
+    if (!(input instanceof HTMLInputElement)) throw new Error("Expected target field");
+    return input.value;
+  }), seed, "Keyboard entry did not reach the target field");
   await page.click("#lookup-target");
-  await page.waitForFunction(() => document.querySelector("#target-name")?.textContent === "Player 29");
+  await page.waitForFunction(() => document.querySelector("#target-name")?.textContent === "Player 29").catch(async (error: Error) => {
+    const renderer = await page.evaluate(() => ({
+      name: document.querySelector("#target-name")?.textContent,
+      notice: document.querySelector("#notice")?.textContent,
+      active: document.activeElement?.id,
+    }));
+    throw new Error(`Target lookup failed: ${JSON.stringify({ renderer, requests: fixture.requests, errors })}`, { cause: error });
+  });
   await page.$eval("#maxNodes", (input) => {
     if (!(input instanceof HTMLInputElement)) throw new Error("Expected node cap field");
     input.value = "5"; input.dispatchEvent(new Event("input", { bubbles: true }));
