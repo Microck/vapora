@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Vapora | Steam friend networks</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#results">Skip to results</a>
+  <header><a class="wordmark" href="/">vapora<span>02</span></a><span>public Steam friend networks</span><span id="connection">Connecting</span></header>
+  <div id="notice" role="alert" hidden></div>
+  <div class="workspace">
+    <aside>
+      <form id="scan-form">
+        <h1>Explore a network</h1>
+        <label for="target">Steam profile</label>
+        <input id="target" name="target" placeholder="Profile URL, Steam ID, or vanity" required autocomplete="off">
+        <label for="preset">Preset</label>
+        <select id="preset"><option value="community">Community map</option><option value="inner">Inner circle</option><option value="custom">Custom</option></select>
+        <div class="field-pair"><label>Depth<input id="depth" type="number" min="1" max="3" value="2" required></label><label>Node cap<input id="maxNodes" type="number" min="1" max="1000" value="500" required></label></div>
+        <label>Requests / minute<input id="rpm" type="number" min="1" max="120" value="120" required></label>
+        <label class="check"><input id="games" type="checkbox">Shared game libraries</label>
+        <label class="check"><input id="groups" type="checkbox">Shared groups</label>
+        <p class="hint">Groups may require publisher access. Private data stays unavailable.</p>
+        <details><summary>Ranking and hubs</summary>
+          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
+          <div class="field-pair"><label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label><label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label></div>
+          <div class="field-pair"><label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label><label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label></div>
+        </details>
+        <div class="actions"><button class="primary" id="scan-button" type="submit">Scan network</button><button id="estimate-button" type="button">Estimate</button></div>
+        <p id="estimate-result" role="status" class="hint"></p>
+      </form>
+      <section>
+        <h2>API key</h2>
+        <p id="key-status" class="hint">Checking key status</p>
+        <form id="key-form"><label for="key">Steam Web API key</label><input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required><button type="submit">Use key for this session</button></form>
+        <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a>
+      </section>
+      <section>
+        <h2>Saved settings</h2>
+        <label for="profiles">Profile</label><select id="profiles"><option value="">Choose a saved profile</option></select>
+        <button id="load-profile" type="button">Load settings</button>
+        <form id="profile-form"><label for="profile-name">Save current settings as</label><input id="profile-name" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" placeholder="Profile name" required><button type="submit">Save profile</button></form>
+      </section>
+      <section><h2>Recent runs</h2><div id="recent"><p class="hint">No saved runs yet.</p></div></section>
+    </aside>
+    <main id="results" tabindex="-1">
+      <section id="progress-section" hidden>
+        <div class="section-line"><h2 id="progress-title">Scanning</h2><button id="cancel-button" type="button">Cancel and save</button></div>
+        <p id="progress-text" role="status"></p><progress id="progress" max="1" value="0" aria-label="Profiles scanned"></progress>
+      </section>
+      <section id="empty">
+        <div class="empty-mark" aria-hidden="true">v.</div><h2>Follow the connections.</h2>
+        <p>Scan a public Steam profile to explore friendships, communities, and shared interests.</p>
+        <p class="hint">Depth 1 includes direct friends. Depth 2 adds their friends. Scans save progress and can resume.</p>
+      </section>
+      <section id="report" hidden>
+        <div class="section-line"><div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div><button id="resume-button" type="button" hidden>Resume run</button></div>
+        <p id="report-status"></p>
+        <dl id="coverage"></dl>
+        <div id="warnings"></div>
+        <nav class="tabs" aria-label="Report views"><button type="button" data-view="friends" aria-current="page">Friends</button><button type="button" data-view="network">Network</button><button type="button" data-view="locations">Location signals</button><button type="button" data-view="exports">Exports</button></nav>
+        <section id="friends-view" class="view">
+          <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
+          <p class="hint">Evidence score is relative to the highest observed score. Unknown signals display as “unknown”.</p>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div><p id="friend-empty" hidden>No friends match this filter.</p>
+        </section>
+        <section id="network-view" class="view" hidden>
+          <div class="section-line"><h2>Friendship network</h2><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
+          <p class="hint">Select a node to inspect it. Static layout, colored by community. All connections are available in the exports.</p>
+          <div class="graph-toolbar"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-reset" type="button">Reset view</button><span id="graph-count"></span></div>
+          <svg id="graph" viewBox="0 0 1000 650" role="group" aria-label="Interactive friendship network"></svg>
+          <div id="node-detail" role="status">Select a node.</div>
+        </section>
+        <section id="locations-view" class="view" hidden><h2>Self-reported location signals</h2><p class="hint">Weighted shares among observed friends. Steam country, state, and city codes do not verify the target's residence.</p><div class="table-wrap"><table><thead><tr><th>Country</th><th>State code</th><th>City ID</th><th>Friends</th><th>Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div><p id="location-empty" hidden>No admitted friends expose location fields.</p></section>
+        <section id="exports-view" class="view" hidden><h2>Run exports</h2><div id="downloads"></div><p class="hint">In Gephi, import nodes.csv as nodes, then edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p></section>
+      </section>
+      <section id="history-section">
+        <h2>SteamHistory import</h2><p class="hint">Import normalized JSON or NDJSON. Friendship duration is a separate signal.</p>
+        <form id="history-form"><label for="history-file">History file, up to 2 MB</label><input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" required><label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label><button type="submit">Analyze history</button></form>
+        <div id="history-result" hidden><h3 id="history-name"></h3><p id="history-warning" class="hint"></p><a id="history-download" hidden>Download history.json</a><div class="table-wrap"><table><thead><tr><th>Friend</th><th>Duration</th><th>Relative duration</th><th>Current</th></tr></thead><tbody id="history-rows"></tbody></table></div></div>
+      </section>
+      <footer>Vapora uses public Steam data. Scores are clues, not conclusions.</footer>
+    </main>
+  </div>
+</body>
+</html>

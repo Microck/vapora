@@ -1,15 +1,7 @@
-# Environment variables
-.env
-
-# PyInstaller output
+node_modules/
 dist/
-build/
-builds/
-steam-friends-osint.spec
-vapora.spec
-
-# Project-specific folders
+.env
 outputs/
-scripts/
 profiles/
-vapora/__pycache__
+.vapora/
+*.log

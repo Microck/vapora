@@ -1,278 +1,146 @@
-<p align="center">
-  <a href="https://github.com/Microck/vapora">
-    <img src="assets/vapora.png" alt="vapora Logo" width="300">
-  </a>
-</p>
+# vapora
 
-<p align="center">an OSINT tool for gathering information on Steam users' friends lists. </p>
+Explore public Steam friend networks from a local browser UI or the command line. Vapora scans friendships, computes graph metrics, ranks observed friend signals, and exports files for Gephi.
 
-<p align="center">
-  <a href="https://github.com/Microck/vapora/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Microck/vapora?style=flat-square" /></a>
-  <a href="https://github.com/Microck/vapora/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Microck/vapora?style=flat-square" /></a>
-  <a href="https://github.com/Microck/vapora/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Microck/vapora?style=flat-square" /></a>
-</p>
+The TypeScript + Effect rewrite replaces the unfinished Python app. The original code and Windows executable remain on the [`legacy` branch](https://github.com/Microck/vapora/tree/legacy). The unmerged GUI prototype remains on [`feature/gui-and-analysis`](https://github.com/Microck/vapora/tree/feature/gui-and-analysis).
 
----
+## start
 
-## tl;dr
-interactive python tool to map a steam user’s friend network, enrich it with community metrics, and export gephi‑ready csvs & a “probable friends” report:
+Install [Node.js 24 or newer](https://nodejs.org/), then:
 
-- install python 3.10+
-- get a steam api key (free): https://steamcommunity.com/dev/apikey
-- `pip install -r requirements.txt`
-- `python start.py` → paste key → choose preset → paste steam url → done
-- open the folder in gephi (see how‑to below)
-
----
-
-## features
-
-- blue terminal wizard (reads ascii from `assets/banner.txt`)
-- works with steamid64 or profile url (auto vanity resolver)
-- safe presets:
-  - inner circle (fast) → depth 1, ~200–300 nodes
-  - community map (default) → depth 2, ~500 nodes
-  - custom → full control with explanations
-- dry‑run estimator (samples seed friends to predict node counts)
-- resume last run + recent targets menu
-- rate‑limit handling, retries, progress bars
-- automatic cleaning (no phantom nodes in gephi)
-- gephi‑ready exports (no html):
-  - `gephi/nodes.csv` | label + metrics
-  - `gephi/edges.csv` | `friend` vs `group` edges
-  - `probable_friends.csv` | ranked close‑associate guesses
-- enrichment for osint:
-  - degree (popularity)
-  - betweenness centrality (bridges / hubs)
-  - modularity class (communities; louvain)
-  - “is_hub” flag (top percentile of betweenness)
-- cross‑platform; outputs per target with timestamp
-- optional packaged exe (pyinstaller) for windows
-
----
-
-## how it works
-
-1. the wizard collects:
-   - steam api key (stores to `.env`; can skip if already set)
-   - target (steamid64 or profile url)
-   - preset / custom config (depth, caps, rate limit, etc.)
-2. scanner hits the steam web api (depth‑limited bfs).
-3. cleaner removes dangling edges; keeps `Kind = friend|group`.
-4. enricher computes degree, betweenness, modularity, is_hub.
-5. probable‑friends analyzer ranks likely close associates.
-6. exports gephi csvs + raw scan json into a dated folder.
-
-no scraping; only public web‑api endpoints. private data is skipped.
-
----
-
-## layout
-
-```
-.
-├─ start.py                                       # cli wizard
-├─ vapora-X.X.X.exe                               # windows executable
-├─ .env.example                                   # steam api key placeholder
-├─ requirements.txt
-├─ assets/
-│  └─ banner.txt
-├─ vapora/
-│  ├─ steam_api.py                                # api wrapper + rate limiting + vanity resolver
-│  ├─ scanner.py                                  # bfs crawler (depth, caps, resume)
-│  ├─ enricher.py                                 # clean + metrics + gephi csv export
-│  ├─ probable_friends.py                         # close-associate ranking
-│  ├─ utils.py                                    # helpers (paths, time, io)
-│  └─ config_default.yaml                         # defaults with inline docs
-├─ profiles/                                      # saved config profiles
-├─ outputs/                                       # results
-├─ .gitignore
-├─ LICENSE
-└─ README.md
-```
-
-outputs per run:
-```
-outputs/<steamid64>/<yyyymmdd_hhmmss>/
-├─ gephi/
-│  ├─ nodes.csv
-│  └─ edges.csv
-├─ probable_friends.csv
-├─ scan.json
-└─ run.log
-```
-
----
-
-## installation
-
-prereqs
-- python 3.10+
-- steam api key: https://steamcommunity.com/dev/apikey
-
-clone + install
-```bash
+```sh
 git clone https://github.com/Microck/vapora.git
 cd vapora
-
-python -m venv .venv
-# windows
-.venv\Scripts\activate
-# macos/linux
-source .venv/bin/activate
-
-pip install -r requirements.txt
+npm ci
+npm run build
+npm start
 ```
 
-set your key
-- copy `.env.example` → `.env` and paste your key, or
-- just run the wizard; it can create `.env` for you
+Open the local URL printed in the terminal. The server binds to `127.0.0.1`; use the printed address rather than `localhost`. It does not expose the app to your network.
 
----
+Run it on a trusted local machine. Native programs and other accounts on that machine can access the session. Host and Origin checks protect against cross-origin browser requests.
 
-## quickstart
+Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Enter it in the UI for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
-```bash
-python start.py
+Choose a target, preset, and optional signals, then scan. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
+
+Use `/id/NAME` for numeric vanity names. `/profiles/ID` and bare numbers identify Steam accounts by SteamID64.
+
+## scanning
+
+- **Inner circle:** depth 1, cap 300. Includes the target and admitted direct friends.
+- **Community map:** depth 2, cap 500. Adds admitted friends of friends.
+- **Custom:** depth 1–3, cap 1–1000, 1–120 requests per minute, ranking weights, and a hub percentile.
+
+Vapora queries admitted boundary profiles for ranking signals without expanding past the configured depth. Every request is paced. Temporary transport failures, rate limits, and selected server failures get up to three retries. Private friend lists remain distinct from empty public lists.
+
+Cancel saves a checkpoint. Resume uses the original target, settings, and unfinished frontier. Failed scans also preserve their checkpoint. A stopped server can leave a run marked `running`; after restarting, open that run and resume it. Checkpoints use the current Vapora 2 format; Python outputs are preserved separately and are not migrated.
+
+Owned-game overlap uses public library data. Group links are optional and disabled by default because Steam's documented group endpoint requires publisher access. Denied membership lookup appears as unavailable and stops further group requests in that operation.
+
+Saved profiles contain settings only. Recent runs, profiles, and exports stay under the working directory, or the directory selected with `--root`.
+
+## command line
+
+```sh
+npm start -- scan 'https://steamcommunity.com/id/example' --preset inner
+npm start -- estimate '76561198000000000' --depth 2
+npm start -- scan '76561198000000000' --games --max-nodes 200
+npm start -- recent
+npm start -- resume RUN_ID
+npm start -- analyze RUN_ID
+npm start -- profile-save small --depth 1 --max-nodes 100
+npm start -- scan TARGET --profile small
+npm start -- profiles
+npm start -- history profile.json --run RUN_ID
+npm start -- serve --port 3001 --root ./research
+npm start -- --help
 ```
 
-you’ll see:
-- a short tip + link to get your api key
-- menu:
-  - scan by steamid64
-  - scan by profile url (vanity / full)
-  - presets (inner circle / community map / custom)
-  - config (guided editor with recommended defaults)
-  - dry‑run estimate
-  - resume last run
-  - recent targets
-  - run
+The CLI scanner needs `STEAM_API_KEY` in your environment or `.env`. History import, report rebuilding, and profile commands work without a key. Estimates sample at most five friend lists; they are approximate and respect the node cap. Depth 3 estimates describe only the first two levels.
 
-after the run it asks to open the output folder. the readme below explains
-how to import into gephi.
+## reports and exports
 
----
+Each run has a unique folder:
 
-## configuration
-
-the wizard shows a one‑liner help for each option and saves your choices to
-`profiles/` so you can reuse them later.
-
-defaults (also in `vapora/config_default.yaml`):
-```yaml
-depth: 2                          # 1 = only friends; 2 = friends of friends, 3 = you get how it goes
-max_nodes: 500                    # hard cap; keeps graphs tidy
-rate_limit_rpm: 120               # requests per minute
-skip_private_profiles: true
-include_group_links: true         # group edges (toggle off in gephi if noisy)
-include_game_overlap: false
-hub_percentile: 0.99              # top 1% betweenness → is_hub=true
-weights:                          # probable-friends scoring
-  mutual: 1.0
-  jaccard: 1.0
-  groups: 0.5
-  games: 0.5
+```text
+outputs/<run-id>/
+  scan.json
+  analysis.json
+  probable-friends.csv
+  run.log
+  gephi/nodes.csv
+  gephi/edges.csv
+  history.json          # when attached
 ```
 
-advanced:
-- hub threshold is adjustable (percentile) from the wizard “advanced” section.
-- profiles can be saved/loaded with a name.
+The browser shows ranked friends, location signals, a static interactive graph, and download links. It supports cancellation, resume, filtering, graph zoom, node inspection, profiles, and history imports. No placeholder results or looping animations.
 
----
+Graph metrics include degree, normalized betweenness, Louvain communities, and hubs at the configured percentile. Metrics use admitted friendship edges. Shared-group edges remain separate, so group co-membership does not inflate friendship centrality. Zero-centrality graphs have no hubs.
 
-## output files schemas
+Friend ranking uses weighted mutual count, neighbor-set Jaccard, shared groups, and shared games. The evidence score scales the highest observed score to 100. Missing observations remain unknown. A private list can still have observed mutuals from another public list.
 
-`gephi/nodes.csv`
-- Id
-- Label
-- degree
-- betweenness
-- modularity_class
-- is_seed (true/false)
-- is_hub (true/false)
-- is_banned (true/false)
-- is_public (true/false)
+Location signals group self-reported country, state, and city codes among admitted direct friends. Each contribution has weight `1 + observed mutuals`; the report shows its share of the available location signal.
 
-`gephi/edges.csv`
-- Source
-- Target
-- Kind (`friend` | `group`)
+**These scores do not measure real-life friendship or the target's residence.** Steam locations are self-reported. Privacy, depth, and node caps affect coverage. Every report includes coverage and relevant warnings.
 
-`probable_friends.csv` (ranked)
-- candidate_steamid
-- score
-- mutual_count
-- jaccard_with_seed
-- shared_groups
-- shared_games
+CSV uses proper quoting for commas, quotes, and newlines. Untrusted formula-like text gets a leading apostrophe for spreadsheet imports. Steam IDs remain strings in JSON; configure spreadsheet ID columns as text.
 
----
+### Gephi
 
-## gephi how‑to (step‑by‑step)
+1. Create a project and import `gephi/nodes.csv` as a nodes table.
+2. Import `gephi/edges.csv` as undirected edges.
+3. Filter `Kind` to `friend` to inspect the friendship graph, or include `group` for shared membership.
+4. Use ForceAtlas2, color by `modularity_class`, and size by `betweenness` or `degree`.
 
-1) open gephi → new project  
-2) import `gephi/nodes.csv` as “nodes table”  
-3) import `gephi/edges.csv` as “edges table” (undirected, append)  
-4) layout → forceatlas 2  
-   - scaling 25  
-   - linlog ✓  
-   - prevent overlap ✓  
-   - run 20–30s → stop, then “noverlap” a few seconds  
-5) appearance  
-   - nodes → partition → `modularity_class` → apply (color communities)  
-   - nodes → ranking → `betweenness` → apply (size hubs: 8–50)  
-6) optional filter  
-   - filters → edges → attributes → partition → `Kind` → select `friend`  
-   - toggle `friend` vs `group` to see core friendships vs shared context
+## SteamHistory imports
 
----
+Import a local normalized JSON file in the UI, or use `history FILE`. Vapora does not scrape SteamHistory or fetch arbitrary URLs. Expected input:
 
-## probable friends
+```json
+{
+  "steamID64": "76561198000000000",
+  "name": "Example",
+  "lastChecked": 1750000000,
+  "historic": {
+    "friends": [
+      { "Friend": "76561198000000001", "FriendDate": 1700000000, "UnfriendDate": 0, "Name": "Friend" }
+    ],
+    "persona": [],
+    "url": [],
+    "pfp": [],
+    "comments": []
+  }
+}
+```
 
-aim: guess close associates of the seed using public signals:
-- mutual friend count with seed (triadic closure)
-- neighbor‑set jaccard with seed
-- shared groups bonus
-- shared games bonus (if public)
+Dates are Unix seconds. An absent or zero `UnfriendDate` means still friends at `lastChecked`. Invalid time ranges fail visibly. Overlapping intervals count once. NDJSON must contain normalized snapshots of the same account; Vapora selects the latest `lastChecked` snapshot. Profile and history details remain in the report. Friendship duration stays separate from network evidence scores.
 
-weights are tunable in config. the analyzer skips private data silently.
+Attaching history requires its Steam account to match the selected run. Otherwise import it independently. Browser imports accept files up to 2 MB.
 
----
+## development
 
-## tips for osint in gephi
+```sh
+npm ci
+npm run verify
+npm run dev
+```
 
-- start with `Kind = friend` (skeleton); toggle `group` later for context
-- “degree range” filter (min 2–3) removes tails and reveals the core
-- “k‑core” (k=3→6) finds inner circles (mutually connected cliques)
-- gatekeepers: large betweenness nodes between different colors
-- leaders: isolate one color (partition filter) then size by degree
+The checks run TypeScript, Oxlint with anti-slop rules and a complexity limit, then domain and integration tests. Tests use real local HTTP fixtures and real filesystem storage. They do not need a Steam key or make Steam requests. CI runs on Linux, Windows, and macOS.
 
----
+`src/model.ts` owns settings and checkpoint schemas. `src/steam.ts` owns provider decoding, pacing, and retries. `src/scanner.ts` owns scanning and resume. `src/analysis.ts` owns deterministic reports. `src/storage.ts` owns atomic writes and path boundaries. The CLI and local server call that shared core. Browser responses use the shared schemas in `src/contracts.ts`.
+
+The product contract is in [docs/product-contract.md](docs/product-contract.md). Steam behavior follows the official [ISteamUser](https://partner.steamgames.com/doc/webapi/ISteamUser), [IPlayerService](https://partner.steamgames.com/doc/webapi/IPlayerService), and [Web API overview](https://partner.steamgames.com/doc/webapi_overview) documentation.
+
+See [verification results and browser screenshots](docs/verification.md) for the tested workflows and live-Steam verification limit.
 
 ## troubleshooting
 
-- forbidden / “verify key” → check `.env` contains a valid `STEAM_API_KEY`
-- gephi stuck at 0% → lower `max_nodes` (default 500), use `Kind=friend`
-- “ghost nodes” → we export clean edges; import nodes first, then edges
-- slow scans → reduce `depth`, ensure `rate_limit_rpm` ≥ 60
+- **Access denied:** check your API key. Group access may require publisher permissions.
+- **Private friend list:** Steam returns no accessible list. Vapora cannot bypass privacy settings.
+- **Failed scan:** fix the reported provider, disk-space, or permission issue and resume the saved run.
+- **Invalid checkpoint:** start a new run. Legacy Python checkpoints use a different format.
+- **Long scans:** reduce depth, the node cap, or optional library/group requests. Public data collection remains limited by the configured request rate.
+- **Port in use:** choose another port with `npm start -- serve --port 3001`.
 
----
-
-
-## faq
-
-- does this scrape?  
-  no, it uses the official web api; private data is skipped.
-
-- is this allowed?  
-  use a legitimate api key and respect rate limits; do not bypass restrictions.
-
----
-
-## license
-
-
-mit © microck — see [license](LICENSE)
-
-
-
+MIT. See [LICENSE](LICENSE).

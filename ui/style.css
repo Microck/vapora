@@ -1,0 +1,87 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #fff; background: #000; font-size: 14px; line-height: 1.5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+a { color: #8abfff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select, summary { font: inherit; }
+button, select, summary { cursor: pointer; }
+button { border: 1px solid #555; background: #000; color: #fff; padding: 8px 12px; min-height: 38px; }
+button:hover { background: #191919; border-color: #aaa; }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { color: #000; background: #fff; border-color: #fff; font-weight: 650; }
+input, select { width: 100%; background: #080808; color: #fff; border: 1px solid #555; padding: 8px; min-height: 38px; border-radius: 0; }
+input[type="checkbox"] { width: 16px; height: 16px; min-height: 0; accent-color: #8abfff; margin: 0; }
+input[type="file"] { max-width: 100%; }
+label { display: block; font-size: 12px; font-weight: 550; margin-bottom: 8px; }
+label input, label select { margin-top: 4px; }
+:focus-visible { outline: 2px solid #8abfff; outline-offset: 3px; }
+header { display: flex; align-items: baseline; gap: 24px; padding: 18px 24px; border-bottom: 1px solid #333; }
+.wordmark { font-size: 28px; font-weight: 750; color: #fff; letter-spacing: -1.5px; }
+.wordmark span { font-family: monospace; font-size: 11px; letter-spacing: 0; margin-left: 8px; color: #aaa; vertical-align: top; }
+#connection { margin-left: auto; color: #b5b5b5; font-family: monospace; font-size: 12px; }
+.workspace { display: grid; grid-template-columns: 310px minmax(0, 1fr); min-height: calc(100vh - 78px); }
+aside { border-right: 1px solid #333; padding: 24px; }
+main { padding: 28px 32px; min-width: 0; }
+h1 { font-size: 23px; letter-spacing: -.5px; margin: 0 0 18px; }
+aside h1 { font-size: 19px; }
+h2 { font-size: 16px; margin: 0 0 14px; }
+h3 { font-size: 15px; }
+p { margin: 10px 0; }
+section { margin-bottom: 30px; }
+aside section { border-top: 1px solid #333; padding-top: 22px; margin-top: 24px; margin-bottom: 0; }
+form > input, form > select { margin-bottom: 12px; }
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.check { display: flex; gap: 8px; align-items: center; min-height: 30px; margin: 0; }
+.hint { color: #b5b5b5; font-size: 12px; line-height: 1.6; }
+details { border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 10px 0; margin: 16px 0; }
+summary { margin-bottom: 6px; }
+.actions { display: flex; gap: 8px; }
+.actions > button:first-child { flex: 1; }
+#key-form { margin-bottom: 12px; }
+#profile-form { margin-top: 14px; }
+#notice { margin: 0; padding: 14px 24px; border-bottom: 1px solid #815d16; color: #ffce75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.section-line { display: flex; gap: 16px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.section-line h1, .section-line h2 { margin-bottom: 0; }
+.section-line > div { min-width: 0; }
+#report-name { overflow-wrap: anywhere; }
+#report-profile { font: 12px monospace; }
+dl { display: flex; flex-wrap: wrap; gap: 16px 36px; padding: 16px 0; border-top: 1px solid #333; border-bottom: 1px solid #333; }
+dl div { display: flex; flex-direction: column; }
+dt { color: #b5b5b5; font-size: 12px; }
+dd { font: 24px monospace; margin: 0; }
+#warnings p { font-size: 12px; color: #d6bc8a; margin: 5px 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid #333; margin: 24px 0; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; padding: 10px 16px; }
+.tabs [aria-current="page"] { border-bottom-color: #fff; }
+.search-label { margin-bottom: 0; max-width: 250px; }
+.table-wrap { overflow: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; white-space: nowrap; }
+th { color: #bbb; font-weight: 550; border-bottom: 1px solid #555; padding: 10px 12px; }
+td { border-bottom: 1px solid #252525; padding: 10px 12px; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { padding-left: 0; }
+tbody tr:hover { background: #0d0d0d; }
+td:first-child { white-space: normal; min-width: 180px; overflow-wrap: anywhere; }
+td small { color: #aaa; display: block; font: 10px monospace; margin-top: 3px; }
+#recent button { width: 100%; text-align: left; display: block; border: 0; border-bottom: 1px solid #333; padding: 10px 0; }
+#recent button[aria-current="true"] { color: #8abfff; }
+#recent small { display: block; color: #b5b5b5; font-size: 11px; }
+#empty { max-width: 600px; margin: 70px auto 100px; }
+.empty-mark { font-size: 90px; line-height: 1; letter-spacing: -8px; margin-bottom: 30px; }
+#empty h2 { font-size: 30px; letter-spacing: -.8px; }
+#empty p { max-width: 470px; }
+progress { width: 100%; height: 5px; accent-color: #8abfff; }
+#graph { width: 100%; height: min(60vh, 550px); min-height: 300px; border: 1px solid #333; background: #000; }
+#graph g[role="button"] { cursor: pointer; }
+#graph g[role="button"]:focus circle { stroke: #fff; stroke-width: 3; }
+.graph-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+#graph-count { margin-left: auto; font-size: 12px; color: #bbb; }
+#node-detail { padding: 12px 0; font-size: 12px; overflow-wrap: anywhere; }
+#downloads { display: grid; gap: 10px; padding: 10px 0; }
+#history-section { border-top: 1px solid #333; padding-top: 24px; }
+#history-form { max-width: 450px; }
+footer { border-top: 1px solid #333; padding: 20px 0; color: #b5b5b5; font-size: 12px; }
+.skip { position: fixed; top: -100px; left: 10px; z-index: 10; background: #000; padding: 10px; }
+.skip:focus { top: 10px; }
+@media (max-width: 900px) { .workspace { grid-template-columns: 270px minmax(0, 1fr); } aside { padding: 18px; } main { padding: 24px 18px; } }
+@media (max-width: 650px) { header { padding: 14px 16px; gap: 16px; } header > span:not(#connection) { display: none; } .workspace { display: block; } aside { border-right: 0; border-bottom: 1px solid #333; } main { padding: 24px 16px; } #empty { margin: 30px 0; } .section-line { align-items: start; flex-wrap: wrap; } .tabs button { padding: 10px 12px; } }
