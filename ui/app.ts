@@ -93,8 +93,9 @@ function renderTarget() {
   const seed = selected?.scan.seed;
   const target = inputs.target.value.trim();
   const matches = seed && (target === seed || target === `https://steamcommunity.com/profiles/${seed}` || target === `https://steamcommunity.com/profiles/${seed}/`);
-  get("target-name").textContent = matches ? selected?.scan.players.find((player) => player.id === seed)?.name ?? seed : "Ready to scan";
-  get("target-id").textContent = matches ? seed : "Profile name appears after scanning.";
+  get("target-name").textContent = matches ? selected?.scan.players.find((player) => player.id === seed)?.name ?? seed : "";
+  get("target-id").textContent = matches ? seed : "";
+  get("target-name").hidden = !matches; get("target-id").hidden = !matches;
 }
 function cell(row: HTMLTableRowElement, text: string | number) {
   const td = document.createElement("td"); td.textContent = String(text); row.append(td); return td;
@@ -143,7 +144,9 @@ function renderReport() {
     term.textContent = label; detail.textContent = String(value); group.append(term, detail); coverage.append(group);
   }
   const warnings = get("warnings"); warnings.replaceChildren();
-  for (const warning of [scan.error, ...report.warnings].filter(Boolean)) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
+  get("report-error").textContent = scan.error; get("report-error").hidden = !scan.error;
+  get("report-notes").hidden = !report.warnings.length;
+  for (const warning of report.warnings) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
   for (const file of downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log") exports.append(downloadLink(scan.id, file));
   renderFriends(); renderLocations(); renderGraph(); renderTarget();
@@ -224,8 +227,8 @@ function renderRecent() {
   if (!currentState?.runs.length && !currentState?.runIssues.length) { const p = document.createElement("p"); p.textContent = "No saved runs yet."; p.className = "hint"; recent.append(p); }
 }
 function renderProgress(state: Contracts.State) {
-    get("key-status").textContent = state.hasKey ? "Key available. Kept on the local server." : "Add a key to start scanning.";
-    get("key-indicator").textContent = state.hasKey ? "Key ready" : "API key required";
+    get("key-status").textContent = state.hasKey ? "Key set for this session." : "Key required.";
+    get("key-indicator").textContent = state.hasKey ? "Key ready" : "Key needed";
     get("key-indicator").dataset.key = state.hasKey ? "ready" : "missing";
     const running = state.job.status === "running";
     buttons("scan-button").disabled = running || !state.hasKey;

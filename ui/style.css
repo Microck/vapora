@@ -8,7 +8,7 @@
   --BevelLight: #808a75;
   --BevelDark: #282e22;
   --Rule: #5d6a53;
-  --OffWhite: #d8ded3;
+  --OffWhite: #fff;
   --Label: #c6d0bb;
   --Maize: #e0cf79;
   --MaizeBG: #91863c;
@@ -18,11 +18,11 @@
   --Mono: "Lucida Console", "Courier New", monospace;
   font: 12px/1.4 Tahoma, Verdana, "Segoe UI", sans-serif;
   color: var(--OffWhite);
-  background: var(--DarkGreenBG);
+  background: #000;
   scrollbar-color: var(--LightGreenBG) var(--DarkGreenBG);
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100svh; display: flex; flex-direction: column; }
+body { width: min(1000px, calc(100% - 24px)); margin: 12px auto; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Outset); }
 [hidden] { display: none !important; }
 ::selection { background: var(--MaizeBG); color: #fff; }
 h1, h2, p, dl, dd { margin: 0; }
@@ -71,8 +71,8 @@ legend, .panel-title { display: block; color: var(--Maize); font-size: 12px; fon
 .panel { min-width: 0; padding: 10px 12px 12px; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 
 /* Toolbar */
-.toolbar { display: flex; align-items: center; gap: 16px; min-height: 40px; padding: 4px 12px; background: var(--GreenBG); border-bottom: 1px solid var(--BevelDark); box-shadow: inset 0 1px var(--BevelLight); }
-.brand { display: block; flex: none; height: 32px; width: auto; }
+.toolbar { display: flex; align-items: center; gap: 20px; min-height: 72px; padding: 4px 12px; background: #000; border-bottom: 1px solid var(--BevelDark); box-shadow: inset 0 1px var(--BevelLight); }
+.brand { display: block; flex: none; width: 164px; height: auto; }
 .workspace-tabs { display: flex; gap: 4px; }
 .workspace-tabs button { min-width: 80px; min-height: 28px; font-weight: bold; }
 .key-status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -89,38 +89,38 @@ progress::-webkit-progress-value { background: var(--FullGreen); }
 progress::-moz-progress-bar { background: var(--FullGreen); }
 
 /* Scan screen: params and mode stacked left, utility rail middle, target right. */
-main { flex: 1; min-width: 0; padding: 12px; }
-.screen { max-width: 1180px; margin: 0 auto; }
-.scan-grid { display: grid; grid-template-columns: minmax(0, 1fr) 224px 320px; grid-template-areas: "form rail target"; gap: 12px; }
-#scan-form { grid-area: form; display: grid; grid-template-rows: auto 1fr; gap: 12px; min-width: 0; }
+main { min-width: 0; padding: 8px; }
+.screen { min-width: 0; }
+.scan-grid { display: grid; grid-template-columns: minmax(0, 1fr) 190px 260px; grid-template-areas: "form rail target"; gap: 8px; align-items: start; }
+#scan-form { grid-area: form; display: grid; grid-template-rows: auto auto; gap: 8px; min-width: 0; }
 .target-panel { grid-area: target; }
 .rail { grid-area: rail; }
-.params { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 28px; }
+.params { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; }
 .fields { display: grid; gap: 6px; align-content: start; }
 .field { display: grid; grid-template-columns: 88px auto; gap: 8px; align-items: center; }
 .field input { width: 88px; }
 #depth { width: 48px; }
 .signals { display: grid; gap: 2px; align-content: start; }
-.signals .hint { margin-top: 4px; }
 details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule); }
 .weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-top: 8px; }
 .weights label { display: grid; gap: 3px; color: var(--Label); font-size: 11px; }
+.output-files .output-tree { margin-top: 8px; }
 .mode-output { display: flex; flex-direction: column; gap: 6px; }
 .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 4px; }
 .segmented label { position: relative; }
 .segmented label + label { margin-left: -1px; }
 .segmented input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
-.segmented span { display: block; padding: 5px 6px; text-align: center; font-weight: bold; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); cursor: pointer; }
+.segmented span { display: block; height: 100%; padding: 5px 6px; text-align: center; font-weight: bold; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); cursor: pointer; }
 .segmented label:hover span { color: var(--Maize); }
 .segmented input:checked + span { color: var(--Maize); background: var(--DarkGreenBG); border-color: var(--Inset); }
 .segmented input:focus-visible + span { position: relative; z-index: 1; outline: 2px solid var(--Maize); outline-offset: 1px; }
-.output-tree { flex: 1; margin: 0; padding: 8px 10px; color: var(--Maize); background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); font: 11px/1.6 var(--Mono); overflow: auto; }
+.output-tree { margin: 0; padding: 8px 10px; color: var(--Maize); background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); font: 11px/1.45 var(--Mono); overflow: auto; }
 .target-panel { display: flex; flex-direction: column; gap: 6px; }
 .target-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
 .target-row label { font-weight: bold; }
-.identity { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 10px 0; text-align: center; }
+.identity { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 0; text-align: center; }
 .target-name { max-width: 100%; font-size: 16px; font-weight: bold; overflow-wrap: anywhere; }
-.avatar { display: block; width: 184px; height: 184px; margin-top: 8px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+.avatar { display: block; width: 128px; height: 128px; margin-top: 8px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 .target-actions { display: grid; justify-items: center; gap: 6px; }
 #scan-button { width: 100%; min-height: 30px; font-size: 13px; }
 #estimate-button { width: 72%; }
@@ -131,9 +131,9 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 .input-action { display: flex; gap: 4px; }
 .input-action > :first-child { flex: 1; width: 0; }
 .input-action button { padding-inline: 10px; }
-.rail-recent { flex: 1; grid-template-rows: auto minmax(0, 1fr); }
-/* contain: size stops a long run list from stretching the grid row; the list scrolls instead. */
-#recent { contain: size; min-height: 160px; overflow: auto; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+.rail-recent { grid-template-rows: auto auto; }
+/* Recent runs grow with their contents up to a bounded scrolling list. */
+#recent { max-height: 126px; overflow: auto; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 #recent > .hint { margin: 0; padding: 8px; }
 #recent button { display: block; width: 100%; min-height: 0; padding: 5px 8px; text-align: left; overflow-wrap: anywhere; background: transparent; border: 0; border-bottom: 1px solid var(--GreenBG); }
 #recent button:hover { background: var(--GreenBG); }
@@ -141,8 +141,8 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 #recent small { display: block; color: var(--Label); font-size: 11px; }
 
 /* Results */
-.empty-state { padding: 48px 16px; text-align: center; }
-.empty-state p { margin: 6px 0 12px; color: var(--Label); }
+.empty-state { padding: 16px; }
+.empty-state button { margin-top: 8px; }
 .report-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .report-heading > div { min-width: 0; }
 #report-name { overflow-wrap: anywhere; }
@@ -153,6 +153,7 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 #coverage div:last-child { border-right: 0; }
 dt { color: var(--Label); font-size: 11px; }
 dd { margin-top: 2px; color: var(--Maize); font-size: 18px; font-variant-numeric: tabular-nums; }
+#report-error { margin-top: 6px; color: var(--Maize); overflow-wrap: anywhere; }
 #warnings p { margin-top: 6px; color: var(--Maize); font-size: 11px; overflow-wrap: anywhere; }
 .tabs { display: flex; gap: 2px; margin: 12px 0 -1px; position: relative; }
 .tabs button { min-width: 72px; }
@@ -185,7 +186,6 @@ tbody tr:hover { background: var(--GreenBG); }
 
 /* History and connection */
 .page-heading { margin-bottom: 10px; }
-.page-heading p { margin-top: 2px; color: var(--Label); }
 .narrow-panel { max-width: 640px; }
 .narrow-panel > .hint { margin-top: 8px; }
 .stack-form { display: grid; justify-items: start; gap: 6px; max-width: 520px; }
@@ -197,15 +197,19 @@ tbody tr:hover { background: var(--GreenBG); }
 .statusbar { display: flex; justify-content: space-between; gap: 12px; padding: 4px 12px; color: var(--Label); font-size: 11px; background: var(--GreenBG); border-top: 1px solid var(--BevelLight); }
 #connection { color: var(--OffWhite); }
 
-@media (max-width: 1040px) {
-  .scan-grid { grid-template-columns: minmax(0, 1fr) 288px; grid-template-areas: "form target" "rail rail"; }
+@media (max-width: 940px) {
+  .scan-grid { grid-template-columns: minmax(0, 1fr) 260px; grid-template-areas: "form target" "rail rail"; }
   .rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-  #recent { contain: none; min-height: 0; max-height: 180px; }
+  #recent { max-height: 126px; }
   .avatar { width: 128px; height: 128px; }
 }
 @media (max-width: 720px) {
-  .toolbar { flex-wrap: wrap; gap: 8px; padding: 6px 8px; }
-  .brand { height: 28px; }
+  body { width: calc(100% - 16px); margin: 8px; }
+  .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 6px 8px; }
+  .brand { width: 144px; }
+  .workspace-tabs { grid-column: 1 / -1; grid-row: 2; }
+  .workspace-tabs button { flex: 1; min-width: 0; }
+  .key-status { align-items: end; flex-direction: column; gap: 2px; }
   main { padding: 8px; }
   .scan-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "form" "target" "rail"; gap: 8px; }
   #scan-form { gap: 8px; }

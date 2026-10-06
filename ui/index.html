@@ -46,7 +46,7 @@
               <div class="signals">
                 <label class="check"><input id="groups" type="checkbox">Link via shared groups</label>
                 <label class="check"><input id="games" type="checkbox">Link via shared games</label>
-                <p class="hint">Group lookup may require publisher access. Private friend lists stay unknown.</p>
+
               </div>
             </div>
             <details>
@@ -69,7 +69,7 @@
                 <label><input type="radio" name="preset" value="custom"><span>Custom</span></label>
               </div>
             </fieldset>
-            <h2 class="panel-title">Output</h2>
+            <details class="output-files"><summary>Output</summary>
             <pre class="output-tree">outputs/&lt;run-id&gt;/
 ├─ scan.json
 ├─ analysis.json
@@ -78,18 +78,19 @@
 │  ├─ nodes.csv
 │  └─ edges.csv
 └─ run.log</pre>
-            <p class="hint">Each scan writes its own folder. Cancelled scans save a checkpoint for resume.</p>
+            </details>
+
           </div>
         </form>
         <section class="panel target-panel" aria-label="Target profile">
           <div class="target-row">
             <label for="target">Target</label>
-            <input id="target" name="target" form="scan-form" placeholder="Profile URL, Steam ID, or vanity" required autocomplete="off" aria-describedby="target-help">
+            <input id="target" name="target" form="scan-form" placeholder="Profile URL, Steam ID, or vanity" required autocomplete="off" aria-describedby="target-help" title="Steam ID, profile URL, or vanity name">
           </div>
-          <p id="target-help" class="hint">SteamID64, SteamID2, [U:1:ID], or a community profile URL.</p>
+          <p id="target-help" class="sr-only">SteamID64, SteamID2, [U:1:ID], profile URL, or vanity name.</p>
           <div class="identity">
-            <p id="target-name" class="target-name">Ready to scan</p>
-            <p id="target-id" class="hint">Open a run for this SteamID64 to show its name.</p>
+            <p id="target-name" class="target-name" hidden></p>
+            <p id="target-id" class="hint" hidden></p>
             <img class="avatar" src="/placeholder.jpg" width="184" height="184" alt="Default profile placeholder">
           </div>
           <div class="target-actions">
@@ -118,7 +119,7 @@
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
       <section id="empty" class="panel empty-state">
         <h1>No run selected</h1>
-        <p>Open a recent run from the Scan tab, or start a new scan.</p>
+
         <button type="button" data-screen="scan" aria-controls="scan-screen">Go to Scan</button>
       </section>
       <section id="report" hidden>
@@ -128,7 +129,8 @@
         </div>
         <p id="report-status" class="hint"></p>
         <dl id="coverage"></dl>
-        <div id="warnings"></div>
+        <p id="report-error" role="alert" hidden></p>
+        <details id="report-notes"><summary>Scan notes</summary><div id="warnings"></div></details>
         <nav class="tabs" aria-label="Report views">
           <button type="button" data-view="friends" aria-current="page">Friends</button>
           <button type="button" data-view="network">Network</button>
@@ -139,31 +141,31 @@
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
           <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
           <p id="friend-empty" class="hint" hidden>No friends match this filter.</p>
-          <p class="hint">Evidence is relative to the highest observed score. Missing signals stay unknown.</p>
+          <details><summary>About scores</summary><p class="hint">Relative evidence, not a friendship probability. Missing signals stay unknown.</p></details>
         </section>
         <section id="network-view" class="view" hidden>
           <div class="section-line"><h2>Friendship network</h2><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
           <div class="graph-toolbar"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-reset" type="button">Reset view</button><span id="graph-count"></span></div>
           <svg id="graph" viewBox="0 0 1000 650" role="group" aria-label="Interactive friendship network"></svg>
           <div id="node-detail" role="status">Select a node.</div>
-          <p class="hint">Select a node to inspect it. Colors identify communities; exports include every connection.</p>
+
         </section>
         <section id="locations-view" class="view" hidden>
           <h2>Self-reported location signals</h2>
           <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div>
           <p id="location-empty" class="hint" hidden>No admitted friends expose location fields.</p>
-          <p class="hint">Weighted shares among observed friends. Steam location codes do not verify residence.</p>
+          <details><summary>About locations</summary><p class="hint">Self-reported Steam codes, weighted among observed friends. They do not verify residence.</p></details>
         </section>
         <section id="exports-view" class="view" hidden>
           <h2>Run exports</h2>
           <div id="downloads" class="file-list"></div>
-          <p class="hint">In Gephi, import nodes.csv as nodes, then edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p>
+          <details><summary>Gephi import</summary><p class="hint">Import nodes.csv as nodes and edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p></details>
         </section>
       </section>
     </section>
 
     <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
-      <div class="page-heading"><h1 id="history-heading">SteamHistory import</h1><p>Analyze friendship duration from a saved history file.</p></div>
+      <div class="page-heading"><h1 id="history-heading">SteamHistory</h1></div>
       <section id="history-section">
         <fieldset class="panel narrow-panel">
           <legend>Import history</legend>
@@ -173,7 +175,7 @@
             <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
             <button type="submit">Analyze history</button>
           </form>
-          <p class="hint">Normalized JSON or NDJSON. Duration stays separate from network evidence.</p>
+          <details><summary>File format</summary><p class="hint">Normalized JSON or NDJSON with steamID64, lastChecked and historic.friends.</p></details>
         </fieldset>
         <div id="history-result" hidden>
           <h2 id="history-name"></h2><p id="history-warning" class="hint"></p><a id="history-download" hidden>Download history.json</a>
@@ -183,19 +185,19 @@
     </section>
 
     <section id="settings-screen" class="screen" aria-labelledby="connection-heading" hidden>
-      <div class="page-heading"><h1 id="connection-heading">Steam connection</h1><p>Use your Web API key for this local session.</p></div>
+      <div class="page-heading"><h1 id="connection-heading">Steam API key</h1></div>
       <fieldset class="panel narrow-panel">
-        <legend>API key</legend>
+        <legend class="sr-only">API key</legend>
         <p id="key-status" class="hint" role="status">Checking key status</p>
         <form id="key-form" class="stack-form">
           <label for="key">Steam Web API key</label>
           <input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required>
-          <button type="submit">Use key for this session</button>
+          <button type="submit">Use key</button>
         </form>
-        <p class="hint"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a> Kept on the local server. Never included in reports or exports.</p>
+        <p class="hint"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a></p>
       </fieldset>
     </section>
   </main>
-  <footer class="statusbar"><span id="connection" role="status">Connecting</span><span>Public Steam data. Heuristic scores. Scans and exports stay on this machine.</span></footer>
+  <footer class="statusbar"><span id="connection" role="status">Connecting</span></footer>
 </body>
 </html>
