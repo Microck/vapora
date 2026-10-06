@@ -33,9 +33,10 @@ jobs:
         shell: pwsh
         run: |
           $installer = Get-Item release/*.exe
-          $destination = "$env:RUNNER_TEMP/vapora-installed"
+          $destination = Join-Path $env:RUNNER_TEMP 'vapora-installed'
           $process = Start-Process $installer.FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
+          Get-Item "$destination\Vapora.exe", "$destination\resources\app.asar"
           "VAPORA_DESKTOP=$destination/Vapora.exe" >> $env:GITHUB_ENV
           "VAPORA_DESKTOP_ASAR=$destination/resources/app.asar" >> $env:GITHUB_ENV
       - name: Extract the Linux download
