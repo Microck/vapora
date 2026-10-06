@@ -32,7 +32,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $installer = Get-Item release/*.exe
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $installer = Get-Item "release/vapora-$version-win-x64.exe"
           $destination = Join-Path $env:RUNNER_TEMP 'vapora-installed'
           $process = Start-Process $installer.FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
@@ -62,6 +63,15 @@ jobs:
       - name: Test the packaged Windows/macOS app
         if: runner.os != 'Linux'
         run: npm run test:desktop
+      - name: Test the Windows portable download
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $portable = Get-Item release/*-portable.exe
+          $env:VAPORA_DESKTOP = $portable.FullName
+          $env:VAPORA_DESKTOP_ASAR = Join-Path $env:GITHUB_WORKSPACE 'release/win-unpacked/resources/app.asar'
+          $env:VAPORA_TEST_PORTABLE = '1'
+          npm run test:desktop
       - name: Unmount the macOS download
         if: always() && runner.os == 'macOS'
         run: hdiutil detach "$RUNNER_TEMP/vapora-dmg"

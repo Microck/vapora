@@ -25,7 +25,7 @@ Map a Steam user's friend network, inspect communities and public profile signal
 4. Run `npm start -- serve` for the browser, or `npm run desktop` for Electron.
 5. Enter your key using the toolbar key button, choose a target and scan settings, then **Analyze**.
 
-This is Vapora 2, the TypeScript + Effect app. The original Python code and `1.0.2` Windows executable remain on the [legacy branch](https://github.com/Microck/vapora/tree/legacy) and [old release](https://github.com/Microck/vapora/releases/tag/1.0.2). Current desktop launches use Electron from source.
+This is Vapora 2, the TypeScript + Effect app. The original Python code and `1.0.2` Windows executable remain on the [legacy branch](https://github.com/Microck/vapora/tree/legacy) and [old release](https://github.com/Microck/vapora/releases/tag/1.0.2). Current desktop downloads bundle Electron; source launches remain available.
 
 ## features
 
@@ -51,11 +51,11 @@ The screenshots use fixture profiles. See [verification results](docs/e2e-verifi
 
 Desktop packages bundle Electron and the app, so they do not need Node.js. Choose the file for your operating system and architecture from the [release attachments](https://github.com/Microck/vapora/releases).
 
-- Windows: run the `.exe` installer.
+- Windows: run the `.exe` installer, or open `*-portable.exe` without installing. Keep the portable EXE in a writable folder.
 - Linux: make the `.AppImage` executable and open it. AppImage needs FUSE; on hosts without FUSE, use `--appimage-extract-and-run`.
 - macOS: open the `.dmg` and drag Vapora into Applications.
 
-Downloads are not signed with a publisher certificate. Windows may show a SmartScreen warning; macOS may require approval in Privacy & Security. Verify the source and release checks before approving a download. The `2.0.0` release has source archives only; desktop attachments start with the next patch release.
+Downloads are not signed with a publisher certificate. Windows may show a SmartScreen warning; macOS may require approval in Privacy & Security. Verify the source and release checks before approving a download. Desktop attachments are available from `2.0.1`; the Windows portable EXE is available from `2.0.2`.
 
 ### from source
 
@@ -70,7 +70,7 @@ Enter your API key in the app for the current session, or copy `.env.example` to
 
 Source launches download Electron's native binary on first launch. Linux needs a graphical desktop and GTK/NSS libraries. Windows source installs need the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
 
-Core and CLI checks passed on Linux, Windows and macOS CI, with browser E2E on Linux. Native Electron workflows passed on Linux and macOS. The desktop workflow builds native downloads and tests the installed or extracted app before saving artifacts; see each release's checks for its verified platforms.
+Core and CLI checks passed on Linux, Windows and macOS CI, with browser E2E on Linux. Native packaged Electron checks run on Linux, Windows and macOS. The desktop workflow builds native downloads and tests the installed or extracted app before saving artifacts; see each release's checks for its verified platforms.
 
 ## quickstart
 
@@ -94,7 +94,7 @@ npm run desktop
 
 The same app runs in a native Electron window. Window buttons minimize, maximize/restore and close it. **Open output folder** opens the selected run directory or the outputs root. Closing an active scan saves a resumable checkpoint.
 
-Browser and CLI data default to the working directory; use `--root DIRECTORY` to choose another location. Desktop data defaults to the OS app-data directory under `Vapora`; set `VAPORA_ROOT` to choose its location. Use the same root to share runs between launches, with one process operating on a saved run at a time.
+Browser and CLI data default to the working directory; use `--root DIRECTORY` to choose another location. Installed desktop data defaults to the OS app-data directory under `Vapora`. The Windows portable EXE stores runs, settings and session files in `Vapora-data` beside the EXE. Move that folder together with the EXE to keep your saved runs. Set `VAPORA_ROOT` to choose another desktop data location. Use the same root to share runs between launches, with one process operating on a saved run at a time.
 
 ### command line
 
@@ -239,7 +239,7 @@ npm run dev
 
 `verify` checks types, Oxlint, build and 15 domain/integration tests. The browser E2E suite needs installed Chrome/Chromium and checks real HTTP fixtures, persistence and downloads. These tests do not use a Steam key. CI runs core checks on Linux, Windows and macOS, plus browser E2E on Linux.
 
-`package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
+`package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Windows CI also launches the actual portable EXE, moves it with its data, reopens the saved run and downloads its exports again. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
 
 The app shares its scanner, analysis and storage across CLI, browser and desktop. See the [product contract](docs/product-contract.md), [E2E report](docs/e2e-verification.md) and [release runbook](docs/release-runbook.md). Live Steam verification is currently bounded to five accounts; it does not establish large-network behavior.
 

@@ -1,17 +1,55 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { Schema } from "effect";
+import { State } from "../src/contracts.js";
 import { listPackage } from "@electron/asar";
 import puppeteer from "puppeteer-core";
-import type { Browser } from "puppeteer-core";
 import { key, seed, steamFixture, userAgent } from "./fixtures.js";
 
+// Portable NSIS launchers do not relay Electron stderr. Chromium writes this endpoint
+// into the real session directory, so every distribution uses the same startup check.
+async function launchDesktop(shutdown: (() => Promise<void>)[], executable: string, dataRoot: string, fixtureUrl: string, portable: boolean) {
+  await rm(join(dataRoot, "DevToolsActivePort"), { force: true });
+  const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: key, VAPORA_STEAM_FIXTURE: fixtureUrl };
+  delete env.PORTABLE_EXECUTABLE_DIR;
+  if (portable) delete env.VAPORA_ROOT; else env.VAPORA_ROOT = dataRoot;
+  const args = ["--remote-debugging-port=0"];
+  // Sandbox restrictions on CI hosts must not change the distributed app's defaults.
+  if (process.platform === "linux") args.push("--no-sandbox", "--disable-dev-shm-usage");
+  const child = spawn(executable, args, { cwd: tmpdir(), env, stdio: ["ignore", "pipe", "pipe"] });
+  const exited = once(child, "exit");
+  let output = "";
+  child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  shutdown.push(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await exited;
+  });
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
+    const activePort = await readFile(join(dataRoot, "DevToolsActivePort"), "utf8").catch((error: Error) => {
+      if (!("code" in error) || error.code !== "ENOENT") throw error;
+      return "";
+    });
+    const endpoint = /^(\d+)\r?\n(\/devtools\/browser\/[^\s]+)/.exec(activePort);
+    if (endpoint) {
+      const browser = await puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${endpoint[1]}${endpoint[2]}`, defaultViewport: null });
+      shutdown.push(async () => { if (browser.connected) await browser.close(); });
+      return { browser, exited };
+    }
+    await delay(100);
+  }
+  throw new Error(`Packaged app did not start: ${output}`);
+}
+
 // Run the actual packaged executable from a fresh directory, without a Node launcher.
-// CI supplies an installed NSIS app, extracted AppImage or mounted DMG executable.
+// CI supplies an installed NSIS app, portable launcher, extracted AppImage or mounted DMG.
 test("packaged desktop includes its assets and completes a scan with real fixture HTTP", { timeout: 120000 }, async (context) => {
   const executable = process.env.VAPORA_DESKTOP;
   const archive = process.env.VAPORA_DESKTOP_ASAR;
@@ -22,40 +60,20 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   }
   assert.ok(!packagedFiles.some((name) => /\/(?:\.env|test|outputs|profiles)(?:\/|$)/.test(name)));
   assert.ok(!packagedFiles.includes("/node_modules/puppeteer-core/package.json"));
-  const root = await mkdtemp(join(tmpdir(), "vapora-packaged-e2e-"));
+  const portable = process.env.VAPORA_TEST_PORTABLE === "1";
+  const root = await mkdtemp(join(tmpdir(), "vapora packaged e2e-"));
   const fixture = await steamFixture();
-  const args = ["--remote-debugging-port=0"];
-  // Sandbox restrictions on CI hosts must not change the distributed app's defaults.
-  if (process.platform === "linux") args.push("--no-sandbox", "--disable-dev-shm-usage");
-  const child = spawn(resolve(executable), args, {
-    cwd: root, env: { ...process.env, STEAM_API_KEY: key, VAPORA_ROOT: root, VAPORA_STEAM_FIXTURE: fixture.url },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const exited = once(child, "exit");
-  let browser: Browser | undefined;
+  const dataRoot = portable ? join(root, "Vapora-data") : root;
+  const launchPath = portable ? join(root, "Vapora portable.exe") : resolve(executable);
+  if (portable) await copyFile(resolve(executable), launchPath);
+  const shutdown: (() => Promise<void>)[] = [
+    () => rm(root, { recursive: true, force: true }), () => fixture.close(),
+  ];
   context.after(async () => {
-    try {
-      if (child.exitCode === null && child.signalCode === null) child.kill();
-      await exited;
-    } finally {
-      browser?.disconnect();
-      await fixture.close();
-      await rm(root, { recursive: true, force: true });
-    }
+    // Stop native processes before removing their session files, including on failed assertions.
+    for (const close of shutdown.reverse()) await close();
   });
-  let output = "";
-  const endpoint = await new Promise<string>((accept, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Packaged app did not start: ${output}`)), 30000);
-    const collect = (chunk: Buffer) => {
-      output += chunk.toString();
-      const match = /DevTools listening on (ws:\/\/[^\s]+)/.exec(output);
-      if (match?.[1]) { clearTimeout(timeout); accept(match[1]); }
-    };
-    child.stdout.on("data", collect); child.stderr.on("data", collect);
-    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
-    child.once("exit", (code) => { clearTimeout(timeout); reject(new Error(`Packaged app exited ${code}: ${output}`)); });
-  });
-  browser = await puppeteer.connect({ browserWSEndpoint: endpoint, defaultViewport: null });
+  const { browser, exited } = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable);
   const target = await browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
   const page = await target.page(); assert.ok(page);
   await page.setUserAgent(userAgent);
@@ -105,6 +123,11 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength);
   }
   const state = await (await fetch(origin + "/api/state", { headers: { "user-agent": userAgent } })).text();
+  const saved = Schema.decodeUnknownSync(Schema.fromJsonString(State))(state);
+  const run = saved.runs[0]; assert.ok(run);
+  assert.equal(run.status, "complete");
+  const checkpoint = await readFile(join(dataRoot, "outputs", run.id, "scan.json"));
+  assert.ok(!checkpoint.includes(Buffer.from(key)));
   assert.ok(!state.includes(key)); assert.ok(fixture.requests.length > 0);
   if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT });
   await page.evaluate(async () => {
@@ -116,7 +139,30 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   await page.evaluate(() => { void window.vaporaDesktop?.close(); }).catch((error: Error) => {
     if (!error.message.includes("Target closed")) throw error;
   });
-  const [exitCode] = await exited; assert.equal(exitCode, 0, output);
+  const [exitCode] = await exited; assert.equal(exitCode, 0);
   await assert.rejects(fetch(origin + "/api/state", { headers: { "user-agent": userAgent } }));
   assert.ok(!(await readFile(resolve(archive))).includes(Buffer.from(key)));
+  if (portable) {
+    // The launcher cleans up its extracted binaries. Persistent data must survive a move.
+    const moved = join(root, "moved portable folder"); await mkdir(moved);
+    const movedExecutable = join(moved, "Vapora portable.exe");
+    await rename(launchPath, movedExecutable);
+    await rename(dataRoot, join(moved, "Vapora-data"));
+    const requestsBeforeReopen = fixture.requests.length;
+    const reopened = await launchDesktop(shutdown, movedExecutable, join(moved, "Vapora-data"), fixture.url, true);
+    const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
+    const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
+    await reopenedPage.waitForFunction(() => document.body.classList.contains("desktop"));
+    const movedOrigin = new URL(reopenedPage.url()).origin;
+    const movedState = Schema.decodeUnknownSync(State)(await (await fetch(movedOrigin + "/api/state", { headers: { "user-agent": userAgent } })).json());
+    assert.equal(movedState.runs[0]?.id, run.id);
+    assert.equal(movedState.runs[0]?.status, "complete");
+    for (const link of downloadLinks) {
+      const response = await fetch(movedOrigin + new URL(link).pathname, { headers: { "user-agent": userAgent } });
+      assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength);
+    }
+    assert.equal(fixture.requests.length, requestsBeforeReopen, "Reopening saved portable data must not repeat Steam collection");
+    await reopened.browser.close();
+    const [movedExitCode] = await reopened.exited; assert.equal(movedExitCode, 0);
+  }
 });

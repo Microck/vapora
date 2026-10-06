@@ -10,12 +10,15 @@ import { start } from "../dist/src/server.js";
 
 if (existsSync(".env")) loadEnvFile(".env");
 app.setName("Vapora");
-const desktopRoot = resolve(process.env.VAPORA_ROOT ?? join(app.getPath("appData"), "Vapora"));
+// The portable launcher extracts binaries into TEMP; data belongs beside the original EXE.
+const desktopRoot = resolve(process.env.VAPORA_ROOT ?? (process.env.PORTABLE_EXECUTABLE_DIR
+  ? join(process.env.PORTABLE_EXECUTABLE_DIR, "Vapora-data")
+  : join(app.getPath("appData"), "Vapora")));
 await mkdir(desktopRoot, { recursive: true, mode: 0o700 });
 app.setPath("userData", desktopRoot);
 app.setPath("sessionData", desktopRoot);
 async function launch() {
-  const root = resolve(process.env.VAPORA_ROOT ?? app.getPath("userData"));
+  const root = desktopRoot;
   const key = Redacted.value(await Effect.runPromise(Config.Redacted("STEAM_API_KEY").pipe(Config.withDefault(Redacted.make("")))));
   const options = { root, key, port: 0 };
   // Development fixtures stay opt-in and loopback-only, sharing the browser server's test transport.
