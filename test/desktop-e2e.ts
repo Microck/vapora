@@ -94,7 +94,11 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     const response = await fetch(origin + asset, { headers: { "user-agent": userAgent } });
     assert.equal(response.status, 200, asset); assert.ok((await response.arrayBuffer()).byteLength);
   }
-  await page.type("#target", seed);
+  // A visible native window can still be waiting for focus from the window manager.
+  await page.waitForFunction(() => document.hasFocus());
+  await page.click("#target");
+  await page.waitForFunction(() => document.activeElement?.id === "target");
+  await page.keyboard.type(seed);
   assert.equal(await page.$eval("#target", (input) => {
     if (!(input instanceof HTMLInputElement)) throw new Error("Expected target field");
     return input.value;
