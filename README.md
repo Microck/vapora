@@ -20,7 +20,7 @@ Open the local URL printed in the terminal. The server binds to `127.0.0.1`; use
 
 Run it on a trusted local machine. Native programs and other accounts on that machine can access the session. Host and Origin checks protect against cross-origin browser requests.
 
-Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Open **Connection** and enter it for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
+Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Open **API key** and enter it for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
 In **Scan**, choose a target, preset, and optional signals, then scan. Completed and saved runs open in **Results**. Import normalized history files in **History**. Switching views keeps your inputs; active progress and cancellation remain visible across views. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
 

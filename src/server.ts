@@ -20,6 +20,15 @@ const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
 const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)) });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
+// Only bundled UI assets are public. Never resolve request paths against the filesystem.
+const files = new Map([
+  ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
+  ["/app.js", { name: "app.js", type: "text/javascript; charset=utf-8" }],
+  ["/style.css", { name: "style.css", type: "text/css; charset=utf-8" }],
+  ["/vapora.png", { name: "vapora.png", type: "image/png" }],
+  ["/vapora.ico", { name: "vapora.ico", type: "image/x-icon" }],
+  ["/placeholder.jpg", { name: "placeholder.jpg", type: "image/jpeg" }],
+]);
 
 async function body(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -117,11 +126,10 @@ export async function start(options: Options) {
       response.end(contents);
       return;
     }
-    const files = new Map([["/", "index.html"], ["/app.js", "app.js"], ["/style.css", "style.css"]]);
     const file = files.get(url.pathname);
     if (!file) { json(response, 404, { error: "Page not found." }); return; }
-    const contents = await readFile(fileURLToPath(new URL(`../ui/${file}`, import.meta.url)));
-    response.writeHead(200, { "content-type": file.endsWith(".js") ? "text/javascript; charset=utf-8" : file.endsWith(".css") ? "text/css; charset=utf-8" : "text/html; charset=utf-8" });
+    const contents = await readFile(fileURLToPath(new URL(`../ui/${file.name}`, import.meta.url)));
+    response.writeHead(200, { "content-type": file.type });
     response.end(contents);
   }
   async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {

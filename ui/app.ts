@@ -29,12 +29,19 @@ const inputs = {
   mutual: control("mutualWeight"), jaccard: control("jaccardWeight"), groupWeight: control("groupWeight"), gameWeight: control("gameWeight"),
   key: control("key"), name: control("profile-name"), search: control("friend-search"), file: control("history-file"), attach: control("attach-history"),
 };
-const preset = select("preset"); const profiles = select("profiles"); const edgeKind = select("edge-kind");
+const profiles = select("profiles"); const edgeKind = select("edge-kind");
+const Preset = Schema.Literals(["community", "inner", "custom"]);
+const presetRadios = [...get("preset").querySelectorAll<HTMLInputElement>('input[name="preset"]')];
+function setPreset(value: typeof Preset.Type) {
+  for (const radio of presetRadios) radio.checked = radio.value === value;
+}
 let selected: Contracts.RunView | null = null;
+// Only replace a target with its resolved seed while the submitted text is still unchanged.
+let linkedTarget = "";
 let currentState: Contracts.State | null = null;
 let recentSignature = "";
 let profileSignature = "";
-let lastJob = "";
+let lastJob: string | null = null;
 let selectedNode: SteamId | null = null;
 let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -75,10 +82,19 @@ const readSettings = () => Schema.decodeUnknownSync(Settings)({
   weights: { mutual: inputs.mutual.valueAsNumber, jaccard: inputs.jaccard.valueAsNumber, groups: inputs.groupWeight.valueAsNumber, games: inputs.gameWeight.valueAsNumber },
 });
 function applySettings(settings: Settings) {
+  get("estimate-result").textContent = "";
   inputs.depth.value = String(settings.depth); inputs.nodes.value = String(settings.maxNodes); inputs.rpm.value = String(settings.requestsPerMinute);
   inputs.groups.checked = settings.includeGroups; inputs.games.checked = settings.includeGames; inputs.hub.value = String(settings.hubPercentile);
   inputs.mutual.value = String(settings.weights.mutual); inputs.jaccard.value = String(settings.weights.jaccard);
   inputs.groupWeight.value = String(settings.weights.groups); inputs.gameWeight.value = String(settings.weights.games);
+}
+/** Display only an identity from a matching saved run. The image remains a placeholder. */
+function renderTarget() {
+  const seed = selected?.scan.seed;
+  const target = inputs.target.value.trim();
+  const matches = seed && (target === seed || target === `https://steamcommunity.com/profiles/${seed}` || target === `https://steamcommunity.com/profiles/${seed}/`);
+  get("target-name").textContent = matches ? selected?.scan.players.find((player) => player.id === seed)?.name ?? seed : "Ready to scan";
+  get("target-id").textContent = matches ? seed : "Profile name appears after scanning.";
 }
 function cell(row: HTMLTableRowElement, text: string | number) {
   const td = document.createElement("td"); td.textContent = String(text); row.append(td); return td;
@@ -130,7 +146,7 @@ function renderReport() {
   for (const warning of [scan.error, ...report.warnings].filter(Boolean)) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
   for (const file of downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log") exports.append(downloadLink(scan.id, file));
-  renderFriends(); renderLocations(); renderGraph();
+  renderFriends(); renderLocations(); renderGraph(); renderTarget();
 }
 function inspectNode(id: SteamId) {
   selectedNode = id;
@@ -157,7 +173,7 @@ function renderGraph() {
     const from = positions.get(edge.source); const to = positions.get(edge.target); if (!from || !to) continue;
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y)); line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
-    line.setAttribute("stroke", edge.kind === "friend" ? "#758666" : "#9a895b"); graph.append(line);
+    line.setAttribute("stroke", edge.kind === "friend" ? "#879b76" : "#aa9767"); graph.append(line);
   }
   const colors = ["#8abfff", "#a8dba8", "#e9b9e8", "#eed68b", "#99d9d9", "#e6ad95"];
   for (const metric of metrics) {
@@ -181,6 +197,8 @@ function renderGraph() {
 }
 async function openRun(id: string, navigation = navigationVersion) {
   selected = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
+  const typed = inputs.target.value.trim();
+  if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
   selectedNode = null; zoom = 1; get("node-detail").textContent = "Select a node.";
   location.hash = id; renderReport(); renderRecent();
   // A report response must not override a navigation choice made while it loaded.
@@ -231,13 +249,15 @@ async function refresh() {
     const signature = JSON.stringify(currentState.profiles);
     if (signature !== profileSignature) {
       profileSignature = signature; const value = profiles.value;
-      profiles.replaceChildren(new Option("Choose a saved profile", ""), ...currentState.profiles.map((name) => new Option(name, name))); profiles.value = value;
+      profiles.replaceChildren(new Option("Choose profile", ""), ...currentState.profiles.map((name) => new Option(name, name))); profiles.value = value;
     }
     const job = currentState.job;
-    // Run IDs can be absent or reused. Deduplicate terminal results by operation identity.
-    const terminal = `${job.operationId}:${job.status}`;
-    if (job.status !== "running" && job.status !== "idle" && terminal !== lastJob) {
-      lastJob = terminal;
+    // A startup snapshot is not a new result. Observe transitions by operation identity,
+    // so a historical job cannot replace the saved run requested in the URL.
+    const version = `${job.operationId}:${job.status}`;
+    const changed = lastJob !== null && version !== lastJob;
+    lastJob = version;
+    if (job.status !== "running" && job.status !== "idle" && changed) {
       if (job.id) await openRun(job.id, navigation);
       if (job.error) notice(job.error);
     }
@@ -251,7 +271,8 @@ async function refresh() {
 
 get("scan-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   buttons("scan-button").disabled = true;
-  try { await api("/api/scan", Contracts.Ok, { target: inputs.target.value, settings: readSettings() }); }
+  const target = inputs.target.value;
+  try { await api("/api/scan", Contracts.Ok, { target, settings: readSettings() }); linkedTarget = target.trim(); }
   finally { await refresh(); }
 }); });
 buttons("estimate-button").addEventListener("click", () => task(async () => {
@@ -261,8 +282,14 @@ buttons("estimate-button").addEventListener("click", () => task(async () => {
     get("estimate-result").textContent = estimate.available ? `${estimate.directFriends} direct friends · approximately ${estimate.estimatedNodes} admitted nodes · ${estimate.sampleSize} public samples. ${estimate.note ?? ""}` : "The friend list is private or unavailable. No estimate is possible.";
   } finally { await refresh(); }
 }));
-preset.addEventListener("change", () => { if (preset.value === "inner" || preset.value === "community") applySettings(presets[preset.value]); });
-get("scan-form").addEventListener("input", (event) => { if (event.target !== inputs.target) preset.value = "custom"; });
+get("preset").addEventListener("change", (event) => {
+  if (!(event.target instanceof HTMLInputElement)) return;
+  const value = Schema.decodeUnknownSync(Preset)(event.target.value);
+  if (value !== "custom") applySettings(presets[value]);
+});
+// Radio input fires before change. Only edits to settings select Custom.
+get("scan-form").addEventListener("input", (event) => { get("estimate-result").textContent = ""; if (!presetRadios.some((radio) => radio === event.target)) setPreset("custom"); });
+inputs.target.addEventListener("input", () => { get("estimate-result").textContent = ""; renderTarget(); });
 get("key-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   await api("/api/key", Contracts.Ok, { key: inputs.key.value }); inputs.key.value = ""; await refresh();
 }); });
@@ -271,7 +298,7 @@ get("profile-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 buttons("load-profile").addEventListener("click", () => task(async () => {
   if (!profiles.value) throw new Error("Choose a saved profile first.");
-  applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); preset.value = "custom";
+  applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); setPreset("custom");
 }));
 buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
 buttons("resume-button").addEventListener("click", () => task(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
@@ -307,5 +334,6 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 window.addEventListener("focus", () => void refresh());
 applySettings(defaults);
+renderTarget();
 const initialNavigation = navigationVersion;
 void refresh().then(() => { const id = location.hash.slice(1); if (id && !selected) task(() => openRun(id, initialNavigation)); });
