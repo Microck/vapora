@@ -88,20 +88,36 @@ function applySettings(settings: Settings) {
   inputs.mutual.value = String(settings.weights.mutual); inputs.jaccard.value = String(settings.weights.jaccard);
   inputs.groupWeight.value = String(settings.weights.groups); inputs.gameWeight.value = String(settings.weights.games);
 }
-/** Display only an identity from a matching saved run. The image remains a placeholder. */
+/** A missing or failed Steam image keeps the same square placeholder, without repeated retries. */
+function setAvatar(image: HTMLImageElement, url: string | null) {
+  image.onerror = url ? () => { image.onerror = null; image.src = "/placeholder.jpg"; } : null;
+  image.referrerPolicy = "no-referrer"; image.alt = ""; image.src = url ?? "/placeholder.jpg";
+}
+function avatarImage(url: string | null) {
+  const image = document.createElement("img"); image.className = "profile-avatar"; image.width = 24; image.height = 24;
+  setAvatar(image, url); return image;
+}
+function profileImage(id: string, url: string | null) {
+  const image = get(id);
+  if (!(image instanceof HTMLImageElement)) throw new Error(`Expected image: ${id}`);
+  setAvatar(image, url);
+}
+/** Clear the identity immediately when the target no longer matches the selected run. */
 function renderTarget() {
   const seed = selected?.scan.seed;
   const target = inputs.target.value.trim();
   const matches = seed && (target === seed || target === `https://steamcommunity.com/profiles/${seed}` || target === `https://steamcommunity.com/profiles/${seed}/`);
-  get("target-name").textContent = matches ? selected?.scan.players.find((player) => player.id === seed)?.name ?? seed : "";
+  const player = matches ? selected?.scan.players.find((player) => player.id === seed) : undefined;
+  get("target-name").textContent = matches ? player?.name ?? seed : "";
+  profileImage("target-avatar", player?.avatar ?? null);
   get("target-id").textContent = matches ? seed : "";
   get("target-name").hidden = !matches; get("target-id").hidden = !matches;
 }
 function cell(row: HTMLTableRowElement, text: string | number) {
   const td = document.createElement("td"); td.textContent = String(text); row.append(td); return td;
 }
-function playerCell(row: HTMLTableRowElement, id: SteamId, name: string) {
-  const td = cell(row, ""); const link = document.createElement("a"); link.textContent = name;
+function playerCell(row: HTMLTableRowElement, id: SteamId, name: string, avatar: string | null) {
+  const td = cell(row, ""); const link = document.createElement("a"); link.className = "player-link"; link.append(avatarImage(avatar), document.createTextNode(name));
   link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
   link.title = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
 }
@@ -110,8 +126,9 @@ function renderFriends() {
   const rows = get("friend-rows"); rows.replaceChildren();
   const query = inputs.search.value.toLowerCase().trim();
   const friends = selected?.report.friends.filter((friend) => friend.name.toLowerCase().includes(query) || friend.id.includes(query)) ?? [];
+  const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
   for (const friend of friends) {
-    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name);
+    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
     cell(row, `${friend.evidenceScore.toFixed(1)} / 100`); cell(row, friend.mutual); cell(row, number(friend.jaccard, 3));
     cell(row, number(friend.sharedGroups)); cell(row, number(friend.sharedGames)); cell(row, friend.friendsStatus); rows.append(row);
   }
@@ -134,7 +151,9 @@ function renderReport() {
   if (!selected) return;
   const { scan, report } = selected;
   get("empty").hidden = true; get("report").hidden = false;
-  get("report-name").textContent = scan.players.find((player) => player.id === scan.seed)?.name ?? scan.seed;
+  const target = scan.players.find((player) => player.id === scan.seed);
+  get("report-name").textContent = target?.name ?? scan.seed;
+  profileImage("report-avatar", target?.avatar ?? null);
   const profile = get("report-profile"); profile.setAttribute("href", `https://steamcommunity.com/profiles/${scan.seed}/`); profile.textContent = "Steam profile ↗";
   profile.title = `Steam ID ${scan.seed}`;
   get("report-status").textContent = scan.status;
@@ -216,7 +235,9 @@ function renderRecent() {
   if (signature === recentSignature) return;
   recentSignature = signature; const recent = get("recent"); recent.replaceChildren();
   for (const run of currentState?.runs ?? []) {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = run.name;
+    const button = document.createElement("button"); button.type = "button";
+    const name = document.createElement("span"); name.className = "run-name"; name.textContent = run.name;
+    button.append(avatarImage(run.avatar), name);
     button.setAttribute("aria-current", String(selected?.scan.id === run.id));
     button.title = `${run.status} · ${run.nodes} profiles · ${new Date(run.createdAt).toLocaleString()}`;
     button.setAttribute("aria-label", `${run.name}, ${button.title}`);
@@ -334,7 +355,7 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
   const rows = get("history-rows"); rows.replaceChildren();
   for (const friend of report.friends) {
-    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name);
+    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, null);
     cell(row, `${Math.floor(friend.durationSeconds / 86400)} days`); cell(row, `${friend.relativeDuration.toFixed(1)}%`); cell(row, friend.currentlyFriends ? "yes" : "no"); rows.append(row);
   }
 }); });

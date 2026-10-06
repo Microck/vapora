@@ -33,3 +33,5 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 ## Analysis limits
 
 Steam profiles and friend lists can have different privacy settings. Unavailable observations do not count as known empty sets. Friendships outside the admitted graph can affect ranking signals but not graph metrics. Report coverage explicitly. Location fields are self-reported Steam country/state/city codes, not verified residence. Public group lookup may require publisher permissions. Imported SteamHistory data is supplied by the operator; Vapora does not scrape SteamHistory or fetch arbitrary URLs.
+
+Steam summaries retain each profile's full avatar URL in the current checkpoint. The target, recent runs, report heading and friend rows display that profile picture in square frames. Missing or failed images use the existing local placeholder. Editing the target clears the previous account's identity. No avatar lookup or extra Steam requests run while typing.

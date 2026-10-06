@@ -35,7 +35,15 @@ test("HTTP provider handles private lists, transient retries, denied keys, and m
     fixture.interruptedBodies.set(summaryPath, 1);
     const summaries = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); }));
     assert.equal(summaries[0]?.steamid, seed);
+    assert.equal(summaries[0]?.avatarfull, `${fixture.url}/avatars/${seed}.svg`);
     assert.equal(fixture.requests.filter((r) => r.path === summaryPath).length - summaryCalls, 2);
+    fixture.omittedAvatars.add(third);
+    const noAvatar = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([third]); }));
+    assert.equal(noAvatar[0]?.avatarfull, undefined);
+    fixture.omittedAvatars.clear();
+    fixture.malformed.set(summaryPath, JSON.stringify({ response: { players: [{ steamid: seed, avatarfull: "javascript:alert(1)" }] } }));
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); })), /unexpected response/);
+    fixture.malformed.clear();
     fixture.malformed.set(summaryPath, '{"invalid":true}');
     await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).summaries([seed]); })), /unexpected response/);
     fixture.malformed.clear();
@@ -73,6 +81,7 @@ test("capped scan saves observations, real optional signals, reports, and resume
   try {
     const settings = { ...defaults, maxNodes: 4, depth: 2, includeGroups: true, includeGames: true };
     fixture.omittedBans.add(second);
+    fixture.omittedAvatars.add(third);
     const initial = await runtime.runPromise(Scanner.create("https://steamcommunity.com/id/12345", settings));
     assert.equal(initial.seed, seed);
     assert.ok(fixture.requests.some((r) => r.path.includes("ResolveVanityURL")));
@@ -83,6 +92,7 @@ test("capped scan saves observations, real optional signals, reports, and resume
     fixture.release(friendPath, second);
     const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(initial.id); }));
     assert.equal(saved.status, "cancelled");
+    assert.equal(saved.players.find((p) => p.id === seed)?.avatar, `${fixture.url}/avatars/${seed}.svg`);
     assert.deepEqual(saved.queue, [second, third, fourth]);
     assert.equal(saved.players.find((p) => p.id === seed)?.friendsStatus, "public");
     const seedCalls = fixture.requests.filter((r) => r.path === friendPath && r.id === seed).length;
@@ -100,6 +110,8 @@ test("capped scan saves observations, real optional signals, reports, and resume
     assert.equal(fixture.requests.filter((r) => r.path === friendPath && r.id === seed).length, seedCalls);
     assert.ok(!completed.players.some((p) => p.id === fifth));
     assert.equal(completed.players.find((p) => p.id === fourth)?.friendsStatus, "private");
+    assert.equal(completed.players.find((p) => p.id === fourth)?.avatar, `${fixture.url}/avatars/${fourth}.svg`);
+    assert.equal(completed.players.find((p) => p.id === third)?.avatar, null);
     assert.equal(completed.players.find((p) => p.id === second)?.bansStatus, "unavailable");
     const banCalls = fixture.requests.filter((r) => r.path.includes("GetPlayerBans")).length;
     await runtime.runPromise(Scanner.run(completed));
@@ -197,6 +209,8 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.notEqual(current.job.operationId, state.job.operationId);
     const view = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(view.scan.players.length, 3);
+    assert.equal(view.scan.players.find((p) => p.id === seed)?.avatar, `${fixture.url}/avatars/${seed}.svg`);
+    assert.equal(current.runs.find((run) => run.id === current.job.id)?.avatar, `${fixture.url}/avatars/${seed}.svg`);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=gephi%2Fnodes.csv`)).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=..%2F.env`)).status, 404);
     assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { friends: [] } }) }))).status, 200);

@@ -74,7 +74,7 @@ legend, .panel-title { display: block; color: var(--Maize); font-size: 13px; fon
 
 /* Page tabs join the workspace; only action buttons have a closed bevel. */
 .toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 10px 12px 0; background: var(--GreenBG); border-bottom: 1px solid var(--BevelLight); }
-.brand { display: block; flex: none; width: 32px; height: auto; margin-bottom: 8px; }
+.brand { display: block; flex: none; width: 20px; height: auto; margin-bottom: 8px; }
 .workspace-tabs { display: flex; align-items: end; gap: 3px; }
 .workspace-tabs button, .key-button, .tabs button {
   position: relative; min-width: 0; min-height: 25px; padding: 4px 12px;
@@ -126,7 +126,7 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 .target-row label { font-weight: bold; }
 .identity { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 0; text-align: center; }
 .target-name { max-width: 100%; font-size: 16px; font-weight: bold; overflow-wrap: anywhere; }
-.avatar { display: block; width: 80px; height: 80px; margin-top: 4px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+.avatar { display: block; width: 64px; height: 64px; margin-top: 4px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 .target-actions { display: grid; justify-items: center; gap: 6px; }
 #scan-button { width: 100%; min-height: 30px; font-size: 13px; }
 #estimate-button { width: 72%; }
@@ -141,9 +141,13 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 /* Recent runs grow with their contents up to a bounded scrolling list. */
 #recent { max-height: 126px; overflow: auto; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 #recent > .hint { margin: 0; padding: 8px; }
-#recent button { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; min-height: 0; padding: 5px 8px; text-align: left; overflow-wrap: anywhere; background: transparent; border: 0; border-bottom: 1px solid var(--GreenBG); }
+#recent button { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-height: 0; padding: 5px 4px; text-align: left; overflow-wrap: anywhere; background: transparent; border: 0; border-bottom: 1px solid var(--GreenBG); }
 #recent button:hover { background: var(--GreenBG); }
 #recent button[aria-current="true"] { color: var(--Maize); background: var(--GreenBG); box-shadow: inset 2px 0 var(--Maize); }
+.profile-avatar { display: block; flex: none; width: 24px; height: 24px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+.player-link, .report-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.report-identity > .profile-avatar { width: 40px; height: 40px; }
+#recent .run-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .run-status { color: var(--Label); text-transform: capitalize; }
 
 /* Results */

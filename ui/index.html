@@ -12,7 +12,7 @@
 <body>
   <a class="skip" href="#results">Skip to workspace</a>
   <header class="toolbar">
-    <img class="brand" src="/vapora.svg" width="32" height="18" alt="Vapora" decoding="async">
+    <img class="brand" src="/vapora.svg" width="20" height="11" alt="Vapora" decoding="async">
     <nav class="workspace-tabs" aria-label="Workspace">
       <button type="button" data-screen="scan" aria-controls="scan-screen" aria-current="page">Scan</button>
       <button type="button" data-screen="results" aria-controls="results-screen">Results</button>
@@ -91,7 +91,7 @@
           <div class="identity">
             <p id="target-name" class="target-name" hidden></p>
             <p id="target-id" class="sr-only" hidden></p>
-            <img class="avatar" src="/placeholder.jpg" width="184" height="184" alt="Default profile placeholder">
+            <img id="target-avatar" class="avatar" src="/placeholder.jpg" width="64" height="64" alt="" referrerpolicy="no-referrer">
           </div>
           <div class="target-actions">
             <button class="primary" id="scan-button" type="submit" form="scan-form" aria-describedby="key-indicator">Analyze</button>
@@ -124,7 +124,7 @@
       </section>
       <section id="report" hidden>
         <div class="panel report-heading">
-          <div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div>
+          <div class="report-identity"><img id="report-avatar" class="profile-avatar" src="/placeholder.jpg" width="40" height="40" alt="" referrerpolicy="no-referrer"><div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div></div>
           <p id="report-status"></p>
           <button id="resume-button" type="button" hidden>Resume run</button>
         </div>

@@ -74,10 +74,12 @@ export async function start(options: Options) {
     }))));
     cancelJob = () => Effect.runPromise(Fiber.interrupt(fiber));
   };
+  // A configured local Steam fixture can serve HTTP avatars; normal images require HTTPS.
+  const avatarOrigin = options.steamBaseUrl ? ` ${new URL(options.steamBaseUrl).origin}` : "";
   const server = createServer((request, response) => {
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader("referrer-policy", "no-referrer");
-    response.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    response.setHeader("content-security-policy", `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:${avatarOrigin}; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
     void dispatch(request, response).catch((error) => {
       if (response.headersSent) { response.destroy(); return; }
       const message = error instanceof Error ? error.message : "The request failed. Check the run log.";
@@ -99,10 +101,11 @@ export async function start(options: Options) {
     if (url.pathname === "/api/state") {
       const recent = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).recent(); }));
       const profiles = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).profiles(); }));
-      json(response, 200, { hasKey: Boolean(key), profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => ({
-        id: scan.id, seed: scan.seed, name: scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed,
-        createdAt: scan.createdAt, status: scan.status, nodes: scan.players.length,
-      })) } satisfies State);
+      json(response, 200, { hasKey: Boolean(key), profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => {
+        const target = scan.players.find((p) => p.id === scan.seed);
+        return { id: scan.id, seed: scan.seed, name: target?.name ?? scan.seed, avatar: target?.avatar ?? null,
+          createdAt: scan.createdAt, status: scan.status, nodes: scan.players.length };
+      }) } satisfies State);
       return;
     }
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);

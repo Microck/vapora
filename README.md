@@ -34,7 +34,7 @@ Use `/id/NAME` for numeric vanity names. `/profiles/ID` and bare numbers identif
 
 Vapora queries admitted boundary profiles for ranking signals without expanding past the configured depth. Every request is paced. Temporary transport failures, rate limits, and selected server failures get up to three retries. Private friend lists remain distinct from empty public lists.
 
-Cancel saves a checkpoint. Resume uses the original target, settings, and unfinished frontier. Failed scans also preserve their checkpoint. A stopped server can leave a run marked `running`; after restarting, open that run and resume it. Checkpoints use the current Vapora 2 format; Python outputs are preserved separately and are not migrated.
+Cancel saves a checkpoint. Resume uses the original target, settings, and unfinished frontier. Failed scans also preserve their checkpoint. A stopped server can leave a run marked `running`; after restarting, open that run and resume it. Checkpoints use the current Vapora 2 format, including nullable profile avatar URLs; Python outputs are preserved separately and are not migrated.
 
 Owned-game overlap uses public library data. Group links are optional and disabled by default because Steam's documented group endpoint requires publisher access. Denied membership lookup appears as unavailable and stops further group requests in that operation.
 
@@ -139,7 +139,7 @@ See [verification results and browser screenshots](docs/verification.md) for the
 - **Access denied:** check your API key. Group access may require publisher permissions.
 - **Private friend list:** Steam returns no accessible list. Vapora cannot bypass privacy settings.
 - **Failed scan:** fix the reported provider, disk-space, or permission issue and resume the saved run.
-- **Invalid checkpoint:** start a new run. Legacy Python checkpoints use a different format.
+- **Invalid checkpoint:** start a new run. Earlier checkpoints without avatar fields and legacy Python checkpoints do not match the current format. Existing files remain untouched.
 - **Long scans:** reduce depth, the node cap, or optional library/group requests. Public data collection remains limited by the configured request rate.
 - **Port in use:** choose another port with `npm start -- serve --port 3001`.
 

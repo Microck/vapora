@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Scan, SteamId, Availability, RunId, RunStatus } from "./model.js";
+import { Scan, SteamId, Availability, RunId, RunStatus, Player } from "./model.js";
 
 export const Edge = Schema.Struct({ source: SteamId, target: SteamId, kind: Schema.Literals(["friend", "group"]) });
 export interface Edge extends Schema.Schema.Type<typeof Edge> {}
@@ -27,7 +27,7 @@ export const Job = Schema.Struct({
   status: Schema.Literals(["idle", "running", "complete", "cancelled", "failed"]), id: Schema.NullOr(RunId), error: Schema.NullOr(Schema.String), progress: Schema.NullOr(Progress),
 });
 export interface Job extends Schema.Schema.Type<typeof Job> {}
-export const RunSummary = Schema.Struct({ id: RunId, seed: SteamId, name: Schema.String, createdAt: Schema.String, status: RunStatus, nodes: Schema.Number });
+export const RunSummary = Schema.Struct({ id: RunId, seed: SteamId, name: Schema.String, avatar: Player.fields.avatar, createdAt: Schema.String, status: RunStatus, nodes: Schema.Number });
 export const State = Schema.Struct({
   hasKey: Schema.Boolean, profiles: Schema.Array(Schema.String), runs: Schema.Array(RunSummary), job: Job,
   runIssues: Schema.Array(Schema.Struct({ id: RunId, message: Schema.String })),

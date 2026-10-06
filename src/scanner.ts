@@ -12,6 +12,7 @@ export type Observe = (progress: Progress) => void;
 const summary = (player: Player, record: Steam.Summary | undefined): Player => ({
   ...player,
   name: record?.personaname ?? player.id,
+  avatar: record?.avatarfull ?? null,
   visibility: record ? (record.communityvisibilitystate === 3 ? "public" : "private") : "unavailable",
   country: record?.loccountrycode ?? null, state: record?.locstatecode ?? null, city: record?.loccityid ?? null,
 });

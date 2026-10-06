@@ -1,8 +1,8 @@
 # Classic Steam UI options
 
-The white eye has no outer circle. All three previews use the OG-Steam olive palette, Arial 13px, square beveled buttons, inset fields, checkbox marks, radio dots and page tabs that join their panels.
+The 20px white eye has no outer circle. Each layout includes the target's profile picture, recent-run thumbnails where present, and avatars in report rows. All three previews use the OG-Steam olive palette, Arial 13px, square beveled buttons, inset fields, checkbox marks, radio dots and page tabs that join their panels.
 
-These are read-only layout prototypes from an OMP Opus 5.5 draft, refined against the existing GUI and the current app. They use the same local fixture report. They do not scan Steam, verify keys, import history or write files.
+These are read-only layout prototypes from an OMP Opus 5.5 draft, refined against the existing GUI and the current app. They use the same local fixture report and distinct sample profile pictures. The app reads real avatar URLs from Steam summaries. They do not scan Steam, verify keys, import history or write files.
 
 | Option | Layout | Desktop | Results | Mobile |
 | --- | --- | --- | --- | --- |
@@ -10,7 +10,7 @@ These are read-only layout prototypes from an OMP Opus 5.5 draft, refined agains
 | B | Compact properties dialog: target at the top, settings in tabs, actions at the bottom | [Scan](screenshots/options/option-b-scan.png) | [Results](screenshots/options/option-b-results.png) | [Mobile](screenshots/options/option-b-mobile.png) |
 | C | Library split view: runs and saved settings on the left, workspace on the right | [Scan](screenshots/options/option-c-scan.png) | [Results](screenshots/options/option-c-results.png) | [Mobile](screenshots/options/option-c-mobile.png) |
 
-[Switchable preview](https://github.com/Microck/vapora/blob/c740e6c7d9b4e1944dab313369779b40bf3cfd3b/docs/prototypes/steam-ui-options.html). Download the single HTML file and open it in a browser. It embeds all assets. The bottom bar switches A/B/C, and `?variant=A`, `B` or `C` opens a specific option.
+[Switchable preview](https://github.com/Microck/vapora/blob/ef4e63d9c1f5b7cacb4e29c43c2acca1ec82eb84/docs/prototypes/steam-ui-options.html). Download the single HTML file and open it in a browser. It embeds all assets. The bottom bar switches A/B/C, and `?variant=A`, `B` or `C` opens a specific option.
 
 The prototype source stays on `design/steam-ui-options`, outside the PR to `main`. Choose a layout before replacing the app's layout. The app keeps one implementation.
 

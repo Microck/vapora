@@ -1,12 +1,13 @@
 import { Context, Duration, Effect, Layer, Schedule, Schema, Semaphore } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { AppId, Availability, Bans, Player, SteamId } from "./model.js";
+import { AppId, Availability, Bans, Player, SteamId, AvatarUrl } from "./model.js";
 
 export class ApiError extends Schema.TaggedError<ApiError>()("ApiError", {
   message: Schema.String, status: Schema.Number, retryable: Schema.Boolean, retryAfterMs: Schema.Number,
 }) {}
 const Summary = Schema.Struct({
   steamid: SteamId, personaname: Schema.optionalKey(Schema.String),
+  avatarfull: Schema.optionalKey(AvatarUrl),
   communityvisibilitystate: Schema.optionalKey(Schema.Number),
   loccountrycode: Schema.optionalKey(Schema.String), locstatecode: Schema.optionalKey(Schema.String),
   loccityid: Schema.optionalKey(Player.fields.city),
