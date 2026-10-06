@@ -71,8 +71,8 @@ legend, .panel-title { display: block; color: var(--Maize); font-size: 12px; fon
 .panel { min-width: 0; padding: 10px 12px 12px; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 
 /* Toolbar */
-.toolbar { display: flex; align-items: center; gap: 20px; min-height: 72px; padding: 4px 12px; background: #000; border-bottom: 1px solid var(--BevelDark); box-shadow: inset 0 1px var(--BevelLight); }
-.brand { display: block; flex: none; width: 164px; height: auto; }
+.toolbar { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 4px 12px; background: var(--GreenBG); border-bottom: 1px solid var(--BevelDark); box-shadow: inset 0 1px var(--BevelLight); }
+.brand { display: block; flex: none; width: 128px; height: auto; }
 .workspace-tabs { display: flex; gap: 4px; }
 .workspace-tabs button { min-width: 80px; min-height: 28px; font-weight: bold; }
 .key-status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -120,7 +120,7 @@ details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule);
 .target-row label { font-weight: bold; }
 .identity { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 0; text-align: center; }
 .target-name { max-width: 100%; font-size: 16px; font-weight: bold; overflow-wrap: anywhere; }
-.avatar { display: block; width: 128px; height: 128px; margin-top: 8px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+.avatar { display: block; width: 80px; height: 80px; margin-top: 4px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 .target-actions { display: grid; justify-items: center; gap: 6px; }
 #scan-button { width: 100%; min-height: 30px; font-size: 13px; }
 #estimate-button { width: 72%; }
@@ -201,12 +201,10 @@ tbody tr:hover { background: var(--GreenBG); }
   .scan-grid { grid-template-columns: minmax(0, 1fr) 260px; grid-template-areas: "form target" "rail rail"; }
   .rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
   #recent { max-height: 126px; }
-  .avatar { width: 128px; height: 128px; }
 }
 @media (max-width: 720px) {
   body { width: calc(100% - 16px); margin: 8px; }
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 6px 8px; }
-  .brand { width: 144px; }
   .workspace-tabs { grid-column: 1 / -1; grid-row: 2; }
   .workspace-tabs button { flex: 1; min-width: 0; }
   .key-status { align-items: end; flex-direction: column; gap: 2px; }
@@ -214,7 +212,7 @@ tbody tr:hover { background: var(--GreenBG); }
   .scan-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "form" "target" "rail"; gap: 8px; }
   #scan-form { gap: 8px; }
   .params, .rail { grid-template-columns: minmax(0, 1fr); }
-  .avatar { width: 96px; height: 96px; }
+  .avatar { width: 64px; height: 64px; }
   .scan-progress { grid-template-columns: minmax(0, 1fr) auto; }
   .scan-progress progress { grid-column: 1 / -1; grid-row: 2; }
   .scan-progress button { justify-self: start; }
