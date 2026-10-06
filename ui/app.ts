@@ -39,6 +39,19 @@ let selectedNode: SteamId | null = null;
 let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
+const Screen = Schema.Literals(["scan", "results", "history", "settings"]);
+let navigationVersion = 0;
+
+/** Keep view contents mounted so navigation preserves forms, reports, and keyboard state. */
+function showScreen(name: typeof Screen.Type) {
+  navigationVersion++;
+  for (const screen of document.querySelectorAll<HTMLElement>(".screen")) screen.hidden = screen.id !== `${name}-screen`;
+  for (const tab of document.querySelectorAll<HTMLElement>(".toolbar [data-screen]")) {
+    if (tab.dataset.screen === name) tab.setAttribute("aria-current", "page");
+    else tab.removeAttribute("aria-current");
+  }
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
 
 function notice(message: string) { get("notice").textContent = message; get("notice").hidden = !message; }
 function task(action: () => Promise<void>) {
@@ -144,7 +157,7 @@ function renderGraph() {
     const from = positions.get(edge.source); const to = positions.get(edge.target); if (!from || !to) continue;
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y)); line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
-    line.setAttribute("stroke", edge.kind === "friend" ? "#363636" : "#5d4634"); graph.append(line);
+    line.setAttribute("stroke", edge.kind === "friend" ? "#758666" : "#9a895b"); graph.append(line);
   }
   const colors = ["#8abfff", "#a8dba8", "#e9b9e8", "#eed68b", "#99d9d9", "#e6ad95"];
   for (const metric of metrics) {
@@ -166,10 +179,15 @@ function renderGraph() {
   graph.setAttribute("viewBox", `${500 - 500 / zoom} ${325 - 325 / zoom} ${1000 / zoom} ${650 / zoom}`);
   get("graph-count").textContent = `${metrics.length} nodes · ${Math.min(shown.length, 1500)}/${shown.length} edges drawn`;
 }
-async function openRun(id: string) {
+async function openRun(id: string, navigation = navigationVersion) {
   selected = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
   selectedNode = null; zoom = 1; get("node-detail").textContent = "Select a node.";
   location.hash = id; renderReport(); renderRecent();
+  // A report response must not override a navigation choice made while it loaded.
+  if (navigation === navigationVersion) {
+    showScreen("results");
+    get("results").focus({ preventScroll: true });
+  }
 }
 function renderRecent() {
   const signature = JSON.stringify([currentState?.runs, currentState?.runIssues, selected?.scan.id]);
@@ -189,6 +207,8 @@ function renderRecent() {
 }
 function renderProgress(state: Contracts.State) {
     get("key-status").textContent = state.hasKey ? "Key available. Kept on the local server." : "Add a key to start scanning.";
+    get("key-indicator").textContent = state.hasKey ? "Key ready" : "API key required";
+    get("key-indicator").dataset.key = state.hasKey ? "ready" : "missing";
     const running = state.job.status === "running";
     buttons("scan-button").disabled = running || !state.hasKey;
     buttons("estimate-button").disabled = running || !state.hasKey;
@@ -202,6 +222,7 @@ function renderProgress(state: Contracts.State) {
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
+  const navigation = navigationVersion;
   try {
     currentState = await api("/api/state", Contracts.State);
     get("connection").textContent = "Local session";
@@ -217,7 +238,7 @@ async function refresh() {
     const terminal = `${job.operationId}:${job.status}`;
     if (job.status !== "running" && job.status !== "idle" && terminal !== lastJob) {
       lastJob = terminal;
-      if (job.id) await openRun(job.id);
+      if (job.id) await openRun(job.id, navigation);
       if (job.error) notice(job.error);
     }
   } catch (error) {
@@ -255,6 +276,10 @@ buttons("load-profile").addEventListener("click", () => task(async () => {
 buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
 buttons("resume-button").addEventListener("click", () => task(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
 inputs.search.addEventListener("input", renderFriends);
+for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-screen]")) {
+  const screen = Schema.decodeUnknownSync(Screen)(tab.dataset.screen);
+  tab.addEventListener("click", () => showScreen(screen));
+}
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-view]")) tab.addEventListener("click", () => {
   for (const other of document.querySelectorAll("[data-view]")) other.removeAttribute("aria-current");
   tab.setAttribute("aria-current", "page");
@@ -282,4 +307,5 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 window.addEventListener("focus", () => void refresh());
 applySettings(defaults);
-void refresh().then(() => { const id = location.hash.slice(1); if (id && !selected) task(() => openRun(id)); });
+const initialNavigation = navigationVersion;
+void refresh().then(() => { const id = location.hash.slice(1); if (id && !selected) task(() => openRun(id, initialNavigation)); });
