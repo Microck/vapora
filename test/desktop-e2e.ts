@@ -34,7 +34,8 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
     const activePort = await readFile(join(dataRoot, "DevToolsActivePort"), "utf8").catch((error: Error) => {
-      if (!("code" in error) || error.code !== "ENOENT") throw error;
+      // Chromium can still hold its newly created endpoint file open on Windows.
+      if (!("code" in error) || (error.code !== "ENOENT" && !(process.platform === "win32" && error.code === "EBUSY"))) throw error;
       return "";
     });
     const endpoint = /^(\d+)\r?\n(\/devtools\/browser\/[^\s]+)/.exec(activePort);
