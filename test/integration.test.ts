@@ -146,10 +146,11 @@ test("local server validates host and origin, protects keys, and runs a complete
   };
   try {
     assert.equal((await request("/")).status, 200);
-    const logo = await request("/vapora.png");
+    const logo = await request("/vapora.svg");
     assert.equal(logo.status, 200);
-    assert.equal(logo.headers.get("content-type"), "image/png");
-    assert.deepEqual(Buffer.from(await logo.arrayBuffer()), await readFile(fileURLToPath(new URL("../../assets/vapora.png", import.meta.url))));
+    assert.equal(logo.headers.get("content-type"), "image/svg+xml");
+    assert.deepEqual(Buffer.from(await logo.arrayBuffer()), await readFile(fileURLToPath(new URL("../../assets/vapora.svg", import.meta.url))));
+    assert.equal((await request("/vapora.png")).status, 404);
     assert.equal((await request("/vapora.ico")).headers.get("content-type"), "image/x-icon");
     assert.equal((await request("/placeholder.jpg")).headers.get("content-type"), "image/jpeg");
     assert.equal((await request("/assets/logoextended_old.png")).status, 404);

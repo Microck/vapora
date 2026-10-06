@@ -25,7 +25,7 @@ const files = new Map([
   ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
   ["/app.js", { name: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/style.css", { name: "style.css", type: "text/css; charset=utf-8" }],
-  ["/vapora.png", { name: "vapora.png", type: "image/png" }],
+  ["/vapora.svg", { name: "vapora.svg", type: "image/svg+xml" }],
   ["/vapora.ico", { name: "vapora.ico", type: "image/x-icon" }],
   ["/placeholder.jpg", { name: "placeholder.jpg", type: "image/jpeg" }],
 ]);
