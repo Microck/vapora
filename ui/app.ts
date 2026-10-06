@@ -451,8 +451,9 @@ if (desktop) {
 buttons("output-folder").addEventListener("click", () => {
   if (desktop) task(() => desktop.openOutputs(selected?.scan.id ?? null));
   else {
+    if (!selected) { notice("Open a saved run to see its exports."); return; }
     showScreen("results");
-    if (selected) toggleRuns(false);
+    toggleRuns(false);
     document.querySelector<HTMLButtonElement>('[data-view="exports"]')?.click();
   }
 });

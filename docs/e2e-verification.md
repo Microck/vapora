@@ -37,6 +37,8 @@ Reproduction:
 
 The successful lookup must display the fresh name and loaded avatar. `renderTarget` now gives that explicit lookup precedence over the matching saved checkpoint. This contract is recorded in `product-contract.md`; the repeatable browser E2E suite covers it along with cancellation/resume, persistence, ranking, history and actual downloads.
 
+The final PR review also found that the browser toolbar's Exports button gave no feedback without a selected run. It now prompts the operator to open a saved run and retains the current screen. With a selected run, it closes the run library and shows downloads. The browser suite reproduced the missing notice before the fix and checks both states.
+
 ## Repeatable checks
 
 ```sh
@@ -70,3 +72,5 @@ Microsoft runtime installation did not complete in the test VM. The local instal
 ## Limits
 
 The live run intentionally admitted five accounts at depth 1. Deeper frontiers, private accounts and transient provider failures were checked through executable HTTP fixtures, not large live networks. No iOS Safari session, physical screen-reader session, packaged desktop installer or native Windows app has been verified in this pass. Steam can still return private or unavailable observations; the app must disclose those states rather than imply full coverage.
+
+Export files are replaced individually, not as a multi-file transaction. A disk or permission failure while saving a ranking can leave partially regenerated exports beside the previous checkpoint; the error is visible. Fix the storage problem, then run `npm start -- analyze RUN_ID --root DATA_DIRECTORY` to regenerate exports from the canonical checkpoint. This limit also applies to the existing export workflow.

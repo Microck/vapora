@@ -48,6 +48,13 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   const state = async () => Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
   await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 599 }); await page.goto(server.origin);
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#scan-button")?.disabled);
+  await page.click("#output-folder");
+  assert.match(await visibleText(page, "#notice") ?? "", /Open a saved run/);
+  assert.equal(await page.$eval("#scan-screen", (element) => element instanceof HTMLElement && element.hidden), false);
+  await page.click('[data-screen="results"]'); await page.click("#output-folder");
+  assert.match(await visibleText(page, "#notice") ?? "", /Open a saved run/);
+  assert.equal(await page.$eval("#run-library", (element) => element instanceof HTMLElement && element.hidden), false);
+  await page.click('[data-screen="scan"]');
   await fill(page, "#target", seed); await fill(page, "#maxNodes", "4"); await page.click("#scan-button");
   await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "failed");
   assert.match(await visibleText(page, "#report-error") ?? "", /denied access/);
@@ -80,7 +87,9 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-download")?.hidden);
   await page.reload(); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
   await page.click("#open-history"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
-  await page.click('[data-screen="results"]'); await page.click('[data-view="exports"]');
+  await page.click('[data-screen="results"]'); await page.click("#toggle-runs"); await page.click("#output-folder");
+  assert.equal(await page.$eval("#run-library", (element) => element instanceof HTMLElement && element.hidden), true);
+  assert.equal(await page.$eval("#exports-view", (element) => element instanceof HTMLElement && element.hidden), false);
   const downloads = await page.$$eval("#downloads a", (links) => links.map((link) => { if (!(link instanceof HTMLAnchorElement)) throw new Error("Expected a download link"); return link.href; })); assert.equal(downloads.length, 7);
   for (const url of downloads) { const response = await fetch(url, { headers: { "user-agent": userAgent } }); assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength); }
   for (const file of ["analysis.json", "gephi-nodes.csv", "history.json"]) {
