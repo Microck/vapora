@@ -63,9 +63,12 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   page.on("pageerror", (error) => errors.push(String(error)));
   // The preload bridge appears before renderer handlers and the first state response.
   // Wait for the app's desktop mode and ready connection before sending input.
-  await page.waitForFunction(() => document.body.classList.contains("desktop") &&
+  await page.waitForFunction(() => document.visibilityState === "visible" && document.body.classList.contains("desktop") &&
     document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready" &&
     !document.querySelector<HTMLButtonElement>("#lookup-target")?.disabled);
+  await page.bringToFront();
+  // Font loading can move the native window's controls before its first painted frame.
+  await page.evaluate(async () => { await document.fonts.ready; });
   assert.equal(await page.evaluate(() => "require" in window || "process" in window), false);
   const origin = new URL(page.url()).origin;
   for (const asset of ["/app.js", "/style.css", "/vapora.svg", "/placeholder.jpg", "/fonts/motiva-sans-regular.ttf"]) {
