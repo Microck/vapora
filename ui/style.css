@@ -28,7 +28,7 @@ a { color: var(--OffWhite); } a:hover { color: var(--Maize); }
 .hint { color: var(--Label); }
 .skip { position: fixed; top: -40px; left: 8px; z-index: 10; padding: 4px 8px; background: var(--GreenBG); }
 .skip:focus { top: 8px; }
-button, input, select, summary { font: inherit; }
+button, input, select { font: inherit; }
 button { min-height: 28px; padding: 3px 14px; color: var(--OffWhite); background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); border-radius: 0; cursor: pointer; }
 button:hover { color: var(--Maize); }
 button:active { background: var(--DarkGreenBG); border-color: var(--Inset); }
@@ -42,8 +42,6 @@ input[type='file'] { max-width: 100%; padding: 2px; }
 input::file-selector-button { font: inherit; margin-right: 8px; padding: 2px 10px; color: var(--OffWhite); background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 .check { display: flex; align-items: center; gap: 12px; min-height: 32px; cursor: pointer; }
 .check:hover { color: var(--Maize); }
-summary { color: var(--OffWhite); cursor: pointer; }
-summary:hover { color: var(--Maize); }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend { margin-bottom: 8px; padding: 0; }
 .panel { min-width: 0; padding: 16px 20px; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
@@ -86,6 +84,7 @@ body.desktop main { flex: 1; min-height: 0; }
 #depth-buttons button[aria-pressed='true'] { color: var(--Maize); background: var(--DarkGreenBG); border-color: var(--Inset); }
 .info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: var(--GreenBG); background: var(--OffWhite); border-radius: 50%; font: bold 11px/1 Arial, sans-serif; vertical-align: middle; cursor: help; }
 #apply-settings { position: absolute; right: 16px; bottom: 14px; font-size: 14px; }
+#open-scan-ranking { position: absolute; left: 20px; bottom: 14px; font-size: 14px; }
 .mode-output { display: grid; grid-template-columns: 194px minmax(0, 1fr); gap: 26px; padding: 16px 20px 22px; }
 #output-mode { padding-top: 10px; }
 .segmented { display: grid; gap: 0; }
@@ -102,8 +101,6 @@ body.desktop main { flex: 1; min-height: 0; }
 .output-tree > a, .output-tree > span { display: block; text-decoration: none; white-space: pre-wrap; }
 .output-tree > a { color: var(--Maize); }
 .output-root { color: var(--OffWhite); margin-bottom: 2px; }
-.output-owner { font-size: 14px; margin-bottom: 4px; overflow-wrap: anywhere; }
-.output-owner:empty { display: none; }
 .target-panel { grid-area: target; padding: 7px 22px 18px; }
 .target-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 24px; gap: 6px; align-items: center; margin-left: 0; margin-right: -3px; }
 .target-row label { font-size: 14px; }
@@ -131,12 +128,12 @@ body.desktop main { flex: 1; min-height: 0; }
 .profile-avatar { display: block; flex: none; width: 24px; height: 24px; object-fit: cover; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
 .player-link, .report-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .report-identity > .profile-avatar { width: 40px; height: 40px; }
-details { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--Rule); }
-.weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+.weights { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
 .weights label { display: grid; gap: 3px; }
-.ranking-settings { max-width: 640px; }
 dialog { max-width: calc(100% - 32px); padding: 18px; color: var(--OffWhite); background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 dialog::backdrop { background: #0008; }
+#scan-ranking-dialog { width: 720px; }
+#run-info-dialog { width: 640px; }
 dialog h2 { margin-bottom: 12px; }
 dialog select { max-width: 100%; min-width: 220px; }
 .dialog-actions { display: flex; justify-content: end; gap: 8px; margin-top: 16px; }
@@ -193,7 +190,6 @@ tbody tr:hover { background: var(--GreenBG); }
 #key { font-family: var(--Mono); }
 #history-result { margin-top: 12px; }
 #history-download { display: inline-block; margin: 4px 0 8px; color: var(--Maize); }
-#connection { color: var(--OffWhite); }
 
 
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -235,8 +231,6 @@ tbody tr:hover { background: var(--GreenBG); }
 }
 
 /* Analysis grows beyond the scan reference while retaining the same VGUI controls. */
-#scan-form .advanced-scan { margin: -12px 0 0; padding: 8px 14px; max-width: none; }
-.advanced-scan .weights { margin-bottom: 4px; }
 .results-actions { display: flex; gap: 8px; margin-bottom: 12px; }
 #run-library { margin-bottom: 12px; }
 #run-library .section-line label { font-size: 14px; }
@@ -261,7 +255,6 @@ tbody tr:hover { background: var(--GreenBG); }
 #inspect-facts dd { font-size: inherit; margin: 0; color: var(--OffWhite); text-align: right; overflow-wrap: anywhere; }
 .inspect-button { padding: 1px 6px; min-height: 22px; font-size: 12px; margin: 4px 0 0 32px; }
 #ranking-form > button { margin-top: 12px; margin-right: 10px; }
-#ranking-form > .hint { font-size: 13px; }
 #network-view .section-line { align-items: center; flex-wrap: wrap; }
 #network-view .section-line label { font-size: 13px; }
 #network-search { width: 170px; }

@@ -22,9 +22,9 @@ Run it on a trusted local machine. Native programs and other accounts on that ma
 
 Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Open **API key** and enter it for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
-In **Scan**, choose a target, depth, node cap and optional signals, then Analyze. The check button looks up the target name and avatar without creating a run. **Apply** saves the default settings for the next launch. **Outputs: All / Report / Gephi** filters the output tree; every completed scan still produces all exports. Advanced scan options hold ranking defaults. Use the toolbar key button for the connection. Switching views keeps your inputs; active progress and cancellation remain visible across views.
+In **Scan**, choose a target, depth, node cap and optional signals, then Analyze. The check button looks up the target name and avatar without creating a run. **Apply** saves the default settings for the next launch. **Outputs: All / Report / Gephi** filters the output tree; every completed scan still produces all exports. **Ranking options** opens the ranking defaults. Use the toolbar key button for the connection. Switching views keeps your inputs; active progress and cancellation remain visible across views.
 
-**Results** includes a searchable saved-run list, coverage warnings, profile inspection and a community-clustered graph. **Ranking settings** lets you change weights and save a new analysis of a completed run without a key or new Steam requests. **Import history** works with or without a selected run; attached history reopens with its matching run.
+**Results** includes a searchable saved-run list, coverage warnings, profile inspection and a community-clustered graph. The **Ranking** tab lets you change weights and save a new analysis of a completed run without a key or new Steam requests. **Run info** shows metadata and detailed warnings. **Import history** works with or without a selected run; attached history reopens with its matching run.
 
 Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
 

@@ -1,6 +1,6 @@
 # Verification
 
-The Scan workspace uses the supplied 1078 x 599 reference and the original `feature/gui-and-analysis` branch at `9ad203818f65f9716d56611e97ad37cf6a3b8a7f` as its foundation: Parameters above Outputs/Output, a five-slot avatar rail with save/load controls, and Target with stacked actions. Advanced scan options sit below these panels. Results adds run management and analysis tools. The toolbar has Scan and Results tabs, a key button, and browser exports or a native folder action.
+The Scan workspace uses the supplied 1078 x 599 reference and the original `feature/gui-and-analysis` branch at `9ad203818f65f9716d56611e97ad37cf6a3b8a7f` as its foundation: Parameters above Outputs/Output, a five-slot avatar rail with save/load controls, and Target with stacked actions. Ranking options open in a dialog from Parameters. Results adds run management and analysis tools, including a Ranking tab and Run info dialog. The toolbar has Scan and Results tabs, a key button, and browser exports or a native folder action. The UI has no native disclosure sections or repeated explanatory subtext; coverage failures remain visible.
 
 The renderer bundles the original Motiva Sans regular, medium and bold fonts, checkbox bitmaps, key, save and load assets. Chrome's platform-font inspection confirmed that scan labels actually render with the bundled Motiva Sans. The UI uses the original olive palette, joined tabs, square beveled buttons, inset fields and mustard selection accents. There is no looping animation.
 
@@ -21,7 +21,7 @@ At the reference viewport, the parameters start at (36, 100) and measure 655 x 1
 
 ## Browser and desktop checks
 
-Chrome drove the real browser UI against the local Steam HTTP fixture. It checked target lookup, a completed scan, loaded avatars, avatar clearing on target edits, depth 5, the skip checkbox, default settings across reload, named-profile save/load dialogs, depth-5 and private-target estimates, visible lookup errors, output filtering without changing scan settings, and visible keyboard focus. It also checked run search/status filters, visible coverage warnings, profile inspection, graph search and keyboard selection, zoom without rebuilding nodes, offline reranking across reload, standalone history import, attachment and reopening. Scan, Results, History and the open inspector/network had no page-level horizontal overflow at 320, 390, 560, 720, 940, 1078 and 1280px.
+Chrome drove the real browser UI against the local Steam HTTP fixture. It checked target lookup, a completed scan, loaded avatars, avatar clearing on target edits, depth 5, the skip checkbox, default settings across reload, named-profile save/load dialogs, depth-5 and private-target estimates, visible lookup errors, output filtering without changing scan settings, and visible keyboard focus. It also checked run search/status filters, visible coverage warnings, profile inspection, graph search and keyboard selection, zoom without rebuilding nodes, offline reranking across reload, standalone history import, attachment and reopening. Ranking options saved through Apply and reload; pressing Enter in that dialog closed it without starting a scan. Run info retained detailed warnings and closed with Escape. Scan, Results, History, Ranking, the open inspector/network and both dialogs had no page-level horizontal overflow at 320, 390, 560, 720, 940, 1078 and 1280px.
 
 The Linux Electron app was launched with a new, initially nonexistent data directory. Its isolated renderer completed a lookup and scan. The actual native window maximized, restored to 1078 x 599px, minimized and closed with exit code 0. Open output folder launched Thunar for the outputs root and accepted the selected run after navigation. The renderer had no Node `require` access.
 
@@ -36,7 +36,10 @@ All current captures were opened and visually inspected:
 - [Community graph](screenshots/network.png)
 - [Saved runs](screenshots/runs.png)
 - [Attached history](screenshots/history.png)
+- [Scan ranking options](screenshots/ranking-options.png)
+- [Saved-run ranking](screenshots/ranking.png)
+- [Run info](screenshots/run-info.png)
 
-The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. Authenticated live Steam calls and native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
+The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. No authenticated live Steam scan has been run; the current environment and project have no configured Steam API key. Native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
 
 Current saved settings require `skipPrivate`; checkpoints also require a nullable avatar field. Earlier local files remain untouched and are reported as invalid. Start a fresh scan or explicitly save a new settings profile; there is no automatic migration.

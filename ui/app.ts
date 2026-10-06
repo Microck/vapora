@@ -178,7 +178,6 @@ function renderOutput() {
   heading.textContent = scan ? `outputs/${scan.id}/` : "outputs/<run-id>/";
   if (scan) heading.title = `${scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed} · ${new Date(scan.createdAt).toLocaleString()}`;
   tree.append(heading);
-  get("output-owner").textContent = scan ? scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed : "";
   const files = (selected?.history ? artifacts : downloads).filter((file) => file === "scan.json" || file === "run.log" || outputMode === "all" || (outputMode === "gephi" ? file.startsWith("gephi/") : !file.startsWith("gephi/")));
   for (const file of files) {
     const available = scan && (scan.status === "complete" || file === "scan.json" || file === "run.log" || file === "history.json");
@@ -218,7 +217,7 @@ function renderCoverageNotice() {
   const missing = report.coverage.unavailableLists; const skipped = report.coverage.skippedLists;
   const partial = scan.status !== "complete" || scan.truncated || missing > 0 || skipped > 0;
   const warning = get("coverage-warning"); warning.hidden = !partial;
-  warning.textContent = `Partial results${scan.truncated ? " · node cap reached" : ""} · ${skipped} skipped · ${missing} unavailable friend lists. Counts describe observed data.`;
+  warning.textContent = `Partial results${scan.truncated ? " · node cap reached" : ""} · ${skipped} skipped · ${missing} unavailable friend lists`;
   get("open-history").hidden = !selected.history;
 }
 function renderRanking() {
@@ -289,7 +288,7 @@ function renderRuns() {
 }
 function renderHistory(report: HistoryReport, runId: string | null) {
   get("history-result").hidden = false; get("history-name").textContent = report.profile.name ?? report.profile.steamID64;
-  get("history-warning").textContent = report.warning;
+  get("history-name").title = report.warning;
   const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
   const rows = get("history-rows"); rows.replaceChildren();
   const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
@@ -367,7 +366,6 @@ async function refresh() {
       const settings = await api("/api/profiles/default", Settings);
       if (version === settingsVersion) applySettings(settings);
     }
-    get("connection").textContent = "Local session";
     renderProgress(currentState);
     renderRecent(); renderRuns();
     const signature = JSON.stringify(currentState.profiles);
@@ -386,7 +384,7 @@ async function refresh() {
       if (job.error) notice(job.error);
     }
   } catch (error) {
-    get("connection").textContent = "Disconnected";
+    get("key-status").textContent = "Disconnected";
     notice(error instanceof Error ? error.message : "Cannot reach the local server.");
   } finally {
     refreshing = false; clearTimeout(timer); timer = setTimeout(() => void refresh(), currentState?.job.status === "running" ? 1500 : 10000);
@@ -410,7 +408,7 @@ get("output-mode").addEventListener("change", (event) => {
   if (!(event.target instanceof HTMLInputElement)) return;
   outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
-get("scan-form").addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
+for (const form of ["scan-form", "scan-ranking-form"]) get(form).addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
 inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; get("estimate-result").textContent = ""; renderTarget(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
   settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
@@ -459,6 +457,9 @@ buttons("output-folder").addEventListener("click", () => {
 });
 buttons("save-settings").addEventListener("click", () => dialog("save-dialog").showModal());
 buttons("open-settings").addEventListener("click", () => dialog("load-dialog").showModal());
+buttons("open-scan-ranking").addEventListener("click", () => dialog("scan-ranking-dialog").showModal());
+get("scan-ranking-form").addEventListener("submit", (event) => { event.preventDefault(); dialog("scan-ranking-dialog").close(); });
+buttons("open-run-info").addEventListener("click", () => dialog("run-info-dialog").showModal());
 for (const button of document.querySelectorAll<HTMLElement>("[data-close]")) button.addEventListener("click", () => dialog(button.dataset.close ?? "").close());
 buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
 buttons("resume-button").addEventListener("click", () => task(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));

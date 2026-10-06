@@ -61,6 +61,7 @@
                 <label class="check"><input id="games" type="checkbox">Link via shared games</label>
               </div>
             </div>
+            <button id="open-scan-ranking" type="button" aria-haspopup="dialog">Ranking options</button>
             <button id="apply-settings" type="button" title="Save these settings as the default profile">Apply</button>
           </fieldset>
           <div class="panel mode-output">
@@ -74,19 +75,9 @@
             </fieldset>
             <section class="output-files" aria-label="Output files">
               <h2>Output</h2>
-              <p id="output-owner" class="output-owner"></p>
-              <div id="output-tree" class="output-tree" aria-describedby="output-owner"></div>
+              <div id="output-tree" class="output-tree"></div>
             </section>
           </div>
-      <details class="panel ranking-settings advanced-scan"><summary>Advanced scan options</summary>
-        <div class="weights">
-          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
-          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
-          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
-        </div>
-      </details>
         </form>
         <aside class="rail" aria-label="Recent runs and saved settings">
           <div class="panel rail-recent"><div id="recent" aria-label="Recent runs"></div></div>
@@ -130,6 +121,26 @@
       <div class="dialog-actions"><button type="button" data-close="load-dialog">Cancel</button><button id="load-profile" type="button">Load</button></div>
     </dialog>
 
+    <dialog id="scan-ranking-dialog" aria-labelledby="scan-ranking-heading">
+      <form id="scan-ranking-form">
+        <h2 id="scan-ranking-heading">Ranking options</h2>
+        <div class="weights">
+          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
+          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+        </div>
+        <div class="dialog-actions"><button type="submit">Done</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="run-info-dialog" aria-labelledby="run-info-heading">
+      <h2 id="run-info-heading">Run info</h2>
+      <p id="report-details"></p><div id="warnings"></div>
+      <div class="dialog-actions"><button type="button" data-close="run-info-dialog">Close</button></div>
+    </dialog>
+
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
       <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">Import history</button><button type="button" data-screen="scan">New scan</button></div>
       <section id="run-library" class="panel" aria-label="Saved runs">
@@ -147,25 +158,25 @@
         <div class="panel report-heading">
           <div class="report-identity"><img id="report-avatar" class="profile-avatar" src="/placeholder.jpg" width="40" height="40" alt="" referrerpolicy="no-referrer"><div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div></div>
           <p id="report-status"></p>
+          <button id="open-run-info" type="button" aria-haspopup="dialog">Run info</button>
           <button id="resume-button" type="button" hidden>Resume run</button>
         </div>
         <dl id="coverage"></dl>
         <p id="coverage-warning" class="coverage-warning" role="status" hidden></p>
         <p id="report-error" role="alert" hidden></p>
-        <details id="report-notes"><summary>Run details</summary><p id="report-details"></p><div id="warnings"></div></details>
         <nav class="tabs" aria-label="Report views">
           <button type="button" data-view="friends" aria-current="page">Friends</button>
           <button type="button" data-view="network">Network</button>
           <button type="button" data-view="locations">Locations</button>
           <button type="button" data-view="exports">Exports</button>
+          <button type="button" data-view="ranking">Ranking</button>
           <button id="open-history" type="button" hidden>Attached history</button>
         </nav>
         <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col" title="Relative network evidence, not a friendship probability">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
           <p id="friend-empty" class="hint" hidden>No friends match this filter.</p>
-          <details><summary>About scores</summary><p class="hint">Relative evidence, not a friendship probability. Missing signals stay unknown.</p></details>
         </section>
         <section id="network-view" class="view" hidden>
           <div class="section-line"><h2>Friendship network</h2><label>Find profile<input id="network-search" type="search" placeholder="Name or Steam ID"></label><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
@@ -177,30 +188,29 @@
 
         </section>
         <section id="locations-view" class="view" hidden>
-          <h2>Self-reported location signals</h2>
+          <h2 title="Self-reported Steam codes among observed friends; they do not verify residence">Self-reported location signals</h2>
           <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div>
           <p id="location-empty" class="hint" hidden>No admitted friends expose location fields.</p>
-          <details><summary>About locations</summary><p class="hint">Self-reported Steam codes, weighted among observed friends. They do not verify residence.</p></details>
         </section>
         <section id="exports-view" class="view" hidden>
           <h2>Run exports</h2>
           <div id="downloads" class="file-list"></div>
-          <details><summary>Gephi import</summary><p class="hint">Import nodes.csv as nodes and edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p></details>
         </section>
-        </div><aside id="profile-inspector" class="panel profile-inspector" aria-label="Profile details" hidden>
-          <div class="inspector-heading"><h2>Profile</h2><button id="close-inspector" type="button" aria-label="Close profile details">×</button></div>
-          <div class="inspector-identity"><img id="inspect-avatar" class="profile-avatar" width="48" height="48" alt="" referrerpolicy="no-referrer"><div><h2 id="inspect-name"></h2><a id="inspect-link" target="_blank" rel="noreferrer">Steam profile ↗</a></div></div>
-          <dl id="inspect-facts"></dl>
-        </aside></div>
-        <details id="report-ranking" class="panel ranking-settings"><summary>Ranking settings</summary>
+        <section id="ranking-view" class="view" hidden>
+          <h2 title="Recompute this run using its saved observations, without Steam requests">Ranking settings</h2>
           <form id="ranking-form"><div class="weights">
             <label>Hub percentile<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required></label>
             <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
             <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
             <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required></label>
             <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required></label>
-          </div><button id="save-ranking" type="submit">Save ranking</button><span class="hint">Uses saved observations.</span></form>
-        </details>
+          </div><button id="save-ranking" type="submit">Save ranking</button></form>
+        </section>
+        </div><aside id="profile-inspector" class="panel profile-inspector" aria-label="Profile details" hidden>
+          <div class="inspector-heading"><h2>Profile</h2><button id="close-inspector" type="button" aria-label="Close profile details">×</button></div>
+          <div class="inspector-identity"><img id="inspect-avatar" class="profile-avatar" width="48" height="48" alt="" referrerpolicy="no-referrer"><div><h2 id="inspect-name"></h2><a id="inspect-link" target="_blank" rel="noreferrer">Steam profile ↗</a></div></div>
+          <dl id="inspect-facts"></dl>
+        </aside></div>
       </section>
     </section>
 
@@ -211,14 +221,13 @@
           <legend>Import history</legend>
           <form id="history-form" class="stack-form">
             <label for="history-file">History file, up to 2 MB</label>
-            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" required>
+            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" title="Normalized JSON or NDJSON with steamID64, lastChecked and historic.friends" required>
             <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
             <button type="submit">Analyze history</button>
           </form>
-          <details><summary>File format</summary><p class="hint">Normalized JSON or NDJSON with steamID64, lastChecked and historic.friends.</p></details>
         </fieldset>
         <div id="history-result" hidden>
-          <h2 id="history-name"></h2><p id="history-warning" class="hint"></p><a id="history-download" hidden>Download history.json</a>
+          <h2 id="history-name"></h2><a id="history-download" hidden>Download history.json</a>
           <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Duration</th><th scope="col">Relative duration</th><th scope="col">Current</th></tr></thead><tbody id="history-rows"></tbody></table></div>
         </div>
       </section>
@@ -229,7 +238,6 @@
       <fieldset class="panel narrow-panel">
         <legend class="sr-only">API key</legend>
         <p id="key-status" class="hint" role="status">Checking key status</p>
-        <p id="connection" class="hint" role="status">Connecting</p>
         <form id="key-form" class="stack-form">
           <label for="key">Steam Web API key</label>
           <input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required>
