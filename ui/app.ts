@@ -103,7 +103,7 @@ function cell(row: HTMLTableRowElement, text: string | number) {
 function playerCell(row: HTMLTableRowElement, id: SteamId, name: string) {
   const td = cell(row, ""); const link = document.createElement("a"); link.textContent = name;
   link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
-  const small = document.createElement("small"); small.textContent = id; td.append(link, small);
+  link.title = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
 }
 const number = (value: number | null, digits = 0) => value === null ? "unknown" : value.toFixed(digits);
 function renderFriends() {
@@ -135,8 +135,10 @@ function renderReport() {
   const { scan, report } = selected;
   get("empty").hidden = true; get("report").hidden = false;
   get("report-name").textContent = scan.players.find((player) => player.id === scan.seed)?.name ?? scan.seed;
-  const profile = get("report-profile"); profile.setAttribute("href", `https://steamcommunity.com/profiles/${scan.seed}/`); profile.textContent = scan.seed;
-  get("report-status").textContent = `${scan.status} · ${new Date(scan.createdAt).toLocaleString()} · depth ${scan.settings.depth} · cap ${scan.settings.maxNodes}`;
+  const profile = get("report-profile"); profile.setAttribute("href", `https://steamcommunity.com/profiles/${scan.seed}/`); profile.textContent = "Steam profile ↗";
+  profile.title = `Steam ID ${scan.seed}`;
+  get("report-status").textContent = scan.status;
+  get("report-details").textContent = `${new Date(scan.createdAt).toLocaleString()} · Steam ID ${scan.seed} · depth ${scan.settings.depth} · cap ${scan.settings.maxNodes}`;
   buttons("resume-button").hidden = scan.status === "complete" || (currentState?.job.status === "running" && currentState.job.id === scan.id);
   const coverage = get("coverage"); coverage.replaceChildren();
   for (const [label, value] of [["Profiles", report.coverage.nodes], ["Friendships", report.edges.filter((e) => e.kind === "friend").length], ["Public friend lists", report.coverage.publicLists], ["Direct friends included", `${report.coverage.admittedDirectFriends}/${report.coverage.directFriends}`]] as const) {
@@ -145,7 +147,6 @@ function renderReport() {
   }
   const warnings = get("warnings"); warnings.replaceChildren();
   get("report-error").textContent = scan.error; get("report-error").hidden = !scan.error;
-  get("report-notes").hidden = !report.warnings.length;
   for (const warning of report.warnings) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
   for (const file of downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log") exports.append(downloadLink(scan.id, file));
@@ -217,8 +218,10 @@ function renderRecent() {
   for (const run of currentState?.runs ?? []) {
     const button = document.createElement("button"); button.type = "button"; button.textContent = run.name;
     button.setAttribute("aria-current", String(selected?.scan.id === run.id));
-    const small = document.createElement("small"); small.textContent = `${run.status} · ${run.nodes} nodes · ${new Date(run.createdAt).toLocaleString()}`;
-    button.append(small); button.addEventListener("click", () => task(() => openRun(run.id))); recent.append(button);
+    button.title = `${run.status} · ${run.nodes} profiles · ${new Date(run.createdAt).toLocaleString()}`;
+    button.setAttribute("aria-label", `${run.name}, ${button.title}`);
+    const status = document.createElement("span"); status.className = "run-status"; status.textContent = run.status;
+    button.append(status); button.addEventListener("click", () => task(() => openRun(run.id))); recent.append(button);
   }
   for (const issue of currentState?.runIssues ?? []) {
     const button = document.createElement("button"); button.type = "button"; button.textContent = `Invalid run ${issue.id}`;

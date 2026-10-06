@@ -12,15 +12,15 @@
 <body>
   <a class="skip" href="#results">Skip to workspace</a>
   <header class="toolbar">
-    <img class="brand" src="/vapora.svg" width="5752" height="2110" alt="Vapora" decoding="async">
+    <img class="brand" src="/vapora.svg" width="32" height="32" alt="Vapora" decoding="async">
     <nav class="workspace-tabs" aria-label="Workspace">
       <button type="button" data-screen="scan" aria-controls="scan-screen" aria-current="page">Scan</button>
       <button type="button" data-screen="results" aria-controls="results-screen">Results</button>
       <button type="button" data-screen="history" aria-controls="history-screen">History</button>
     </nav>
     <div class="key-status">
-      <span id="key-indicator">Checking key</span>
-      <button class="key-button" type="button" data-screen="settings" aria-controls="settings-screen" aria-describedby="key-indicator">API key</button>
+      <span id="key-indicator" class="sr-only">Checking key</span>
+      <button class="key-button" type="button" data-screen="settings" aria-controls="settings-screen" aria-describedby="key-indicator">Connection</button>
     </div>
   </header>
   <div id="notice" role="alert" hidden></div>
@@ -64,7 +64,7 @@
             <fieldset id="preset">
               <legend>Mode</legend>
               <div class="segmented">
-                <label><input type="radio" name="preset" value="community" checked><span>Community map</span></label>
+                <label><input type="radio" name="preset" value="community" checked><span>Community</span></label>
                 <label><input type="radio" name="preset" value="inner"><span>Inner circle</span></label>
                 <label><input type="radio" name="preset" value="custom"><span>Custom</span></label>
               </div>
@@ -90,11 +90,11 @@
           <p id="target-help" class="sr-only">SteamID64, SteamID2, [U:1:ID], profile URL, or vanity name.</p>
           <div class="identity">
             <p id="target-name" class="target-name" hidden></p>
-            <p id="target-id" class="hint" hidden></p>
+            <p id="target-id" class="sr-only" hidden></p>
             <img class="avatar" src="/placeholder.jpg" width="184" height="184" alt="Default profile placeholder">
           </div>
           <div class="target-actions">
-            <button class="primary" id="scan-button" type="submit" form="scan-form">Analyze</button>
+            <button class="primary" id="scan-button" type="submit" form="scan-form" aria-describedby="key-indicator">Analyze</button>
             <button id="estimate-button" type="button">Estimate</button>
           </div>
           <p id="estimate-result" class="hint" role="status"></p>
@@ -125,12 +125,12 @@
       <section id="report" hidden>
         <div class="panel report-heading">
           <div><h1 id="report-name"></h1><a id="report-profile" target="_blank" rel="noreferrer"></a></div>
+          <p id="report-status"></p>
           <button id="resume-button" type="button" hidden>Resume run</button>
         </div>
-        <p id="report-status" class="hint"></p>
         <dl id="coverage"></dl>
         <p id="report-error" role="alert" hidden></p>
-        <details id="report-notes"><summary>Scan notes</summary><div id="warnings"></div></details>
+        <details id="report-notes"><summary>Run details</summary><p id="report-details"></p><div id="warnings"></div></details>
         <nav class="tabs" aria-label="Report views">
           <button type="button" data-view="friends" aria-current="page">Friends</button>
           <button type="button" data-view="network">Network</button>
@@ -189,6 +189,7 @@
       <fieldset class="panel narrow-panel">
         <legend class="sr-only">API key</legend>
         <p id="key-status" class="hint" role="status">Checking key status</p>
+        <p id="connection" class="hint" role="status">Connecting</p>
         <form id="key-form" class="stack-form">
           <label for="key">Steam Web API key</label>
           <input id="key" type="password" minlength="32" maxlength="32" pattern="[a-fA-F0-9]{32}" autocomplete="off" required>
@@ -198,6 +199,5 @@
       </fieldset>
     </section>
   </main>
-  <footer class="statusbar"><span id="connection" role="status">Connecting</span></footer>
 </body>
 </html>
