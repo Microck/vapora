@@ -39,18 +39,21 @@ export async function steamFixture() {
   const friends = new Map<SteamId, readonly SteamId[]>([
     [seed, [second, third, fourth]], [second, [seed, third, fifth]], [third, [seed, second]], [fourth, []], [fifth, [second]],
   ]);
-  const requests: { path: string; id: string; time: number; agent: string }[] = [];
+  const requests: { path: string; id: string; ids: string; time: number; agent: string }[] = [];
   const failures = new Map<string, { status: number; remaining: number; retryAfter?: string }>();
   const malformed = new Map<string, string>();
   const omittedBans = new Set<SteamId>();
   const omittedAvatars = new Set<string>();
+  const privateProfiles = new Set<string>();
+  const omittedVisibility = new Set<string>();
+  const omittedSummaries = new Set<string>();
   const interruptedBodies = new Map<string, number>();
   const held = new Map<string, () => void>();
   const waiters = new Map<string, () => void>();
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     const id = url.searchParams.get("steamid") ?? "";
-    requests.push({ path: url.pathname, id, time: Date.now(), agent: request.headers["user-agent"] ?? "" });
+    requests.push({ path: url.pathname, id, ids: id || url.searchParams.get("steamids") || url.searchParams.get("input_json") || "", time: Date.now(), agent: request.headers["user-agent"] ?? "" });
     const avatar = /^\/avatars\/(\d{17})\.svg$/.exec(url.pathname);
     if (avatar?.[1]) { response.setHeader("content-type", "image/svg+xml"); response.end(avatarSvg(avatar[1])); return; }
     response.setHeader("content-type", "application/json");
@@ -76,12 +79,13 @@ export async function steamFixture() {
       }
       if (url.pathname.includes("GetPlayerSummaries")) {
         const ids = (url.searchParams.get("steamids") ?? "").split(",");
-        response.end(JSON.stringify({ response: { players: ids.map((steamid) => {
+        response.end(JSON.stringify({ response: { players: ids.filter((id) => !omittedSummaries.has(id)).map((steamid) => {
           const profile: Steam.Summary = { steamid: Schema.decodeUnknownSync(SteamId)(steamid),
             personaname: steamid === second ? '=HYPERLINK("bad")' : `Player ${steamid.slice(-2)}`,
-            communityvisibilitystate: 3, loccountrycode: "ES", locstatecode: "56", loccityid: 123 };
-          if (omittedAvatars.has(steamid)) return profile;
-          return { ...profile, avatarfull: `http://${request.headers.host}/avatars/${steamid}.svg` };
+            loccountrycode: "ES", locstatecode: "56", loccityid: 123 };
+          const visible = omittedVisibility.has(steamid) ? profile : { ...profile, communityvisibilitystate: privateProfiles.has(steamid) ? 1 : 3 };
+          if (omittedAvatars.has(steamid)) return visible;
+          return { ...visible, avatarfull: `http://${request.headers.host}/avatars/${steamid}.svg` };
         }) } })); return;
       }
       if (url.pathname.includes("GetPlayerBans")) {
@@ -98,7 +102,7 @@ export async function steamFixture() {
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   return {
-    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, omittedAvatars, interruptedBodies, friends,
+    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, omittedAvatars, privateProfiles, omittedVisibility, omittedSummaries, interruptedBodies, friends,
     hold: (path: string, id: string) => {
       held.set(path + id, () => {});
       return new Promise<void>((resolve) => waiters.set(path + id, resolve));

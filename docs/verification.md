@@ -1,22 +1,37 @@
 # Verification
 
-The UI follows `feature/gui-and-analysis` at `9ad203818f65f9716d56611e97ad37cf6a3b8a7f`: Parameters above Mode/Output, a middle utility rail, and Target with stacked actions. OMP with `anthropic/claude-opus-5-5` supplied the starting critique and draft from the original screenshots, branch styles and logo. The current skin uses the original green Steam palette, Arial 13px, joined page tabs, square beveled buttons and inset fields. It has no looping animation.
+The Scan workspace follows the supplied 1078 x 599 reference and the original `feature/gui-and-analysis` branch at `9ad203818f65f9716d56611e97ad37cf6a3b8a7f`: Parameters above Mode/Output, a five-slot avatar rail with save/load controls, and Target with stacked actions. The toolbar has Scan and Results tabs, a key button, and browser exports or a native folder action.
 
-The toolbar displays the white eye SVG at 20 × 11px, preserving its aspect ratio. The SVG contains only the original eye, with both outer-circle contours removed. The PNG source and favicon are unchanged. The target avatar is 64px, the report avatar 40px, and recent/friend thumbnails 24px, all square.
+The renderer bundles the original Motiva Sans regular, medium and bold fonts, checkbox bitmaps, key, save and load assets. Chrome's platform-font inspection confirmed that scan labels actually render with the bundled Motiva Sans. The UI uses the original olive palette, joined tabs, square beveled buttons, inset fields and mustard selection accents. There is no looping animation.
 
-Steam's `avatarfull` field survives summary decoding, enrichment, checkpoint save/resume, and the browser API. Missing provider images become `null`; failed image loads use the existing local placeholder once. Changing the target immediately clears an unrelated identity. Avatars use no referrer, and the browser permits HTTPS images plus the configured fixture origin. No Steam requests run while typing.
+At the reference viewport, the parameters start at (36, 100) and measure 655 x 192px. Mode/Output starts at (36, 318); the target avatar starts at (792, 172) and measures 210 x 210px. The toolbar eye is 20 x 11px, contains only white eye paths, and has no outer circle or blue background. The source PNG and favicon remain unchanged.
 
-`npm run verify` passed: types, Oxlint, build and all 12 domain/integration tests. Existing real HTTP and filesystem tests now also check avatar preservation through cancellation/resume and the run/recent APIs, absent images, avatars on accounts with private friend lists, and rejection of executable image URLs. No modules or transports are mocked.
+## Automated checks
 
-Chrome checks used the real UI and local Steam HTTP fixture:
+`npm run verify` passed: TypeScript, Oxlint, build and all 14 domain/integration tests. Tests use real local HTTP and filesystem fixtures, without mocked modules or transports. Coverage includes:
 
-- Submitted a numeric vanity profile URL through Analyze, completed a four-profile scan, and rendered the report and graph nodes.
-- Confirmed target, report, friend and recent images had loaded image bytes. All three friends displayed distinct avatar URLs.
-- Editing the target cleared its old name and picture. A failed image loaded the local placeholder.
-- Checked Scan and Results at 320, 390, 560, 720, 940 and 1280px without page-level horizontal overflow. Analyze retained a visible keyboard focus indicator.
-- Captured and opened the actual [scan](screenshots/scan.png), [report](screenshots/desktop.png), [mobile](screenshots/mobile.png) and native-size [eye](screenshots/logo.png).
-- Checked all three standalone layout prototypes at the same six widths: loaded embedded images, navigation, friend filtering, keyboard tabs, variant switching and reload. No external prototype requests or browser errors. All nine option captures were opened and inspected; see [comparison notes](ui-options.md).
+- Profile avatars through summaries, checkpoints, cancellation/resume and run APIs, including missing images and rejected executable image URLs.
+- Explicit private-profile skipping, retained incoming friendships and rankings, persisted policy, and no own friend/ban/group/game requests for skipped accounts.
+- Missing visibility remains unavailable; a public profile with a private friend list still receives other enabled observations.
+- A private target completes as skipped when the policy is enabled. Estimates respect the same policy and disclose first-two-level coverage at depth 3-5.
+- Depth 4 and 5 query the selected boundary without admitting accounts beyond it.
+- Explicit target lookup returns identity without creating a run, plus CLI depth 5 and skip-policy persistence.
+- Existing provider pacing/retries, Host/Origin checks, key protection, graph metrics, exports and history contracts.
 
-Pictures in the screenshots are distinct sample avatars from the local HTTP fixture, not live accounts. Authenticated live Steam access was not tested. CI runs the locked installation and verification on Linux, Windows and macOS.
+## Browser and desktop checks
 
-Current checkpoints include a required nullable avatar field. Earlier checkpoints without it need a fresh scan; existing files are preserved and are not migrated automatically.
+Chrome drove the real browser UI against the local Steam HTTP fixture. It checked target lookup, a completed scan, loaded avatars, avatar clearing on target edits, depth 5, the skip checkbox, default settings across reload, named-profile save/load dialogs, depth-5 and private-target estimates, visible lookup errors, output-mode filtering without changing scan settings, and visible keyboard focus. Scan and Results had no page-level horizontal overflow at 320, 390, 560, 720, 940, 1078 and 1280px.
+
+The Linux Electron app was launched with a new, initially nonexistent data directory. Its isolated renderer completed a lookup and scan. The actual native window maximized, restored to 1078 x 599px, minimized and closed with exit code 0. Open output folder launched Thunar for the outputs root and accepted the selected run after navigation. The renderer had no Node `require` access.
+
+All current captures were opened and visually inspected:
+
+- [Desktop Scan](screenshots/native.png)
+- [Desktop completed run and output tree](screenshots/native-complete.png)
+- [Browser Scan](screenshots/scan.png)
+- [Browser Results](screenshots/desktop.png)
+- [Narrow Results](screenshots/mobile.png)
+
+The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. Authenticated live Steam calls and native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
+
+Current saved settings require `skipPrivate`; checkpoints also require a nullable avatar field. Earlier local files remain untouched and are reported as invalid. Start a fresh scan or explicitly save a new settings profile; there is no automatic migration.

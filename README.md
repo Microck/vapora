@@ -1,6 +1,6 @@
 # vapora
 
-Explore public Steam friend networks from a local browser UI or the command line. Vapora scans friendships, computes graph metrics, ranks observed friend signals, and exports files for Gephi.
+Explore public Steam friend networks from a local browser UI, desktop app, or the command line. Vapora scans friendships, computes graph metrics, ranks observed friend signals, and exports files for Gephi.
 
 The TypeScript + Effect rewrite replaces the unfinished Python app. The original code and Windows executable remain on the [`legacy` branch](https://github.com/Microck/vapora/tree/legacy). The UI uses the classic Steam styling from the [`feature/gui-and-analysis` prototype](https://github.com/Microck/vapora/tree/feature/gui-and-analysis), with responsive panels and working controls.
 
@@ -22,19 +22,32 @@ Run it on a trusted local machine. Native programs and other accounts on that ma
 
 Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Open **API key** and enter it for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
-In **Scan**, choose a target, preset, and optional signals, then scan. Completed and saved runs open in **Results**. Import normalized history files in **History**. Switching views keeps your inputs; active progress and cancellation remain visible across views. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
+In **Scan**, choose a target, depth, node cap and optional signals, then Analyze. The check button looks up the target name and avatar without creating a run. **Apply** saves the default settings for the next launch. **All / Report / Gephi** filters the output tree; every completed scan still produces all exports. Completed and saved runs open in **Results**. Open **History** from Results to import normalized files. Use the toolbar key button for the connection and ranking weights. Switching views keeps your inputs; active progress and cancellation remain visible across views. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
 
 Use `/id/NAME` for numeric vanity names. `/profiles/ID` and bare numbers identify Steam accounts by SteamID64.
 
+## desktop
+
+```sh
+npm run desktop
+```
+
+The desktop app uses the same UI and scan core. Its minimize, maximize/restore, close and **Open output folder** controls operate on the native window and filesystem. Closing an active scan saves its checkpoint. The browser toolbar provides **Exports** instead of a native folder action.
+
+Desktop data defaults to the local Vapora app-data directory. Set `VAPORA_ROOT` to choose a directory, including the browser's `--root` directory. `.env` and `STEAM_API_KEY` work in both launches. Do not run concurrent scans into the same saved run.
+
+Electron needs its install script to download the native runtime. If your npm configuration disables install scripts, run `npm rebuild electron --ignore-scripts=false` before launching. Linux also needs a graphical desktop and its usual GTK/NSS libraries.
+
 ## scanning
 
-- **Inner circle:** depth 1, cap 300. Includes the target and admitted direct friends.
-- **Community map:** depth 2, cap 500. Adds admitted friends of friends.
-- **Custom:** depth 1–3, cap 1–1000, 1–120 requests per minute, ranking weights, and a hub percentile.
+- Depth 1-5, cap 1-1000, and 1-120 requests per minute.
+- **Skip private profiles** is unchecked by default. When checked, known private profiles remain in the graph with observed incoming links, but their own friend, ban, group and game requests are skipped.
+- Missing visibility is unavailable, not proof of privacy. Public profiles with private friend lists can still supply other enabled signals.
+- CLI `--preset inner` and `--preset community` remain shortcuts; the GUI mode selector never changes your parameters.
 
 Vapora queries admitted boundary profiles for ranking signals without expanding past the configured depth. Every request is paced. Temporary transport failures, rate limits, and selected server failures get up to three retries. Private friend lists remain distinct from empty public lists.
 
-Cancel saves a checkpoint. Resume uses the original target, settings, and unfinished frontier. Failed scans also preserve their checkpoint. A stopped server can leave a run marked `running`; after restarting, open that run and resume it. Checkpoints use the current Vapora 2 format, including nullable profile avatar URLs; Python outputs are preserved separately and are not migrated.
+Cancel saves a checkpoint. Resume uses the original target, settings, and unfinished frontier. Failed scans also preserve their checkpoint. A stopped server can leave a run marked `running`; after restarting, open that run and resume it. Checkpoints use the current Vapora 2 format, including nullable profile avatar URLs and the explicit skip policy; Python outputs are preserved separately and are not migrated.
 
 Owned-game overlap uses public library data. Group links are optional and disabled by default because Steam's documented group endpoint requires publisher access. Denied membership lookup appears as unavailable and stops further group requests in that operation.
 
@@ -45,7 +58,7 @@ Saved profiles contain settings only. Recent runs, profiles, and exports stay un
 ```sh
 npm start -- scan 'https://steamcommunity.com/id/example' --preset inner
 npm start -- estimate '76561198000000000' --depth 2
-npm start -- scan '76561198000000000' --games --max-nodes 200
+npm start -- scan '76561198000000000' --depth 5 --skip-private --games --max-nodes 200
 npm start -- recent
 npm start -- resume RUN_ID
 npm start -- analyze RUN_ID
@@ -57,7 +70,7 @@ npm start -- serve --port 3001 --root ./research
 npm start -- --help
 ```
 
-The CLI scanner needs `STEAM_API_KEY` in your environment or `.env`. History import, report rebuilding, and profile commands work without a key. Estimates sample at most five friend lists; they are approximate and respect the node cap. Depth 3 estimates describe only the first two levels.
+The CLI scanner needs `STEAM_API_KEY` in your environment or `.env`. History import, report rebuilding, and profile commands work without a key. Estimates sample at most five friend lists; they are approximate and respect the node cap. Depth 3-5 estimates explicitly describe only the first two levels. Private-profile skipping applies to estimation too.
 
 ## reports and exports
 
@@ -139,7 +152,7 @@ See [verification results and browser screenshots](docs/verification.md) for the
 - **Access denied:** check your API key. Group access may require publisher permissions.
 - **Private friend list:** Steam returns no accessible list. Vapora cannot bypass privacy settings.
 - **Failed scan:** fix the reported provider, disk-space, or permission issue and resume the saved run.
-- **Invalid checkpoint:** start a new run. Earlier checkpoints without avatar fields and legacy Python checkpoints do not match the current format. Existing files remain untouched.
+- **Invalid checkpoint:** start a new run. Earlier checkpoints without avatar or skip-policy fields and legacy Python checkpoints do not match the current format. Existing files remain untouched.
 - **Long scans:** reduce depth, the node cap, or optional library/group requests. Public data collection remains limited by the configured request rate.
 - **Port in use:** choose another port with `npm start -- serve --port 3001`.
 

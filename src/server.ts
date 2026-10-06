@@ -28,7 +28,13 @@ const files = new Map([
   ["/vapora.svg", { name: "vapora.svg", type: "image/svg+xml" }],
   ["/vapora.ico", { name: "vapora.ico", type: "image/x-icon" }],
   ["/placeholder.jpg", { name: "placeholder.jpg", type: "image/jpeg" }],
+  ["/key.png", { name: "key.png", type: "image/png" }],
+  ["/save.svg", { name: "save.svg", type: "image/svg+xml" }],
+  ["/presets.png", { name: "presets.png", type: "image/png" }],
+  ["/checkbox-off.png", { name: "checkbox-off.png", type: "image/png" }],
+  ["/checkbox-on.png", { name: "checkbox-on.png", type: "image/png" }],
 ]);
+for (const weight of ["regular", "medium", "bold"]) files.set(`/fonts/motiva-sans-${weight}.ttf`, { name: `fonts/motiva-sans-${weight}.ttf`, type: "font/ttf" });
 
 async function body(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -143,12 +149,17 @@ export async function start(options: Options) {
       key = payload.key;
       json(response, 200, { ok: true }); return;
     }
-    if (path === "/api/scan" || path === "/api/estimate") {
+    if (path === "/api/scan" || path === "/api/estimate" || path === "/api/target") {
       const payload = await Effect.runPromise(decode(ScanRequest, contents));
       ensureReady();
-      if (path === "/api/estimate") {
+      if (path === "/api/estimate" || path === "/api/target") {
         estimating = true;
-        try { json(response, 200, await runtime.runPromise(Scanner.estimate(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))))); }
+        try {
+          const result = path === "/api/target"
+            ? await runtime.runPromise(Scanner.lookup(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))))
+            : await runtime.runPromise(Scanner.estimate(payload.target, payload.settings).pipe(Effect.provide(steamLayer(payload.settings))));
+          json(response, 200, result);
+        }
         finally { estimating = false; }
       } else {
         launch(Effect.gen(function* () {

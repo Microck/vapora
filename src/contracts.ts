@@ -15,7 +15,7 @@ export const LocationSignal = Schema.Struct({
 export interface LocationSignal extends Schema.Schema.Type<typeof LocationSignal> {}
 export const Report = Schema.Struct({
   runId: RunId, seed: SteamId, edges: Schema.Array(Edge), metrics: Schema.Array(Metric), friends: Schema.Array(FriendRank), locations: Schema.Array(LocationSignal),
-  coverage: Schema.Struct({ nodes: Schema.Number, publicLists: Schema.Number, unavailableLists: Schema.Number, directFriends: Schema.Number, admittedDirectFriends: Schema.Number, truncated: Schema.Boolean }),
+  coverage: Schema.Struct({ nodes: Schema.Number, publicLists: Schema.Number, skippedLists: Schema.Number, unavailableLists: Schema.Number, directFriends: Schema.Number, admittedDirectFriends: Schema.Number, truncated: Schema.Boolean }),
   warnings: Schema.Array(Schema.String),
 });
 export interface Report extends Schema.Schema.Type<typeof Report> {}

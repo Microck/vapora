@@ -121,15 +121,17 @@ export function analyze(scan: Scan): Report {
   const locations = locationSignals(friends, players);
   const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
   const publicLists = scan.players.filter((p) => p.friendsStatus === "public").length;
+  const skippedLists = scan.players.filter((p) => p.friendsStatus === "skipped").length;
   const warnings = ["Scores describe public network signals. They do not establish real-life friendship or residence."];
   if (scan.truncated) warnings.push("The node cap truncated the network. Missing nodes can change graph metrics and rankings.");
-  if (publicLists < scan.players.length) warnings.push("Some friend lists are private or unavailable. Observed mutual counts are lower bounds.");
+  if (publicLists < scan.players.length) warnings.push("Some friend lists are private, unavailable or skipped. Observed mutual counts are lower bounds.");
+  if (skippedLists) warnings.push(`${skippedLists} private profile(s) skipped by collection policy. Known incoming friendships remain included.`);
   if (scan.players.some((p) => p.groupsStatus === "unavailable")) warnings.push("Steam denied or could not provide group membership. Publisher permissions may be required.");
-  if (scan.players.some((p) => p.bans === null)) warnings.push("Steam did not return ban data for every profile. Missing ban records mean unknown, not unbanned.");
+  if (scan.players.some((p) => p.bans === null)) warnings.push("Ban data is unavailable or skipped for some profiles. Missing records mean unknown, not unbanned.");
   if (seedFriends.size > friends.length) warnings.push("Some direct friends fall outside the node cap and are not ranked.");
   return {
     runId: scan.id, seed: scan.seed, edges, metrics, friends, locations, warnings,
-    coverage: { nodes: players.size, publicLists, unavailableLists: players.size - publicLists,
+    coverage: { nodes: players.size, publicLists, skippedLists, unavailableLists: players.size - publicLists - skippedLists,
       directFriends: seedFriends.size, admittedDirectFriends: friends.length, truncated: scan.truncated },
   };
 }

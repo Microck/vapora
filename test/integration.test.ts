@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { request as httpRequest } from "node:http";
 import { fileURLToPath } from "node:url";
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
-import { defaults } from "../src/model.js";
+import { defaults, SteamId, Settings } from "../src/model.js";
 import * as Steam from "../src/steam.js";
 import * as Storage from "../src/storage.js";
 import * as Scanner from "../src/scanner.js";
@@ -176,6 +176,10 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await fetch(`${server.origin}/api/key`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.test", "user-agent": userAgent }, body: JSON.stringify({ key }) })).status, 403);
     assert.equal((await request("/api/key", JSON.stringify({ key }))).status, 200);
     assert.ok(!(await (await request("/api/state")).text()).includes(key));
+    const target = await request("/api/target", JSON.stringify({ target: seed, settings: defaults }));
+    assert.equal(target.status, 200);
+    assert.equal((await target.json()).avatar, `${fixture.url}/avatars/${seed}.svg`);
+    assert.equal((await (await request("/api/state")).json()).runs.length, 0);
     const settings = { ...defaults, depth: 1, maxNodes: 3 };
     assert.equal((await request("/api/profiles", JSON.stringify({ name: "test", settings }))).status, 200);
     assert.deepEqual(await (await request("/api/profiles/test")).json(), settings);
@@ -217,12 +221,90 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
+test("private-profile policy survives resume and retains incoming evidence without collecting skipped accounts", async () => {
+  const fixture = await steamFixture();
+  const root = await mkdtemp(join(tmpdir(), "vapora-private-"));
+  const runtime = ManagedRuntime.make(Layer.mergeAll(Storage.layer(root), Steam.layer({ key, requestsPerMinute: 60000, baseUrl: fixture.url })));
+  const read = (id: string) => runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(id); }));
+  try {
+    fixture.privateProfiles.add(second);
+    fixture.omittedVisibility.add(third);
+    const settings = { ...defaults, depth: 5, skipPrivate: true, includeGroups: true, includeGames: true };
+    const initial = await runtime.runPromise(Scanner.create(seed, settings));
+    const arrived = fixture.hold(friendPath, third);
+    const fiber = runtime.runFork(Scanner.run(initial));
+    await arrived;
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    fixture.release(friendPath, third);
+    const saved = await read(initial.id);
+    assert.equal(saved.settings.skipPrivate, true);
+    assert.equal(saved.players.find((p) => p.id === second)?.friendsStatus, "skipped");
+    assert.deepEqual(saved.queue, [third, fourth]);
+    const completed = await runtime.runPromise(Scanner.run(saved));
+    const skipped = completed.players.find((p) => p.id === second);
+    assert.equal(skipped?.bansStatus, "skipped");
+    assert.equal(skipped?.groupsStatus, "skipped");
+    assert.equal(skipped?.gamesStatus, "skipped");
+    assert.ok(!fixture.requests.some((r) => r.path !== summaryPath && r.ids.includes(second)));
+    assert.ok(!completed.players.some((p) => p.id === fifth));
+    assert.equal(completed.players.find((p) => p.id === third)?.visibility, "unavailable");
+    assert.equal(completed.players.find((p) => p.id === third)?.friendsStatus, "public");
+    assert.equal(completed.players.find((p) => p.id === fourth)?.visibility, "public");
+    assert.equal(completed.players.find((p) => p.id === fourth)?.friendsStatus, "private");
+    assert.equal(completed.players.find((p) => p.id === fourth)?.gamesStatus, "public");
+    const report = Analysis.analyze(completed);
+    assert.equal(report.coverage.skippedLists, 1);
+    assert.equal(report.friends.find((p) => p.id === second)?.mutual, 1);
+    assert.equal(report.friends.find((p) => p.id === second)?.jaccard, null);
+    assert.ok(report.edges.some((e) => e.source === second && e.target === third));
+    assert.equal((await read(initial.id)).players.find((p) => p.id === second)?.friendsStatus, "skipped");
+    fixture.privateProfiles.add(seed);
+    const before = fixture.requests.length;
+    const privateSeed = await runtime.runPromise(Scanner.run(await runtime.runPromise(Scanner.create(seed, settings))));
+    assert.equal(privateSeed.status, "complete");
+    assert.equal(privateSeed.players[0]?.friendsStatus, "skipped");
+    assert.ok(fixture.requests.slice(before).every((r) => r.path === summaryPath));
+    const estimate = await runtime.runPromise(Scanner.estimate(seed, settings));
+    assert.equal(estimate.available, false);
+    assert.match(estimate.note ?? "", /skipped/);
+    fixture.privateProfiles.delete(seed);
+    const sampleStart = fixture.requests.length;
+    const sampled = await runtime.runPromise(Scanner.estimate(seed, settings));
+    assert.match(sampled.note ?? "", /not the full depth 5/);
+    assert.ok(!fixture.requests.slice(sampleStart).some((r) => r.path === friendPath && r.id === second));
+    fixture.privateProfiles.add(seed);
+    fixture.omittedVisibility.delete(third); fixture.omittedSummaries.add(third);
+    const unrestricted = await runtime.runPromise(Scanner.run(await runtime.runPromise(Scanner.create(seed, { ...settings, skipPrivate: false }))));
+    assert.equal(unrestricted.players.find((p) => p.id === second)?.friendsStatus, "public");
+    assert.ok(unrestricted.players.some((p) => p.id === fifth));
+    assert.equal(unrestricted.players.find((p) => p.id === seed)?.friendsStatus, "public");
+    assert.equal(unrestricted.players.find((p) => p.id === third)?.visibility, "unavailable");
+    assert.equal(unrestricted.players.find((p) => p.id === third)?.friendsStatus, "public");
+  } finally { await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("depth 4 and 5 reach the selected frontier and query boundary lists without admitting beyond it", async () => {
+  const fixture = await steamFixture();
+  const root = await mkdtemp(join(tmpdir(), "vapora-depth-"));
+  const runtime = ManagedRuntime.make(Layer.mergeAll(Storage.layer(root), Steam.layer({ key, requestsPerMinute: 60000, baseUrl: fixture.url })));
+  try {
+    const chain = [seed, second, third, fifth, "76561197960265734", "76561197960265735", "76561197960265736"].map((id) => Schema.decodeUnknownSync(SteamId)(id));
+    chain.forEach((id, index) => fixture.friends.set(id, chain.slice(index + 1, index + 2)));
+    for (const depth of [4, 5]) {
+      const completed = await runtime.runPromise(Scanner.run(await runtime.runPromise(Scanner.create(seed, { ...defaults, depth }))));
+      assert.deepEqual(completed.players.map((p) => [p.id, p.level]), chain.slice(0, depth + 1).map((id, level) => [id, level]));
+      assert.equal(completed.players.at(-1)?.friendsStatus, "public");
+      assert.ok(!completed.players.some((p) => p.id === chain[depth + 1]));
+    }
+  } finally { await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
 test("CLI commands work from a fresh root and reject invalid input with a nonzero exit", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-cli-")); const execute = promisify(execFile);
   try {
     const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
     assert.match((await execute(process.execPath, [cli, "--help"])).stdout, /resume RUN_ID/);
-    assert.match((await execute(process.execPath, [cli, "profile-save", "tiny", "--root", root, "--max-nodes", "1"])).stdout, /Saved profile tiny/);
+    assert.match((await execute(process.execPath, [cli, "profile-save", "tiny", "--root", root, "--max-nodes", "1", "--depth", "5", "--skip-private"])).stdout, /Saved profile tiny/);
+    const settings = Schema.decodeUnknownSync(Schema.fromJsonString(Settings))(await readFile(join(root, "profiles", "tiny.json"), "utf8"));
+    assert.equal(settings.depth, 5); assert.equal(settings.skipPrivate, true);
     assert.match((await execute(process.execPath, [cli, "profiles", "--root", root])).stdout, /tiny/);
     await assert.rejects(execute(process.execPath, [cli, "profile-save", "bad", "--root", root, "--depth", "20"]), /Invalid settings/);
     await assert.rejects(execute(process.execPath, [cli, "unknown", "--root", root]), /Unknown command/);

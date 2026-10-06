@@ -10,22 +10,23 @@ export type SteamId = typeof SteamId.Type;
 const integer = (min: number, max: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: min, maximum: max }));
 const weight = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 export const Settings = Schema.Struct({
-  depth: integer(1, 3),
+  depth: integer(1, 5),
   maxNodes: integer(1, 1000),
   requestsPerMinute: integer(1, 120),
   includeGroups: Schema.Boolean,
   includeGames: Schema.Boolean,
+  skipPrivate: Schema.Boolean,
   hubPercentile: Schema.Number.check(Schema.isBetween({ minimum: 0.5, maximum: 1 })),
   weights: Schema.Struct({ mutual: weight, jaccard: weight, groups: weight, games: weight }),
 });
 export interface Settings extends Schema.Schema.Type<typeof Settings> {}
 export const defaults: Settings = {
-  depth: 2, maxNodes: 500, requestsPerMinute: 120, includeGroups: false, includeGames: false,
+  depth: 2, maxNodes: 500, requestsPerMinute: 120, includeGroups: false, includeGames: false, skipPrivate: false,
   hubPercentile: 0.99, weights: { mutual: 1, jaccard: 1, groups: 0.5, games: 0.5 },
 };
 export const presets = { inner: { ...defaults, depth: 1, maxNodes: 300 }, community: defaults } satisfies Record<string, Settings>;
 
-export const Availability = Schema.Literals(["pending", "public", "private", "unavailable", "disabled"]);
+export const Availability = Schema.Literals(["pending", "public", "private", "unavailable", "disabled", "skipped"]);
 export type Availability = typeof Availability.Type;
 export const Bans = Schema.Struct({ vac: Schema.Boolean, game: integer(0, 10000), community: Schema.Boolean });
 export const AppId = integer(0, 4294967295);
@@ -33,12 +34,12 @@ export const AppId = integer(0, 4294967295);
 export const AvatarUrl = Schema.String.check(Schema.isPattern(/^https?:\/\/[^/\s]+(?:\/[^\s]*)?$/));
 export const Player = Schema.Struct({
   id: SteamId,
-  level: integer(0, 3),
+  level: integer(0, 5),
   name: Schema.String,
   avatar: Schema.NullOr(AvatarUrl),
   visibility: Schema.Literals(["pending", "public", "private", "unavailable"]),
   bans: Schema.NullOr(Bans),
-  bansStatus: Schema.Literals(["pending", "public", "unavailable"]),
+  bansStatus: Schema.Literals(["pending", "public", "unavailable", "skipped"]),
   country: Schema.NullOr(Schema.String),
   state: Schema.NullOr(Schema.String),
   city: Schema.NullOr(integer(0, 2147483647)),

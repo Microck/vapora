@@ -20,7 +20,7 @@ test("individual account IDs round-trip without Number precision loss", async ()
   }
 });
 test("settings reject fractions, NaN, negative weights, and unbounded scans", () => {
-  for (const settings of [{ ...defaults, depth: 1.5 }, { ...defaults, maxNodes: 1001 }, { ...defaults, requestsPerMinute: 0 }, { ...defaults, hubPercentile: NaN }, { ...defaults, weights: { ...defaults.weights, games: -1 } }]) {
+  for (const settings of [{ ...defaults, depth: 1.5 }, { ...defaults, depth: 6 }, { ...defaults, maxNodes: 1001 }, { ...defaults, requestsPerMinute: 0 }, { ...defaults, hubPercentile: NaN }, { ...defaults, weights: { ...defaults.weights, games: -1 } }]) {
     assert.throws(() => Schema.decodeUnknownSync(Settings)(settings));
   }
 });

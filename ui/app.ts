@@ -1,8 +1,17 @@
 import { Effect, Schema } from "effect";
-import { artifacts, defaults, presets, Settings } from "../src/model.js";
+import { artifacts, defaults, Player, Settings } from "../src/model.js";
 import type { SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
 import { HistoryReport } from "../src/history.js";
+
+declare global {
+  interface Window {
+    vaporaDesktop?: {
+      minimize: () => Promise<void>; maximize: () => Promise<void>; close: () => Promise<void>;
+      openOutputs: (id: string | null) => Promise<void>;
+    };
+  }
+}
 
 const get = (id: string) => {
   const found = document.getElementById(id);
@@ -25,16 +34,15 @@ const buttons = (id: string) => {
   return found;
 };
 const inputs = {
-  target: control("target"), depth: control("depth"), nodes: control("maxNodes"), rpm: control("rpm"), groups: control("groups"), games: control("games"), hub: control("hub"),
+  target: control("target"), depth: control("depth"), nodes: control("maxNodes"), rpm: control("rpm"), groups: control("groups"), games: control("games"), skipPrivate: control("skip-private"), hub: control("hub"),
   mutual: control("mutualWeight"), jaccard: control("jaccardWeight"), groupWeight: control("groupWeight"), gameWeight: control("gameWeight"),
   key: control("key"), name: control("profile-name"), search: control("friend-search"), file: control("history-file"), attach: control("attach-history"),
 };
 const profiles = select("profiles"); const edgeKind = select("edge-kind");
-const Preset = Schema.Literals(["community", "inner", "custom"]);
-const presetRadios = [...get("preset").querySelectorAll<HTMLInputElement>('input[name="preset"]')];
-function setPreset(value: typeof Preset.Type) {
-  for (const radio of presetRadios) radio.checked = radio.value === value;
-}
+const OutputMode = Schema.Literals(["all", "report", "gephi"]);
+let outputMode: typeof OutputMode.Type = "all";
+let preview: Player | null = null;
+let previewTarget = "";
 let selected: Contracts.RunView | null = null;
 // Only replace a target with its resolved seed while the submitted text is still unchanged.
 let linkedTarget = "";
@@ -46,6 +54,7 @@ let selectedNode: SteamId | null = null;
 let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
+let settingsVersion = 0;
 const Screen = Schema.Literals(["scan", "results", "history", "settings"]);
 let navigationVersion = 0;
 
@@ -77,16 +86,22 @@ async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<
   return await Effect.runPromise(Schema.decodeUnknownEffect(schema)(json));
 }
 const readSettings = () => Schema.decodeUnknownSync(Settings)({
-  depth: inputs.depth.valueAsNumber, maxNodes: inputs.nodes.valueAsNumber, requestsPerMinute: inputs.rpm.valueAsNumber,
+  depth: Number(inputs.depth.value), maxNodes: inputs.nodes.valueAsNumber, requestsPerMinute: inputs.rpm.valueAsNumber,
   includeGroups: inputs.groups.checked, includeGames: inputs.games.checked, hubPercentile: inputs.hub.valueAsNumber,
+  skipPrivate: inputs.skipPrivate.checked,
   weights: { mutual: inputs.mutual.valueAsNumber, jaccard: inputs.jaccard.valueAsNumber, groups: inputs.groupWeight.valueAsNumber, games: inputs.gameWeight.valueAsNumber },
 });
 function applySettings(settings: Settings) {
   get("estimate-result").textContent = "";
   inputs.depth.value = String(settings.depth); inputs.nodes.value = String(settings.maxNodes); inputs.rpm.value = String(settings.requestsPerMinute);
   inputs.groups.checked = settings.includeGroups; inputs.games.checked = settings.includeGames; inputs.hub.value = String(settings.hubPercentile);
+  inputs.skipPrivate.checked = settings.skipPrivate;
   inputs.mutual.value = String(settings.weights.mutual); inputs.jaccard.value = String(settings.weights.jaccard);
   inputs.groupWeight.value = String(settings.weights.groups); inputs.gameWeight.value = String(settings.weights.games);
+  renderDepth();
+}
+function renderDepth() {
+  for (const button of document.querySelectorAll<HTMLElement>("[data-depth]")) button.setAttribute("aria-pressed", String(button.dataset.depth === inputs.depth.value));
 }
 /** A missing or failed Steam image keeps the same square placeholder, without repeated retries. */
 function setAvatar(image: HTMLImageElement, url: string | null) {
@@ -107,11 +122,11 @@ function renderTarget() {
   const seed = selected?.scan.seed;
   const target = inputs.target.value.trim();
   const matches = seed && (target === seed || target === `https://steamcommunity.com/profiles/${seed}` || target === `https://steamcommunity.com/profiles/${seed}/`);
-  const player = matches ? selected?.scan.players.find((player) => player.id === seed) : undefined;
-  get("target-name").textContent = matches ? player?.name ?? seed : "";
+  const player = matches ? selected?.scan.players.find((player) => player.id === seed) : preview && (target === previewTarget || target === preview.id) ? preview : undefined;
+  get("target-name").textContent = player?.name ?? "";
   profileImage("target-avatar", player?.avatar ?? null);
-  get("target-id").textContent = matches ? seed : "";
-  get("target-name").hidden = !matches; get("target-id").hidden = !matches;
+  get("target-id").textContent = player?.id ?? "";
+  get("target-id").hidden = !player;
 }
 function cell(row: HTMLTableRowElement, text: string | number) {
   const td = document.createElement("td"); td.textContent = String(text); row.append(td); return td;
@@ -147,6 +162,23 @@ const downloads = artifacts.filter((file) => file !== "history.json");
 function downloadLink(id: string, file: string) {
   const link = document.createElement("a"); link.textContent = `↓ ${file}`; link.href = `/api/download?${new URLSearchParams({ id, file })}`; return link;
 }
+/** Output selection changes only this tree. Every completed scan keeps all its artifacts. */
+function renderOutput() {
+  const tree = get("output-tree"); tree.replaceChildren();
+  const heading = document.createElement("p"); heading.className = "output-root";
+  const scan = selected?.scan;
+  heading.textContent = scan ? `outputs/${scan.id}/` : "outputs/<run-id>/";
+  if (scan) heading.title = `${scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed} · ${new Date(scan.createdAt).toLocaleString()}`;
+  tree.append(heading);
+  get("output-owner").textContent = scan ? scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed : "";
+  const files = downloads.filter((file) => file === "scan.json" || file === "run.log" || outputMode === "all" || (outputMode === "gephi" ? file.startsWith("gephi/") : !file.startsWith("gephi/")));
+  for (const file of files) {
+    const available = scan && (scan.status === "complete" || file === "scan.json" || file === "run.log");
+    const row = available ? downloadLink(scan.id, file) : document.createElement("span");
+    row.textContent = `${file === files.at(-1) ? "└─" : "├─"} ${file}`;
+    tree.append(row);
+  }
+}
 function renderReport() {
   if (!selected) return;
   const { scan, report } = selected;
@@ -169,13 +201,13 @@ function renderReport() {
   for (const warning of report.warnings) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
   for (const file of downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log") exports.append(downloadLink(scan.id, file));
-  renderFriends(); renderLocations(); renderGraph(); renderTarget();
+  renderFriends(); renderLocations(); renderGraph(); renderTarget(); renderOutput();
 }
 function inspectNode(id: SteamId) {
   selectedNode = id;
   const player = selected?.scan.players.find((p) => p.id === id); const metric = selected?.report.metrics.find((m) => m.id === id);
   if (!player || !metric) return;
-  get("node-detail").textContent = `${player.name} · ${id} · degree ${metric.degree} · betweenness ${metric.betweenness.toFixed(4)} · community ${metric.community} · friend list ${player.friendsStatus} · ${player.bans ? (player.bans.vac || player.bans.game || player.bans.community ? "bans recorded" : "no bans recorded") : "ban status unknown"}`;
+  get("node-detail").textContent = `${player.name} · ${id} · degree ${metric.degree} · betweenness ${metric.betweenness.toFixed(4)} · community ${metric.community} · profile ${player.visibility} · friends ${player.friendsStatus} · groups ${player.groupsStatus} · games ${player.gamesStatus} · bans ${player.bansStatus}`;
   renderGraph();
 }
 function renderGraph() {
@@ -234,21 +266,28 @@ function renderRecent() {
   const signature = JSON.stringify([currentState?.runs, currentState?.runIssues, selected?.scan.id]);
   if (signature === recentSignature) return;
   recentSignature = signature; const recent = get("recent"); recent.replaceChildren();
-  for (const run of currentState?.runs ?? []) {
+  const runs = currentState?.runs ?? [];
+  const issues = currentState?.runIssues ?? [];
+  for (const run of runs) {
     const button = document.createElement("button"); button.type = "button";
-    const name = document.createElement("span"); name.className = "run-name"; name.textContent = run.name;
-    button.append(avatarImage(run.avatar), name);
+    button.append(avatarImage(run.avatar));
     button.setAttribute("aria-current", String(selected?.scan.id === run.id));
     button.title = `${run.status} · ${run.nodes} profiles · ${new Date(run.createdAt).toLocaleString()}`;
     button.setAttribute("aria-label", `${run.name}, ${button.title}`);
-    const status = document.createElement("span"); status.className = "run-status"; status.textContent = run.status;
-    button.append(status); button.addEventListener("click", () => task(() => openRun(run.id))); recent.append(button);
+    button.addEventListener("click", () => task(() => openRun(run.id))); recent.append(button);
   }
-  for (const issue of currentState?.runIssues ?? []) {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = `Invalid run ${issue.id}`;
+  for (const issue of issues) {
+    const button = document.createElement("button"); button.type = "button"; button.append(avatarImage(null));
+    button.title = `Invalid run ${issue.id}`; button.setAttribute("aria-label", button.title);
     button.addEventListener("click", () => notice(issue.message)); recent.append(button);
   }
-  if (!currentState?.runs.length && !currentState?.runIssues.length) { const p = document.createElement("p"); p.textContent = "No saved runs yet."; p.className = "hint"; recent.append(p); }
+  const emptySlots = Math.max(0, 5 - runs.length - issues.length);
+  for (let i = 0; i < emptySlots; i++) {
+    const empty = avatarImage(null); empty.title = "No saved run"; empty.setAttribute("aria-hidden", "true"); recent.append(empty);
+  }
+  if (runs.length + issues.length === 0) {
+    const status = document.createElement("span"); status.className = "sr-only"; status.textContent = "No saved runs."; recent.append(status);
+  }
 }
 function renderProgress(state: Contracts.State) {
     get("key-status").textContent = state.hasKey ? "Key set for this session." : "Key required.";
@@ -258,6 +297,7 @@ function renderProgress(state: Contracts.State) {
     buttons("scan-button").disabled = running || !state.hasKey;
     buttons("estimate-button").disabled = running || !state.hasKey;
     buttons("resume-button").disabled = running || !state.hasKey;
+    buttons("lookup-target").disabled = running || !state.hasKey;
     get("progress-section").hidden = !running;
     get("progress-title").textContent = state.job.progress?.phase ?? "Resolving profile";
     const progress = state.job.progress;
@@ -270,6 +310,11 @@ async function refresh() {
   const navigation = navigationVersion;
   try {
     currentState = await api("/api/state", Contracts.State);
+    if (lastJob === null && currentState.profiles.includes("default")) {
+      const version = settingsVersion;
+      const settings = await api("/api/profiles/default", Settings);
+      if (version === settingsVersion) applySettings(settings);
+    }
     get("connection").textContent = "Local session";
     renderProgress(currentState);
     renderRecent();
@@ -306,27 +351,62 @@ buttons("estimate-button").addEventListener("click", () => task(async () => {
   buttons("estimate-button").disabled = true;
   try {
     const estimate = await api("/api/estimate", Contracts.Estimate, { target: inputs.target.value, settings: readSettings() });
-    get("estimate-result").textContent = estimate.available ? `${estimate.directFriends} direct friends · approximately ${estimate.estimatedNodes} admitted nodes · ${estimate.sampleSize} public samples. ${estimate.note ?? ""}` : "The friend list is private or unavailable. No estimate is possible.";
+    get("estimate-result").textContent = estimate.available ? `${estimate.directFriends} direct friends · approximately ${estimate.estimatedNodes} admitted nodes · ${estimate.sampleSize} public samples. ${estimate.note ?? ""}` : estimate.note ?? "The friend list is private or unavailable. No estimate is possible.";
   } finally { await refresh(); }
 }));
-get("preset").addEventListener("change", (event) => {
+get("output-mode").addEventListener("change", (event) => {
   if (!(event.target instanceof HTMLInputElement)) return;
-  const value = Schema.decodeUnknownSync(Preset)(event.target.value);
-  if (value !== "custom") applySettings(presets[value]);
+  outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
-// Radio input fires before change. Only edits to settings select Custom.
-get("scan-form").addEventListener("input", (event) => { get("estimate-result").textContent = ""; if (!presetRadios.some((radio) => radio === event.target)) setPreset("custom"); });
-inputs.target.addEventListener("input", () => { get("estimate-result").textContent = ""; renderTarget(); });
+get("scan-form").addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
+inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; get("estimate-result").textContent = ""; renderTarget(); });
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
+  settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
+});
+buttons("lookup-target").addEventListener("click", () => task(async () => {
+  if (!inputs.target.reportValidity()) return;
+  const target = inputs.target.value.trim(); buttons("lookup-target").disabled = true;
+  try {
+    const player = await api("/api/target", Player, { target, settings: readSettings() });
+    if (inputs.target.value.trim() === target) { preview = player; previewTarget = target; renderTarget(); }
+  } finally { await refresh(); }
+}));
+buttons("apply-settings").addEventListener("click", () => task(async () => {
+  if (!get("scan-form").querySelector<HTMLInputElement>(":invalid")) {
+    await api("/api/profiles", Contracts.Ok, { name: "default", settings: readSettings() }); await refresh(); notice("Saved default settings.");
+  } else throw new Error("Check the node limit and request rate.");
+}));
 get("key-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   await api("/api/key", Contracts.Ok, { key: inputs.key.value }); inputs.key.value = ""; await refresh();
 }); });
 get("profile-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
-  await api("/api/profiles", Contracts.Ok, { name: inputs.name.value, settings: readSettings() }); await refresh();
+  await api("/api/profiles", Contracts.Ok, { name: inputs.name.value, settings: readSettings() }); dialog("save-dialog").close(); await refresh();
 }); });
 buttons("load-profile").addEventListener("click", () => task(async () => {
   if (!profiles.value) throw new Error("Choose a saved profile first.");
-  applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); setPreset("custom");
+  applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); dialog("load-dialog").close();
 }));
+function dialog(id: string) {
+  const found = get(id); if (!(found instanceof HTMLDialogElement)) throw new Error(`Expected dialog: ${id}`); return found;
+}
+const desktop = window.vaporaDesktop;
+if (desktop) {
+  document.body.classList.add("desktop"); get("window-controls").hidden = false;
+  buttons("output-folder").textContent = "Open output folder";
+  buttons("window-minimize").addEventListener("click", () => task(desktop.minimize));
+  buttons("window-maximize").addEventListener("click", () => task(desktop.maximize));
+  buttons("window-close").addEventListener("click", () => task(desktop.close));
+}
+buttons("output-folder").addEventListener("click", () => {
+  if (desktop) task(() => desktop.openOutputs(selected?.scan.id ?? null));
+  else {
+    showScreen("results");
+    document.querySelector<HTMLButtonElement>('[data-view="exports"]')?.click();
+  }
+});
+buttons("save-settings").addEventListener("click", () => dialog("save-dialog").showModal());
+buttons("open-settings").addEventListener("click", () => dialog("load-dialog").showModal());
+for (const button of document.querySelectorAll<HTMLElement>("[data-close]")) button.addEventListener("click", () => dialog(button.dataset.close ?? "").close());
 buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
 buttons("resume-button").addEventListener("click", () => task(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
 inputs.search.addEventListener("input", renderFriends);
@@ -361,6 +441,6 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 window.addEventListener("focus", () => void refresh());
 applySettings(defaults);
-renderTarget();
+renderTarget(); renderOutput();
 const initialNavigation = navigationVersion;
 void refresh().then(() => { const id = location.hash.slice(1); if (id && !selected) task(() => openRun(id, initialNavigation)); });
