@@ -15,7 +15,8 @@
     "start": "node --env-file-if-exists=.env dist/src/cli.js",
     "dev": "npm run build && npm start -- serve",
     "verify": "npm run check && npm run lint && npm test",
-    "desktop": "npm run build && electron scripts/desktop.mjs"
+    "desktop": "npm run build && electron scripts/desktop.mjs",
+    "test:e2e": "npm run build && node --test dist/test/browser-e2e.js"
   },
   "dependencies": {
     "effect": "4.0.1",
@@ -29,6 +30,7 @@
     "electron": "44.5.1",
     "esbuild": "0.25.11",
     "oxlint": "1.87.0",
+    "puppeteer-core": "25.10.0",
     "typescript": "5.9.3"
   }
 }

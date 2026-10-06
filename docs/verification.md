@@ -40,7 +40,9 @@ All current captures were opened and visually inspected:
 - [Saved-run ranking](screenshots/ranking.png)
 - [Run info](screenshots/run-info.png)
 
-The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. No authenticated live Steam scan has been run. A local ignored Steam API key is now configured and its loading has been checked, but provider acceptance and a live scan remain unverified. Native Windows/macOS launches were not tested locally. CI verifies the locked install, types, lint and tests on Linux, Windows and macOS; that does not establish native desktop behavior on those systems.
+The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. An authenticated live scan of the authorized Microck profile completed with five accounts, five loaded avatars, public group observations, four public game observations and one private game observation. The cap correctly reported partial coverage (4 of 48 direct friends admitted). All six exports were nonempty and contained no API key. The browser displayed the real identities and graph without renderer errors. A live depth-1 CLI estimate also passed. These are bounded checks, not a claim that every Steam account or endpoint is always available.
+
+The expanded E2E pass exercised cancellation and resume across browser/server and native-app restarts, real file downloads, offline reranking, history validation, retries and damaged current checkpoints. Linux and macOS native applications each passed nine workflow groups, including active-scan close/checkpoint/restart/resume, actual minimize/maximize/restore and output-folder actions. Native Windows verification remains pending while a disposable test VM installs dependencies. See [the current E2E report](e2e-verification.md) for evidence and platform limits. CI core checks alone do not establish native desktop behavior.
 
 ## Interface review
 
@@ -72,7 +74,7 @@ Additional browser checks used real local HTTP fixtures with deliberately long n
 
 Screenshot capture now waits for the visible images to finish loading and for the bundled fonts. The first fresh Results capture caught the transient empty avatar frames before their HTTP responses arrived; it was replaced after adding the readiness check. The final browser/desktop captures retain the fixture avatars throughout.
 
-Not verified: an actual iOS Safari session, physical screen-reader speech output, native Windows/macOS high-contrast rendering, or live Steam data. The simplification pass found only mechanical styling/label changes, so there was no substantive application logic to refactor and no review agents were dispatched.
+Not verified: an actual iOS Safari session, physical screen-reader speech output, native Windows/macOS high-contrast rendering, or large live Steam networks. The latest simplification pass reviewed the identity fix and browser regression test. It reused the standard timer primitive and corrected test cleanup and filesystem-error handling; it made no further product behavior changes.
 
 Verdict: Approve within the inspected scope. No unresolved high-severity findings in that scope.
 

@@ -149,7 +149,9 @@ The checks run TypeScript, Oxlint with anti-slop rules and a complexity limit, t
 
 The product contract is in [docs/product-contract.md](docs/product-contract.md). Steam behavior follows the official [ISteamUser](https://partner.steamgames.com/doc/webapi/ISteamUser), [IPlayerService](https://partner.steamgames.com/doc/webapi/IPlayerService), and [Web API overview](https://partner.steamgames.com/doc/webapi_overview) documentation.
 
-See [verification results and browser screenshots](docs/verification.md) for the tested workflows and live-Steam verification limit.
+See [verification results and browser screenshots](docs/verification.md) for the tested workflows and platform limits.
+
+`VAPORA_BROWSER=/path/to/chrome npm run test:e2e` runs Chromium against a real local HTTP provider fixture and fresh filesystem storage. It covers denied-key recovery and avatars, cancellation/resume across restart, saved settings, offline reranking, history attachment, actual file downloads, and narrow layout. It needs an installed Chrome/Chromium executable and does not use your Steam API key. Linux CI runs it with the runner's installed Chrome.
 
 ## troubleshooting
 

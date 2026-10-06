@@ -22,3 +22,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+      - name: Browser E2E
+        if: runner.os == 'Linux'
+        run: npm run test:e2e
+        env:
+          VAPORA_BROWSER: /usr/bin/google-chrome

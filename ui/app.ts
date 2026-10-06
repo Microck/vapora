@@ -127,7 +127,8 @@ function renderTarget() {
   const seed = selected?.scan.seed;
   const target = inputs.target.value.trim();
   const matches = seed && (target === seed || target === `https://steamcommunity.com/profiles/${seed}` || target === `https://steamcommunity.com/profiles/${seed}/`);
-  const player = matches ? selected?.scan.players.find((player) => player.id === seed) : preview && (target === previewTarget || target === preview.id) ? preview : undefined;
+  // An explicit lookup is fresher than the selected checkpoint, which may lack summaries after a failed scan.
+  const player = preview && (target === previewTarget || target === preview.id) ? preview : matches ? selected?.scan.players.find((player) => player.id === seed) : undefined;
   get("target-name").textContent = player?.name ?? "";
   profileImage("target-avatar", player?.avatar ?? null);
   get("target-id").textContent = player?.id ?? "";
