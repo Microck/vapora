@@ -65,7 +65,7 @@
           </fieldset>
           <div class="panel mode-output">
             <fieldset id="output-mode">
-              <legend>Mode <span class="info" title="Select the outputs shown here. Scan parameters and collected data stay the same.">i</span></legend>
+              <legend>Outputs <span class="info" title="Select the outputs shown here. Scan parameters and collected data stay the same.">i</span></legend>
               <div class="segmented">
                 <label><input type="radio" name="output-mode" value="all" checked><span>All</span></label>
                 <label><input type="radio" name="output-mode" value="report"><span>Report</span></label>
@@ -78,6 +78,15 @@
               <div id="output-tree" class="output-tree" aria-describedby="output-owner"></div>
             </section>
           </div>
+      <details class="panel ranking-settings advanced-scan"><summary>Advanced scan options</summary>
+        <div class="weights">
+          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
+          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
+          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+        </div>
+      </details>
         </form>
         <aside class="rail" aria-label="Recent runs and saved settings">
           <div class="panel rail-recent"><div id="recent" aria-label="Recent runs"></div></div>
@@ -122,8 +131,15 @@
     </dialog>
 
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
+      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">Import history</button><button type="button" data-screen="scan">New scan</button></div>
+      <section id="run-library" class="panel" aria-label="Saved runs">
+        <div class="section-line"><h2>Saved runs</h2><label>Find run<input id="run-search" type="search" placeholder="Name or Steam ID"></label><label>Status<select id="run-status"><option value="all">All</option><option value="complete">Complete</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="running">Unfinished</option></select></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Created</th><th>Status</th><th>Profiles</th><th>Run</th></tr></thead><tbody id="run-rows"></tbody></table></div>
+        <p id="run-empty" class="hint" hidden>No matching runs.</p>
+        <div id="run-issues"></div>
+      </section>
       <section id="empty" class="panel empty-state">
-        <h1>No run selected</h1>
+        <h1>Select a saved run or start a scan</h1>
 
         <button type="button" data-screen="scan" aria-controls="scan-screen">Go to Scan</button>
       </section>
@@ -134,6 +150,7 @@
           <button id="resume-button" type="button" hidden>Resume run</button>
         </div>
         <dl id="coverage"></dl>
+        <p id="coverage-warning" class="coverage-warning" role="status" hidden></p>
         <p id="report-error" role="alert" hidden></p>
         <details id="report-notes"><summary>Run details</summary><p id="report-details"></p><div id="warnings"></div></details>
         <nav class="tabs" aria-label="Report views">
@@ -141,8 +158,9 @@
           <button type="button" data-view="network">Network</button>
           <button type="button" data-view="locations">Locations</button>
           <button type="button" data-view="exports">Exports</button>
-          <button type="button" data-screen="history" aria-controls="history-screen">History</button>
+          <button id="open-history" type="button" hidden>Attached history</button>
         </nav>
+        <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
           <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
@@ -150,10 +168,12 @@
           <details><summary>About scores</summary><p class="hint">Relative evidence, not a friendship probability. Missing signals stay unknown.</p></details>
         </section>
         <section id="network-view" class="view" hidden>
-          <div class="section-line"><h2>Friendship network</h2><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
+          <div class="section-line"><h2>Friendship network</h2><label>Find profile<input id="network-search" type="search" placeholder="Name or Steam ID"></label><label>Edges<select id="edge-kind"><option value="friend">Friendships</option><option value="group">Shared groups</option><option value="all">All connections</option></select></label></div>
           <div class="graph-toolbar"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-reset" type="button">Reset view</button><span id="graph-count"></span></div>
+          <div id="network-matches" class="network-matches"></div>
+          <div id="community-legend" class="community-legend" aria-label="Communities"></div>
           <svg id="graph" viewBox="0 0 1000 650" role="group" aria-label="Interactive friendship network"></svg>
-          <div id="node-detail" role="status">Select a node.</div>
+
 
         </section>
         <section id="locations-view" class="view" hidden>
@@ -167,6 +187,20 @@
           <div id="downloads" class="file-list"></div>
           <details><summary>Gephi import</summary><p class="hint">Import nodes.csv as nodes and edges.csv as undirected edges. Filter Kind to friend for friendship centrality.</p></details>
         </section>
+        </div><aside id="profile-inspector" class="panel profile-inspector" aria-label="Profile details" hidden>
+          <div class="inspector-heading"><h2>Profile</h2><button id="close-inspector" type="button" aria-label="Close profile details">×</button></div>
+          <div class="inspector-identity"><img id="inspect-avatar" class="profile-avatar" width="48" height="48" alt="" referrerpolicy="no-referrer"><div><h2 id="inspect-name"></h2><a id="inspect-link" target="_blank" rel="noreferrer">Steam profile ↗</a></div></div>
+          <dl id="inspect-facts"></dl>
+        </aside></div>
+        <details id="report-ranking" class="panel ranking-settings"><summary>Ranking settings</summary>
+          <form id="ranking-form"><div class="weights">
+            <label>Hub percentile<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required></label>
+            <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required></label>
+            <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required></label>
+          </div><button id="save-ranking" type="submit">Save ranking</button><span class="hint">Uses saved observations.</span></form>
+        </details>
       </section>
     </section>
 
@@ -203,15 +237,7 @@
         </form>
         <p class="hint"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam API key ↗</a></p>
       </fieldset>
-      <details class="panel ranking-settings"><summary>Ranking weights</summary>
-        <div class="weights">
-          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
-          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
-          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
-        </div>
-      </details>
+
     </section>
   </main>
 </body>

@@ -22,7 +22,11 @@ Run it on a trusted local machine. Native programs and other accounts on that ma
 
 Get a [Steam Web API key](https://steamcommunity.com/dev/apikey). Open **API key** and enter it for the current server session, or copy `.env.example` to `.env` and set `STEAM_API_KEY`. Environment keys also work. The browser does not store keys, and keys never appear in exports.
 
-In **Scan**, choose a target, depth, node cap and optional signals, then Analyze. The check button looks up the target name and avatar without creating a run. **Apply** saves the default settings for the next launch. **All / Report / Gephi** filters the output tree; every completed scan still produces all exports. Completed and saved runs open in **Results**. Open **History** from Results to import normalized files. Use the toolbar key button for the connection and ranking weights. Switching views keeps your inputs; active progress and cancellation remain visible across views. Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
+In **Scan**, choose a target, depth, node cap and optional signals, then Analyze. The check button looks up the target name and avatar without creating a run. **Apply** saves the default settings for the next launch. **Outputs: All / Report / Gephi** filters the output tree; every completed scan still produces all exports. Advanced scan options hold ranking defaults. Use the toolbar key button for the connection. Switching views keeps your inputs; active progress and cancellation remain visible across views.
+
+**Results** includes a searchable saved-run list, coverage warnings, profile inspection and a community-clustered graph. **Ranking settings** lets you change weights and save a new analysis of a completed run without a key or new Steam requests. **Import history** works with or without a selected run; attached history reopens with its matching run.
+
+Targets can be SteamID64, SteamID2, `[U:1:ID]`, a Steam profile URL, or a vanity name. SteamID64 values stay strings to avoid precision loss.
 
 Use `/id/NAME` for numeric vanity names. `/profiles/ID` and bare numbers identify Steam accounts by SteamID64.
 
@@ -43,7 +47,7 @@ Electron needs its install script to download the native runtime. If your npm co
 - Depth 1-5, cap 1-1000, and 1-120 requests per minute.
 - **Skip private profiles** is unchecked by default. When checked, known private profiles remain in the graph with observed incoming links, but their own friend, ban, group and game requests are skipped.
 - Missing visibility is unavailable, not proof of privacy. Public profiles with private friend lists can still supply other enabled signals.
-- CLI `--preset inner` and `--preset community` remain shortcuts; the GUI mode selector never changes your parameters.
+- CLI `--preset inner` and `--preset community` remain shortcuts; the GUI output selector never changes your parameters.
 
 Vapora queries admitted boundary profiles for ranking signals without expanding past the configured depth. Every request is paced. Temporary transport failures, rate limits, and selected server failures get up to three retries. Private friend lists remain distinct from empty public lists.
 
@@ -87,7 +91,7 @@ outputs/<run-id>/
   history.json          # when attached
 ```
 
-The browser shows ranked friends, location signals, a static interactive graph, and download links. It supports cancellation, resume, filtering, graph zoom, node inspection, profiles, and history imports. No placeholder results or looping animations.
+The browser shows ranked friends, location signals, a community-clustered graph, and download links. Graph search matches names and Steam IDs. Selecting a profile shows its avatar, observation status, actual ban records, centrality, community and hub flag. It also supports cancellation, resume, filtering, graph zoom, saved settings, and history imports. No placeholder results or looping animations.
 
 Graph metrics include degree, normalized betweenness, Louvain communities, and hubs at the configured percentile. Metrics use admitted friendship edges. Shared-group edges remain separate, so group co-membership does not inflate friendship centrality. Zero-centrality graphs have no hubs.
 

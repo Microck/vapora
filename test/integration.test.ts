@@ -15,7 +15,7 @@ import * as Scanner from "../src/scanner.js";
 import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
-import { seed, second, third, fourth, fifth, key, userAgent, steamFixture } from "./fixtures.js";
+import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, player, scan } from "./fixtures.js";
 
 const friendPath = "/ISteamUser/GetFriendList/v1/";
 const summaryPath = "/ISteamUser/GetPlayerSummaries/v2/";
@@ -203,6 +203,7 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 202);
     await arrived;
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 400);
+    assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { hubPercentile: .99, weights: defaults.weights } }))).status, 400);
     assert.equal((await request("/api/cancel", "{}")).status, 200);
     fixture.release(friendPath, seed);
     const state = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
@@ -219,7 +220,51 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request(`/api/download?id=${current.job.id}&file=..%2F.env`)).status, 404);
     assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { friends: [] } }) }))).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
+    const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
+    assert.equal(attached.history?.profile.steamID64, seed);
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("saved rankings change without Steam authority or collection and attached history survives reopening", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-ranking-")); const fixture = await steamFixture();
+  const runtime = ManagedRuntime.make(Storage.layer(root));
+  const observations = scan([
+    player(seed, [second, third], { groups: ["common"], groupsStatus: "public" }),
+    player(second, [seed, third], { groups: [], groupsStatus: "public" }),
+    player(third, [seed], { groups: ["common"], groupsStatus: "public" }),
+  ], { ...defaults, includeGroups: true, skipPrivate: true });
+  await runtime.runPromise(Effect.gen(function* () { const store = yield* Storage.Service; yield* store.create(observations); yield* Analysis.exportRun(observations); }));
+  const server = await Server.start({ root, key: "", port: 0, steamBaseUrl: fixture.url });
+  const post = (path: string, payload: string) => fetch(`${server.origin}${path}`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: payload });
+  const get = (path: string) => fetch(`${server.origin}${path}`, { headers: { "user-agent": userAgent } });
+  try {
+    const ranking = { hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
+    assert.equal((await get(`/api/runs/${observations.id}`)).status, 200);
+    const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: { friends: [{ Friend: third, Name: "Third", FriendDate: 100 }] } };
+    assert.equal((await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }))).status, 200);
+    const result = await post("/api/analyze", JSON.stringify({ id: observations.id, ranking })); assert.equal(result.status, 200);
+    const view = Schema.decodeUnknownSync(Contracts.RunView)(await result.json());
+    assert.equal(view.report.friends[0]?.id, third);
+    assert.deepEqual(view.scan.players, observations.players);
+    assert.deepEqual(view.scan.settings, { ...observations.settings, ...ranking });
+    assert.equal(view.history?.friends[0]?.durationSeconds, 900);
+    const persisted = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
+    assert.deepEqual(persisted.settings, view.scan.settings);
+    const exported = Schema.decodeUnknownSync(Schema.fromJsonString(Contracts.Report))(await readFile(join(root, "outputs", observations.id, "analysis.json"), "utf8"));
+    assert.deepEqual(exported, view.report);
+    const rankedCsv = await readFile(join(root, "outputs", observations.id, "probable-friends.csv"), "utf8");
+    assert.ok(rankedCsv.split('\r\n')[1]?.startsWith(third));
+    const reopened = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
+    assert.deepEqual(reopened.history, view.history);
+    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { ...ranking, hubPercentile: 0 } }))).status, 400);
+    await writeFile(join(root, "outputs", observations.id, "history.json"), "invalid history");
+    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { hubPercentile: .9, weights: defaults.weights } }))).status, 400);
+    const afterFailure = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
+    assert.deepEqual(afterFailure.settings, persisted.settings);
+    await writeFile(join(root, "outputs", observations.id, "history.json"), JSON.stringify(view.history));
+    await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).save({ ...persisted, status: "cancelled" }); }));
+    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking }))).status, 400);
+    assert.deepEqual(fixture.requests, []);
+  } finally { await server.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("private-profile policy survives resume and retains incoming evidence without collecting skipped accounts", async () => {
   const fixture = await steamFixture();

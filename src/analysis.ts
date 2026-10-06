@@ -3,6 +3,8 @@ import louvain from "graphology-communities-louvain";
 import betweenness from "graphology-metrics/centrality/betweenness.js";
 import { Effect } from "effect";
 import type { Player, Scan, SteamId } from "./model.js";
+import { InputError } from "./model.js";
+import type { Ranking } from "./model.js";
 import type { Edge, FriendRank, LocationSignal, Report } from "./contracts.js";
 import * as Storage from "./storage.js";
 
@@ -168,4 +170,16 @@ export const exportRun = Effect.fn("Analysis.exportRun")(function* (scan: Scan) 
   yield* store.writeArtifact(scan.id, "gephi/edges.csv", edges);
   yield* store.writeArtifact(scan.id, "probable-friends.csv", friends);
   return report;
+});
+
+/** Reranking changes analysis settings only; provider observations remain untouched. */
+export const reanalyze = Effect.fn("Analysis.reanalyze")(function* (id: string, ranking: Ranking) {
+  const store = yield* Storage.Service;
+  const saved = yield* store.read(id);
+  if (saved.status !== "complete") return yield* Effect.fail(new InputError({ message: "Finish or resume this run before saving a new ranking." }));
+  const scan = { ...saved, settings: { ...saved.settings, ...ranking }, updatedAt: new Date().toISOString() };
+  const report = yield* exportRun(scan);
+  yield* store.save(scan);
+  yield* store.log(id, "Saved ranking settings and regenerated analysis exports; collected observations unchanged");
+  return { scan, report };
 });

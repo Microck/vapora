@@ -1,8 +1,9 @@
 import { Effect, Schema } from "effect";
-import { artifacts, defaults, Player, Settings } from "../src/model.js";
+import { artifacts, defaults, Player, Ranking, Settings } from "../src/model.js";
 import type { SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
 import { HistoryReport } from "../src/history.js";
+import * as Network from "./network.js";
 
 declare global {
   interface Window {
@@ -36,6 +37,7 @@ const buttons = (id: string) => {
 const inputs = {
   target: control("target"), depth: control("depth"), nodes: control("maxNodes"), rpm: control("rpm"), groups: control("groups"), games: control("games"), skipPrivate: control("skip-private"), hub: control("hub"),
   mutual: control("mutualWeight"), jaccard: control("jaccardWeight"), groupWeight: control("groupWeight"), gameWeight: control("gameWeight"),
+  runSearch: control("run-search"), networkSearch: control("network-search"),
   key: control("key"), name: control("profile-name"), search: control("friend-search"), file: control("history-file"), attach: control("attach-history"),
 };
 const profiles = select("profiles"); const edgeKind = select("edge-kind");
@@ -51,6 +53,8 @@ let recentSignature = "";
 let profileSignature = "";
 let lastJob: string | null = null;
 let selectedNode: SteamId | null = null;
+let runRequest = 0;
+let runSignature = "";
 let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -67,6 +71,7 @@ function showScreen(name: typeof Screen.Type) {
     else tab.removeAttribute("aria-current");
   }
   window.scrollTo({ top: 0, behavior: "instant" });
+  get("results").scrollTo({ top: 0, behavior: "instant" });
 }
 
 function notice(message: string) { get("notice").textContent = message; get("notice").hidden = !message; }
@@ -135,6 +140,7 @@ function playerCell(row: HTMLTableRowElement, id: SteamId, name: string, avatar:
   const td = cell(row, ""); const link = document.createElement("a"); link.className = "player-link"; link.append(avatarImage(avatar), document.createTextNode(name));
   link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
   link.title = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
+  return td;
 }
 const number = (value: number | null, digits = 0) => value === null ? "unknown" : value.toFixed(digits);
 function renderFriends() {
@@ -143,7 +149,9 @@ function renderFriends() {
   const friends = selected?.report.friends.filter((friend) => friend.name.toLowerCase().includes(query) || friend.id.includes(query)) ?? [];
   const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
   for (const friend of friends) {
-    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
+    const row = document.createElement("tr"); const profile = playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
+    const inspect = document.createElement("button"); inspect.type = "button"; inspect.className = "inspect-button"; inspect.textContent = "Details";
+    inspect.setAttribute("aria-label", `Inspect ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
     cell(row, `${friend.evidenceScore.toFixed(1)} / 100`); cell(row, friend.mutual); cell(row, number(friend.jaccard, 3));
     cell(row, number(friend.sharedGroups)); cell(row, number(friend.sharedGames)); cell(row, friend.friendsStatus); rows.append(row);
   }
@@ -171,9 +179,9 @@ function renderOutput() {
   if (scan) heading.title = `${scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed} · ${new Date(scan.createdAt).toLocaleString()}`;
   tree.append(heading);
   get("output-owner").textContent = scan ? scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed : "";
-  const files = downloads.filter((file) => file === "scan.json" || file === "run.log" || outputMode === "all" || (outputMode === "gephi" ? file.startsWith("gephi/") : !file.startsWith("gephi/")));
+  const files = (selected?.history ? artifacts : downloads).filter((file) => file === "scan.json" || file === "run.log" || outputMode === "all" || (outputMode === "gephi" ? file.startsWith("gephi/") : !file.startsWith("gephi/")));
   for (const file of files) {
-    const available = scan && (scan.status === "complete" || file === "scan.json" || file === "run.log");
+    const available = scan && (scan.status === "complete" || file === "scan.json" || file === "run.log" || file === "history.json");
     const row = available ? downloadLink(scan.id, file) : document.createElement("span");
     row.textContent = `${file === files.at(-1) ? "└─" : "├─"} ${file}`;
     tree.append(row);
@@ -182,7 +190,7 @@ function renderOutput() {
 function renderReport() {
   if (!selected) return;
   const { scan, report } = selected;
-  get("empty").hidden = true; get("report").hidden = false;
+  get("empty").hidden = true; get("report").hidden = !get("run-library").hidden;
   const target = scan.players.find((player) => player.id === scan.seed);
   get("report-name").textContent = target?.name ?? scan.seed;
   profileImage("report-avatar", target?.avatar ?? null);
@@ -192,69 +200,112 @@ function renderReport() {
   get("report-details").textContent = `${new Date(scan.createdAt).toLocaleString()} · Steam ID ${scan.seed} · depth ${scan.settings.depth} · cap ${scan.settings.maxNodes}`;
   buttons("resume-button").hidden = scan.status === "complete" || (currentState?.job.status === "running" && currentState.job.id === scan.id);
   const coverage = get("coverage"); coverage.replaceChildren();
-  for (const [label, value] of [["Profiles", report.coverage.nodes], ["Friendships", report.edges.filter((e) => e.kind === "friend").length], ["Public friend lists", report.coverage.publicLists], ["Direct friends included", `${report.coverage.admittedDirectFriends}/${report.coverage.directFriends}`]] as const) {
+  for (const [label, value] of [["Profiles", report.coverage.nodes], ["Friendships", report.edges.filter((e) => e.kind === "friend").length], ["Public friend lists", report.coverage.publicLists], ["Direct friends included", `${report.coverage.admittedDirectFriends}/${report.coverage.directFriends}`], ["Skipped lists", report.coverage.skippedLists], ["Unavailable lists", report.coverage.unavailableLists]] as const) {
     const group = document.createElement("div"); const term = document.createElement("dt"); const detail = document.createElement("dd");
     term.textContent = label; detail.textContent = String(value); group.append(term, detail); coverage.append(group);
   }
+  renderCoverageNotice(); renderRanking();
   const warnings = get("warnings"); warnings.replaceChildren();
   get("report-error").textContent = scan.error; get("report-error").hidden = !scan.error;
   for (const warning of report.warnings) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
-  for (const file of downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log") exports.append(downloadLink(scan.id, file));
+  for (const file of selected.history ? artifacts : downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log" || file === "history.json") exports.append(downloadLink(scan.id, file));
   renderFriends(); renderLocations(); renderGraph(); renderTarget(); renderOutput();
 }
+function renderCoverageNotice() {
+  if (!selected) return;
+  const { scan, report } = selected;
+  const missing = report.coverage.unavailableLists; const skipped = report.coverage.skippedLists;
+  const partial = scan.status !== "complete" || scan.truncated || missing > 0 || skipped > 0;
+  const warning = get("coverage-warning"); warning.hidden = !partial;
+  warning.textContent = `Partial results${scan.truncated ? " · node cap reached" : ""} · ${skipped} skipped · ${missing} unavailable friend lists. Counts describe observed data.`;
+  get("open-history").hidden = !selected.history;
+}
+function renderRanking() {
+  if (!selected) return;
+  const { scan } = selected;
+  const ranking = scan.settings;
+  control("ranking-hub").value = String(ranking.hubPercentile);
+  for (const name of ["mutual", "jaccard", "groups", "games"] as const) control(`ranking-${name}`).value = String(ranking.weights[name]);
+  buttons("save-ranking").disabled = scan.status !== "complete" || currentState?.job.status === "running";
+}
 function inspectNode(id: SteamId) {
-  selectedNode = id;
-  const player = selected?.scan.players.find((p) => p.id === id); const metric = selected?.report.metrics.find((m) => m.id === id);
-  if (!player || !metric) return;
-  get("node-detail").textContent = `${player.name} · ${id} · degree ${metric.degree} · betweenness ${metric.betweenness.toFixed(4)} · community ${metric.community} · profile ${player.visibility} · friends ${player.friendsStatus} · groups ${player.groupsStatus} · games ${player.gamesStatus} · bans ${player.bansStatus}`;
-  renderGraph();
+  selectedNode = id; renderInspector(); renderGraph();
+}
+function renderInspector() {
+  const player = selected?.scan.players.find((p) => p.id === selectedNode);
+  const metric = selected?.report.metrics.find((m) => m.id === selectedNode);
+  get("profile-inspector").hidden = !player;
+  if (!player) return;
+  get("inspect-name").textContent = player.name; profileImage("inspect-avatar", player.avatar);
+  get("inspect-link").setAttribute("href", `https://steamcommunity.com/profiles/${player.id}/`);
+  get("inspect-link").textContent = player.id; get("inspect-link").title = "Open Steam profile";
+  const facts = get("inspect-facts"); facts.replaceChildren();
+  const bans = player.bans;
+  const fields: readonly (readonly [string, string | number])[] = [
+    ["Depth", player.level], ["Profile", player.visibility], ["Friend list", player.friendsStatus],
+    ["Groups", player.groupsStatus === "public" ? player.groups.length : player.groupsStatus],
+    ["Games", player.gamesStatus === "public" ? player.games.length : player.gamesStatus],
+    ["VAC ban", bans ? bans.vac ? "yes" : "no" : player.bansStatus],
+    ["Game bans", bans ? bans.game : player.bansStatus], ["Community ban", bans ? bans.community ? "yes" : "no" : player.bansStatus],
+    ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
+    ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
+  ];
+  for (const [label, value] of fields) {
+    const term = document.createElement("dt"); term.textContent = label; const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
+  }
 }
 function renderGraph() {
-  const focusId = document.activeElement?.getAttribute("data-node-id");
-  const graph = get("graph"); graph.replaceChildren();
-  if (!selected) return;
-  const positions = new Map<SteamId, { x: number; y: number }>();
-  const metrics = [...selected.report.metrics].sort((a, b) => a.community - b.community || a.id.localeCompare(b.id));
-  const players = new Map(selected.scan.players.map((player) => [player.id, player]));
-  for (let i = 0; i < metrics.length; i++) {
-    const metric = metrics[i]; if (!metric) continue;
-    const angle = i * Math.PI * 2 / metrics.length;
-    positions.set(metric.id, metric.id === selected.scan.seed ? { x: 500, y: 325 } : { x: 500 + Math.cos(angle) * 410, y: 325 + Math.sin(angle) * 260 });
+  const graph = get("graph");
+  if (!(graph instanceof SVGSVGElement) || !selected) return;
+  Network.render(graph, get("community-legend"), get("network-matches"), get("graph-count"), selected,
+    { id: selectedNode, zoom, query: inputs.networkSearch.value, edges: edgeKind.value }, inspectNode);
+}
+function toggleRuns(visible: boolean) {
+  get("run-library").hidden = !visible; buttons("toggle-runs").setAttribute("aria-expanded", String(visible));
+  buttons("toggle-runs").textContent = visible && selected ? "Back to report" : "Saved runs";
+  get("report").hidden = visible || !selected; get("empty").hidden = visible || Boolean(selected);
+}
+function renderRuns() {
+  if (!currentState) return;
+  const query = inputs.runSearch.value.trim().toLowerCase(); const status = select("run-status").value;
+  const signature = JSON.stringify([currentState.runs, currentState.runIssues, query, status]);
+  if (signature === runSignature) return;
+  runSignature = signature;
+  const rows = get("run-rows"); rows.replaceChildren();
+  const runs = currentState.runs.filter((run) => (status === "all" || status === run.status) &&
+    `${run.name} ${run.seed} ${run.id}`.toLowerCase().includes(query));
+  for (const run of runs) {
+    const row = document.createElement("tr"); const name = cell(row, ""); const button = document.createElement("button");
+    button.type = "button"; button.className = "run-link"; button.append(avatarImage(run.avatar), document.createTextNode(run.name));
+    button.addEventListener("click", () => task(() => openRun(run.id))); name.append(button);
+    cell(row, new Date(run.createdAt).toLocaleString()); cell(row, run.status === "running" ? "unfinished" : run.status); cell(row, run.nodes); cell(row, run.id); rows.append(row);
   }
-  const filtered = selected.report.edges.filter((edge) => edgeKind.value === "all" || edge.kind === edgeKind.value);
-  const shown = selectedNode ? filtered.filter((edge) => edge.source === selectedNode || edge.target === selectedNode) : filtered;
-  for (const edge of shown.slice(0, 1500)) {
-    const from = positions.get(edge.source); const to = positions.get(edge.target); if (!from || !to) continue;
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y)); line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
-    line.setAttribute("stroke", edge.kind === "friend" ? "#879b76" : "#aa9767"); graph.append(line);
+  get("run-empty").hidden = runs.length > 0;
+  const issues = get("run-issues"); issues.replaceChildren();
+  for (const issue of currentState.runIssues) {
+    const warning = document.createElement("p"); warning.textContent = `${issue.id}: ${issue.message}`; issues.append(warning);
   }
-  const colors = ["#8abfff", "#a8dba8", "#e9b9e8", "#eed68b", "#99d9d9", "#e6ad95"];
-  for (const metric of metrics) {
-    const position = positions.get(metric.id); if (!position) continue;
-    const name = players.get(metric.id)?.name ?? metric.id;
-    const node = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    node.setAttribute("role", "button"); node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", `${name}, degree ${metric.degree}`);
-    node.setAttribute("data-node-id", metric.id);
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", String(position.x)); circle.setAttribute("cy", String(position.y));
-    circle.setAttribute("r", String(metric.id === selected.scan.seed ? 12 : Math.min(8, 4 + Math.sqrt(metric.degree) / 2)));
-    circle.setAttribute("fill", colors[metric.community % colors.length] ?? "#fff");
-    if (metric.id === selectedNode) { circle.setAttribute("stroke", "#fff"); circle.setAttribute("stroke-width", "3"); }
-    const title = document.createElementNS("http://www.w3.org/2000/svg", "title"); title.textContent = name;
-    node.append(circle, title); node.addEventListener("click", () => inspectNode(metric.id));
-    node.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspectNode(metric.id); } }); graph.append(node);
-    if (metric.id === focusId) node.focus();
+}
+function renderHistory(report: HistoryReport, runId: string | null) {
+  get("history-result").hidden = false; get("history-name").textContent = report.profile.name ?? report.profile.steamID64;
+  get("history-warning").textContent = report.warning;
+  const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
+  const rows = get("history-rows"); rows.replaceChildren();
+  const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
+  for (const friend of report.friends) {
+    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
+    cell(row, `${Math.floor(friend.durationSeconds / 86400)} days`); cell(row, `${friend.relativeDuration.toFixed(1)}%`); cell(row, friend.currentlyFriends ? "yes" : "no"); rows.append(row);
   }
-  graph.setAttribute("viewBox", `${500 - 500 / zoom} ${325 - 325 / zoom} ${1000 / zoom} ${650 / zoom}`);
-  get("graph-count").textContent = `${metrics.length} nodes · ${Math.min(shown.length, 1500)}/${shown.length} edges drawn`;
 }
 async function openRun(id: string, navigation = navigationVersion) {
-  selected = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
+  const request = ++runRequest;
+  const view = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
+  if (request !== runRequest) return;
+  selected = view;
   const typed = inputs.target.value.trim();
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
-  selectedNode = null; zoom = 1; get("node-detail").textContent = "Select a node.";
+  selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; renderInspector(); toggleRuns(false);
   location.hash = id; renderReport(); renderRecent();
   // A report response must not override a navigation choice made while it loaded.
   if (navigation === navigationVersion) {
@@ -298,6 +349,7 @@ function renderProgress(state: Contracts.State) {
     buttons("estimate-button").disabled = running || !state.hasKey;
     buttons("resume-button").disabled = running || !state.hasKey;
     buttons("lookup-target").disabled = running || !state.hasKey;
+    buttons("save-ranking").disabled = running || selected?.scan.status !== "complete";
     get("progress-section").hidden = !running;
     get("progress-title").textContent = state.job.progress?.phase ?? "Resolving profile";
     const progress = state.job.progress;
@@ -317,7 +369,7 @@ async function refresh() {
     }
     get("connection").textContent = "Local session";
     renderProgress(currentState);
-    renderRecent();
+    renderRecent(); renderRuns();
     const signature = JSON.stringify(currentState.profiles);
     if (signature !== profileSignature) {
       profileSignature = signature; const value = profiles.value;
@@ -401,6 +453,7 @@ buttons("output-folder").addEventListener("click", () => {
   if (desktop) task(() => desktop.openOutputs(selected?.scan.id ?? null));
   else {
     showScreen("results");
+    if (selected) toggleRuns(false);
     document.querySelector<HTMLButtonElement>('[data-view="exports"]')?.click();
   }
 });
@@ -419,10 +472,33 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-view]")) t
   tab.setAttribute("aria-current", "page");
   for (const view of document.querySelectorAll<HTMLElement>(".view")) view.hidden = view.id !== `${tab.dataset.view}-view`;
 });
+inputs.runSearch.addEventListener("input", renderRuns); select("run-status").addEventListener("change", renderRuns);
+inputs.networkSearch.addEventListener("input", renderGraph);
+buttons("toggle-runs").addEventListener("click", () => toggleRuns(get("run-library").hidden));
+buttons("close-inspector").addEventListener("click", () => { selectedNode = null; renderInspector(); renderGraph(); });
+buttons("open-history").addEventListener("click", () => {
+  if (selected?.history) { renderHistory(selected.history, selected.scan.id); showScreen("history"); }
+});
+get("ranking-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
+  if (!selected) return;
+  const id = selected.scan.id;
+  const ranking = Schema.decodeUnknownSync(Ranking)({ hubPercentile: control("ranking-hub").valueAsNumber,
+    weights: { mutual: control("ranking-mutual").valueAsNumber, jaccard: control("ranking-jaccard").valueAsNumber, groups: control("ranking-groups").valueAsNumber, games: control("ranking-games").valueAsNumber } });
+  buttons("save-ranking").disabled = true;
+  try {
+    const view = await api("/api/analyze", Contracts.RunView, { id, ranking });
+    if (selected?.scan.id === id) { selected = view; renderReport(); renderInspector(); }
+    notice("Saved ranking. Collected observations are unchanged.");
+  } finally { await refresh(); }
+}); });
 edgeKind.addEventListener("change", renderGraph);
-buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderGraph(); });
-buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderGraph(); });
-buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; get("node-detail").textContent = "Select a node."; renderGraph(); });
+function renderZoom() {
+  const graph = get("graph");
+  if (graph instanceof SVGSVGElement && selected) Network.setZoom(graph, selected, zoom);
+}
+buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderZoom(); });
+buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderZoom(); });
+buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderInspector(); renderGraph(); });
 get("history-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   const file = inputs.file.files?.[0];
   if (!file) throw new Error("Choose a normalized history file.");
@@ -430,14 +506,9 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   if (inputs.attach.checked && !selected) throw new Error("Open a matching run before attaching history.");
   const runId = inputs.attach.checked ? selected?.scan.id : undefined;
   const report = await api("/api/history", HistoryReport, { contents: await file.text(), runId });
-  get("history-result").hidden = false; get("history-name").textContent = report.profile.name ?? report.profile.steamID64;
-  get("history-warning").textContent = report.warning;
-  const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
-  const rows = get("history-rows"); rows.replaceChildren();
-  for (const friend of report.friends) {
-    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, null);
-    cell(row, `${Math.floor(friend.durationSeconds / 86400)} days`); cell(row, `${friend.relativeDuration.toFixed(1)}%`); cell(row, friend.currentlyFriends ? "yes" : "no"); rows.append(row);
-  }
+  renderHistory(report, runId ?? null);
+  if (runId && selected?.scan.id === runId) { selected = { ...selected, history: report }; renderReport(); }
+
 }); });
 window.addEventListener("focus", () => void refresh());
 applySettings(defaults);

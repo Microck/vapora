@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Scan, SteamId, Availability, RunId, RunStatus, Player } from "./model.js";
+import { HistoryReport } from "./history.js";
 
 export const Edge = Schema.Struct({ source: SteamId, target: SteamId, kind: Schema.Literals(["friend", "group"]) });
 export interface Edge extends Schema.Schema.Type<typeof Edge> {}
@@ -33,7 +34,7 @@ export const State = Schema.Struct({
   runIssues: Schema.Array(Schema.Struct({ id: RunId, message: Schema.String })),
 });
 export interface State extends Schema.Schema.Type<typeof State> {}
-export const RunView = Schema.Struct({ scan: Scan, report: Report });
+export const RunView = Schema.Struct({ scan: Scan, report: Report, history: Schema.NullOr(HistoryReport) });
 export interface RunView extends Schema.Schema.Type<typeof RunView> {}
 export const Estimate = Schema.Struct({
   seed: SteamId, available: Schema.Boolean, directFriends: Schema.NullOr(Schema.Number), sampleSize: Schema.Number,

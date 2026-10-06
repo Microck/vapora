@@ -45,6 +45,7 @@ export async function steamFixture() {
   const omittedBans = new Set<SteamId>();
   const omittedAvatars = new Set<string>();
   const privateProfiles = new Set<string>();
+  const names = new Map<string, string>();
   const omittedVisibility = new Set<string>();
   const omittedSummaries = new Set<string>();
   const interruptedBodies = new Map<string, number>();
@@ -81,7 +82,7 @@ export async function steamFixture() {
         const ids = (url.searchParams.get("steamids") ?? "").split(",");
         response.end(JSON.stringify({ response: { players: ids.filter((id) => !omittedSummaries.has(id)).map((steamid) => {
           const profile: Steam.Summary = { steamid: Schema.decodeUnknownSync(SteamId)(steamid),
-            personaname: steamid === second ? '=HYPERLINK("bad")' : `Player ${steamid.slice(-2)}`,
+            personaname: names.get(steamid) ?? (steamid === second ? '=HYPERLINK("bad")' : `Player ${steamid.slice(-2)}`),
             loccountrycode: "ES", locstatecode: "56", loccityid: 123 };
           const visible = omittedVisibility.has(steamid) ? profile : { ...profile, communityvisibilitystate: privateProfiles.has(steamid) ? 1 : 3 };
           if (omittedAvatars.has(steamid)) return visible;
@@ -102,7 +103,7 @@ export async function steamFixture() {
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   return {
-    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, omittedAvatars, privateProfiles, omittedVisibility, omittedSummaries, interruptedBodies, friends,
+    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, omittedAvatars, privateProfiles, names, omittedVisibility, omittedSummaries, interruptedBodies, friends,
     hold: (path: string, id: string) => {
       held.set(path + id, () => {});
       return new Promise<void>((resolve) => waiters.set(path + id, resolve));

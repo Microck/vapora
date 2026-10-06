@@ -20,6 +20,8 @@ export const Settings = Schema.Struct({
   weights: Schema.Struct({ mutual: weight, jaccard: weight, groups: weight, games: weight }),
 });
 export interface Settings extends Schema.Schema.Type<typeof Settings> {}
+export const Ranking = Schema.Struct({ hubPercentile: Settings.fields.hubPercentile, weights: Settings.fields.weights });
+export interface Ranking extends Schema.Schema.Type<typeof Ranking> {}
 export const defaults: Settings = {
   depth: 2, maxNodes: 500, requestsPerMinute: 120, includeGroups: false, includeGames: false, skipPrivate: false,
   hubPercentile: 0.99, weights: { mutual: 1, jaccard: 1, groups: 0.5, games: 0.5 },

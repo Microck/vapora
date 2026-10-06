@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
-import { InputError, Settings, failureMessage } from "./model.js";
+import { InputError, Settings, Ranking, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
@@ -20,6 +20,7 @@ const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
 const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)) });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
+const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranking });
 // Only bundled UI assets are public. Never resolve request paths against the filesystem.
 const files = new Map([
   ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
@@ -117,7 +118,8 @@ export async function start(options: Options) {
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
       const scan = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(runMatch[1] ?? ""); }));
-      json(response, 200, { scan, report: Analysis.analyze(scan) } satisfies RunView);
+      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(scan.id); }));
+      json(response, 200, { scan, report: Analysis.analyze(scan), history } satisfies RunView);
       return;
     }
     const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -188,6 +190,18 @@ export async function start(options: Options) {
       const payload = await Effect.runPromise(decode(ProfileRequest, contents));
       await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).saveProfile(payload.name, payload.settings); }));
       json(response, 200, { ok: true }); return;
+    }
+    if (path === "/api/analyze") {
+      const payload = await Effect.runPromise(decode(AnalyzeRequest, contents));
+      if (busy()) throw new InputError({ message: "Wait for the active operation before saving ranking settings." });
+      estimating = true;
+      try {
+        // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
+        const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
+        const view = await runtime.runPromise(Analysis.reanalyze(payload.id, payload.ranking));
+        json(response, 200, { ...view, history } satisfies RunView);
+      } finally { estimating = false; }
+      return;
     }
     if (path === "/api/history") {
       const payload = await Effect.runPromise(decode(HistoryRequest, contents));
