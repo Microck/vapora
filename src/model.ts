@@ -70,7 +70,9 @@ export const Scan = Schema.Struct({
 });
 export interface Scan extends Schema.Schema.Type<typeof Scan> {}
 export class InputError extends Schema.TaggedError<InputError>()("InputError", { message: Schema.String }) {}
-export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", { message: Schema.String }) {}
+export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", {
+  message: Schema.String, code: Schema.optional(Schema.String), cause: Schema.optional(Schema.Defect()),
+}) {}
 
 /** Typed failures carry user-facing text. Diagnostic traces belong in the run log. */
 export function failureMessage<E extends { readonly message: string }>(cause: Cause.Cause<E>): string {

@@ -1,14 +1,30 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile, appendFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schedule, Schema } from "effect";
 import { InputError, Scan, Settings, StorageError, RunId } from "./model.js";
 
 import type { Artifact } from "./model.js";
 import { HistoryReport } from "./history.js";
 export { artifacts } from "./model.js";
 const ProfileName = Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/));
-const io = <T>(message: string, action: () => Promise<T>) => Effect.tryPromise({ try: action, catch: () => new StorageError({ message }) });
+function filesystemHint(code: string): string {
+  switch (code) {
+    case "ENOSPC": case "EDQUOT": return `Storage is full (${code}). Free space in the data folder, then resume the run.`;
+    case "EACCES": case "EPERM": return `Access was denied (${code}). Check folder permissions and close other apps using this file, then retry.`;
+    case "EBUSY": return "The file is busy (EBUSY). Close apps using it, then retry.";
+    case "EROFS": return "The data folder is read-only (EROFS). Use a writable data folder.";
+    case "ENOENT": return "The file or directory is missing (ENOENT). Check the data folder.";
+    default: return `Filesystem error ${code}. Check the run log for details.`;
+  }
+}
+const io = <T>(message: string, action: () => Promise<T>) => Effect.tryPromise({
+  try: action,
+  catch: (cause) => {
+    const code = cause instanceof Error && "code" in cause && Schema.is(Schema.String)(cause.code) ? cause.code : undefined;
+    return new StorageError({ message: code ? `${message} ${filesystemHint(code)}` : message, code, cause });
+  },
+});
 export interface RunIssue { readonly id: string; readonly message: string }
 export interface Recent { readonly runs: readonly Scan[]; readonly issues: readonly RunIssue[] }
 
@@ -33,11 +49,22 @@ export function runId(now = new Date()): string {
 }
 
 /** Atomic replacement keeps the previous checkpoint readable if a process dies while writing. */
-const atomic = (path: string, contents: string) => io(`Could not save ${path}. Check disk space and permissions.`, async () => {
+const atomic = Effect.fn("Storage.atomic")(function* (path: string, contents: string) {
   const temporary = `${path}.${randomBytes(6).toString("hex")}.tmp`;
-  await writeFile(temporary, contents, { mode: 0o600 });
-  await rename(temporary, path);
-}).pipe(Effect.uninterruptible);
+  // Windows can briefly deny replacement while another process holds a file. Retry only rename,
+  // retaining the same completed temporary file and a bounded 1.55-second backoff.
+  const replace = io(`Could not replace ${path}.`, () => rename(temporary, path)).pipe(Effect.retry({
+    schedule: Schedule.exponential(50).pipe(Schedule.upTo({ times: 5 })),
+    while: (error) => process.platform === "win32" && (error.code === "EPERM" || error.code === "EACCES" || error.code === "EBUSY"),
+  }));
+  yield* io(`Could not save ${path}.`, () => writeFile(temporary, contents, { mode: 0o600 })).pipe(
+    Effect.andThen(replace),
+    // Failed writes must not accumulate checkpoint-sized temporary files.
+    // Cleanup cannot replace the original save failure or undo a successful replacement.
+    Effect.ensuring(io(`Could not remove temporary file ${temporary}.`, () => rm(temporary, { force: true })).pipe(Effect.ignore)),
+    Effect.uninterruptible,
+  );
+});
 
 export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect.gen(function* () {
   const root = resolve(directory);

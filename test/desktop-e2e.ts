@@ -158,7 +158,8 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     assert.equal(movedState.runs[0]?.id, run.id);
     assert.equal(movedState.runs[0]?.status, "complete");
     for (const link of downloadLinks) {
-      const response = await fetch(movedOrigin + new URL(link).pathname, { headers: { "user-agent": userAgent } });
+      const movedLink = new URL(link); movedLink.host = new URL(movedOrigin).host;
+      const response = await fetch(movedLink, { headers: { "user-agent": userAgent } });
       assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength);
     }
     assert.equal(fixture.requests.length, requestsBeforeReopen, "Reopening saved portable data must not repeat Steam collection");
