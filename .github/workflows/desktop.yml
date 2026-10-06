@@ -1,0 +1,76 @@
+name: Desktop packages
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['[0-9]*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run package
+      - name: Install the Windows download
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-Item release/*.exe
+          $destination = "$env:RUNNER_TEMP/vapora-installed"
+          $process = Start-Process $installer.FullName -ArgumentList '/S', "/D=$destination" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
+          "VAPORA_DESKTOP=$destination/Vapora.exe" >> $env:GITHUB_ENV
+          "VAPORA_DESKTOP_ASAR=$destination/resources/app.asar" >> $env:GITHUB_ENV
+      - name: Extract the Linux download
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          chmod +x release/*.AppImage
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE"/release/*.AppImage --appimage-extract > /dev/null
+          echo "VAPORA_DESKTOP=$RUNNER_TEMP/squashfs-root/vapora" >> "$GITHUB_ENV"
+          echo "VAPORA_DESKTOP_ASAR=$RUNNER_TEMP/squashfs-root/resources/app.asar" >> "$GITHUB_ENV"
+      - name: Mount the macOS download
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir "$RUNNER_TEMP/vapora-dmg"
+          hdiutil attach release/*.dmg -readonly -nobrowse -mountpoint "$RUNNER_TEMP/vapora-dmg"
+          echo "VAPORA_DESKTOP=$RUNNER_TEMP/vapora-dmg/Vapora.app/Contents/MacOS/Vapora" >> "$GITHUB_ENV"
+          echo "VAPORA_DESKTOP_ASAR=$RUNNER_TEMP/vapora-dmg/Vapora.app/Contents/Resources/app.asar" >> "$GITHUB_ENV"
+      - name: Test the packaged Linux app
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:desktop
+      - name: Test the packaged Windows/macOS app
+        if: runner.os != 'Linux'
+        run: npm run test:desktop
+      - name: Unmount the macOS download
+        if: always() && runner.os == 'macOS'
+        run: hdiutil detach "$RUNNER_TEMP/vapora-dmg"
+      - name: Save verified desktop downloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: vapora-desktop-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.dmg
+          if-no-files-found: error
+          retention-days: 7

@@ -1,10 +1,10 @@
 # release runbook
 
-This runbook covers a source release of the current Vapora app on GitHub. The package is private; there is no npm publishing step or current installer packaging workflow.
+This runbook covers desktop downloads and source archives on GitHub. The package is private; do not publish it to npm. The Desktop packages workflow builds Windows NSIS installers, Linux AppImages and macOS DMGs on their native operating systems.
 
 ## release candidate
 
-The next candidate is **2.0.0**, matching `package.json` and the lockfile. Use the existing tag convention without a `v` prefix. The last published version is `1.0.2`, the legacy Python app. Release notes are in [releases/2.0.0.md](releases/2.0.0.md).
+The next candidate is **2.0.1**, matching `package.json` and the lockfile. Use the existing tag convention without a `v` prefix. The `2.0.0` release contains source archives only; `1.0.2` contains the legacy Python executable. Release notes are in [releases/2.0.1.md](releases/2.0.1.md).
 
 Publish only after the proposed tag and notes have explicit approval. Merge reviewed documentation into main before choosing the release commit. Do not tag an uncommitted working copy.
 
@@ -27,8 +27,8 @@ Publish only after the proposed tag and notes have explicit approval. Merge revi
 5. Confirm that the intended tag does not already exist locally or remotely. Never move an existing release tag.
 
    ```sh
-   git tag --list 2.0.0
-   git ls-remote --tags origin refs/tags/2.0.0
+   git tag --list 2.0.1
+   git ls-remote --tags origin refs/tags/2.0.1
    gh release list --repo Microck/vapora
    ```
 
@@ -43,8 +43,8 @@ For a committed candidate, create an archive from its exact commit:
 ```sh
 VAPORA_RELEASE_COMMIT=REPLACE_WITH_REVIEWED_MAIN_COMMIT
 
-git archive --format=tar.gz --prefix=vapora-2.0.0/ \
-  --output=/tmp/vapora-2.0.0-source.tar.gz "$VAPORA_RELEASE_COMMIT"
+git archive --format=tar.gz --prefix=vapora-2.0.1/ \
+  --output=/tmp/vapora-2.0.1-source.tar.gz "$VAPORA_RELEASE_COMMIT"
 ```
 
 Extract it into a fresh directory and run:
@@ -66,46 +66,52 @@ An installed Chrome/Chromium executable is required for browser E2E. Do not weak
 - If desktop behavior or dependencies changed, check native launch, active-scan close/checkpoint/restart/resume, window controls and output folders on each supported platform. Core CI is not proof of native desktop behavior.
 - Check screenshots against the current app, and update captures when visible behavior changes. Use fixture identities for public screenshots.
 
-Current evidence is in [e2e-verification.md](e2e-verification.md). Linux and macOS native workflows passed. Native Windows launch and packaged installers are unverified, and the source-release notes must retain that limit until they are checked. Windows requires the matching Visual C++ runtime; a missing `VCRUNTIME140.dll` blocked the last VM check.
+Earlier source-launch evidence is in [e2e-verification.md](e2e-verification.md). Desktop CI must test each actual download, separately from source-launch checks. It silently installs the Windows EXE, extracts the Linux AppImage and mounts the macOS DMG, then runs `npm run test:desktop` against their packaged executable and `app.asar`. This checks bundled dependencies/assets, isolated fresh storage, a fixture scan, exports, native window operations and shutdown. Never attach a platform download whose native job failed. Record live Steam evidence separately from fixture checks.
 
-Do not present generated source archives as installers. A future installer release requires a packaging workflow and checks using the actual produced installers.
+Do not present generated source archives as installers. Publisher signing and notarization are not configured; retain that notice in README and release notes. Do not disable OS security settings as an installation step.
 
 ## publish
 
 Proceed only after explicit approval of the tag and notes, all findings are resolved, and CI is green on the exact release commit.
 
-1. Confirm the remote main commit still equals `VAPORA_RELEASE_COMMIT`. If it changed, review and verify the new candidate rather than silently tagging a different commit.
-2. Confirm commit/tag identity is `Microck <contact@micr.dev>`.
-3. Create an annotated tag at the pinned commit. Git is used here because Jujutsu does not create annotated tags:
+1. Identify the successful Desktop packages run for the exact candidate commit with `gh run list --repo Microck/vapora --workflow desktop.yml --commit "$VAPORA_RELEASE_COMMIT"`. All three native jobs must pass. Download its artifacts with `gh run download RUN_ID --repo Microck/vapora --dir /tmp/vapora-desktop-downloads`. Inspect filenames, architecture and package version; exclude unpacked folders and debug files.
+2. Confirm the remote main commit still equals `VAPORA_RELEASE_COMMIT`. If it changed, review and verify the new candidate rather than silently tagging a different commit.
+3. Confirm commit/tag identity is `Microck <contact@micr.dev>`.
+4. Create an annotated tag at the pinned commit. Git is used here because Jujutsu does not create annotated tags:
 
    ```sh
-   git -c user.name=Microck -c user.email=contact@micr.dev tag -a 2.0.0 \
-     "$VAPORA_RELEASE_COMMIT" -F docs/releases/2.0.0.md
-   git push origin refs/tags/2.0.0
+   git -c user.name=Microck -c user.email=contact@micr.dev tag -a 2.0.1 \
+     "$VAPORA_RELEASE_COMMIT" -F docs/releases/2.0.1.md
+   git push origin refs/tags/2.0.1
    ```
 
-4. Publish a normal GitHub release using the same notes:
+5. Wait for core CI and Desktop packages CI triggered by the new tag to pass on the pinned commit. Download that tag run's verified artifacts into `/tmp/vapora-desktop-downloads`. Compute `SHA256SUMS.txt` from the exact EXE, AppImage and DMG bytes, using their basenames. Confirm there is one tested download for each platform. Publish a normal GitHub release with those files attached from the start:
 
    ```sh
-   gh release create 2.0.0 --repo Microck/vapora --verify-tag \
-     --title 'vapora 2.0.0' --notes-file docs/releases/2.0.0.md --latest
+   gh release create 2.0.1 \
+     /tmp/vapora-desktop-downloads/*/*.exe \
+     /tmp/vapora-desktop-downloads/*/*.AppImage \
+     /tmp/vapora-desktop-downloads/*/*.dmg \
+     /tmp/vapora-desktop-downloads/SHA256SUMS.txt \
+     --repo Microck/vapora --verify-tag \
+     --title 'vapora 2.0.1' --notes-file docs/releases/2.0.1.md --latest
    ```
 
-   GitHub provides the source ZIP and tar.gz for the tag. Do not publish an npm package, attach the legacy executable to this release, or mark it as a prerelease.
+6. GitHub also provides the source ZIP and tar.gz. Do not publish an empty source-only release while waiting for desktop builds. Do not attach the legacy executable, replace existing public assets with `--clobber`, publish to npm or mark the release as a prerelease.
 
 ## verify after publishing
 
 1. Confirm the release is published, not a draft, and points to the intended tag:
 
    ```sh
-   gh release view 2.0.0 --repo Microck/vapora \
+   gh release view 2.0.1 --repo Microck/vapora \
      --json url,tagName,isDraft,isPrerelease,publishedAt,assets
-   git ls-remote --tags origin refs/tags/2.0.0 'refs/tags/2.0.0^{}'
+   git ls-remote --tags origin refs/tags/2.0.1 'refs/tags/2.0.1^{}'
    ```
 
 2. Verify the annotated tag's peeled commit equals `VAPORA_RELEASE_COMMIT`.
 3. Download a public source archive for the tag into a fresh directory. Repeat the source checks above against the actual public download.
-4. Watch the CI run triggered by the tag until it passes. Report a failed or incomplete run honestly.
+4. Confirm both core and desktop tag CI passed. Download each attached installer and verify its checksum against `SHA256SUMS.txt` and the tested CI artifact. Check the release has an EXE, AppImage and DMG before calling it complete. Report a failed or incomplete platform check honestly.
 5. Verify main and the historical `legacy`, `feature/gui-and-analysis` and `rewrite/typescript-effect` branches remain at their expected commits.
 6. Report the release URL, tagged commit, completed checks and outstanding platform limits.
 

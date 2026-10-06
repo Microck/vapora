@@ -4,6 +4,8 @@ Vapora runs locally on Node.js 24 and uses TypeScript and Effect 4. The Python i
 
 ## Required behavior
 
+- Distribute self-contained desktop downloads: a Windows NSIS installer, Linux AppImage and macOS DMG. Bundle Electron, runtime dependencies and the existing desktop/server/UI assets; do not require a separate Node.js install. Exclude local credentials, saved runs, development dependencies and test fixtures from the packaged app.
+- Build desktop downloads on their native operating systems and test the packaged executable with a fresh data directory and the local Steam fixture before publishing. Keep published tags fixed, identify architecture in filenames, and disclose unsigned downloads. Attach installers only after all platform checks pass.
 - Accept individual SteamID64, SteamID2, SteamID3, Steam community profile URLs, and vanity names. `/id/` URL segments always identify vanity names, including numeric names; `/profiles/` segments identify SteamID64. Reject other hosts, malformed IDs, and unsupported account types before scanning.
 - Offer validated manual configuration and named saved profiles. Keep inner/community shortcuts in the CLI. In the GUI, Outputs: All / Report / Gephi selects the visible output files and never overwrites scan settings or limits which files are generated. Apply saves the default settings profile; saved settings include the private-profile policy. Put ranking defaults in a Ranking options dialog opened from scan parameters, separate from API-key setup.
 - Scan public friendship networks breadth first to depth 1-5 and the hard node cap. Depth 1 includes the seed and its direct friends. Query admitted boundary nodes for analysis, without admitting nodes beyond the limit.

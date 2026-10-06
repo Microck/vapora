@@ -47,6 +47,18 @@ The screenshots use fixture profiles. See [verification results](docs/e2e-verifi
 
 ## installation
 
+### desktop downloads
+
+Desktop packages bundle Electron and the app, so they do not need Node.js. Choose the file for your operating system and architecture from the [release attachments](https://github.com/Microck/vapora/releases).
+
+- Windows: run the `.exe` installer.
+- Linux: make the `.AppImage` executable and open it. AppImage needs FUSE; on hosts without FUSE, use `--appimage-extract-and-run`.
+- macOS: open the `.dmg` and drag Vapora into Applications.
+
+Downloads are not signed with a publisher certificate. Windows may show a SmartScreen warning; macOS may require approval in Privacy & Security. Verify the source and release checks before approving a download. The `2.0.0` release has source archives only; desktop attachments start with the next patch release.
+
+### from source
+
 ```sh
 git clone https://github.com/Microck/vapora.git
 cd vapora
@@ -56,9 +68,9 @@ npm run build
 
 Enter your API key in the app for the current session, or copy `.env.example` to `.env` and fill in `STEAM_API_KEY`. An environment variable also works. The key field clears after saving; the key stays on the local server and does not appear in reports or exports.
 
-Electron downloads its native binary on first launch. Linux needs a graphical desktop and GTK/NSS libraries. Windows needs the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
+Source launches download Electron's native binary on first launch. Linux needs a graphical desktop and GTK/NSS libraries. Windows source installs need the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
 
-Core and CLI checks passed on Linux, Windows and macOS CI, with browser E2E on Linux. Native Electron workflows passed on Linux and macOS. Native Windows startup and packaged installers remain unverified.
+Core and CLI checks passed on Linux, Windows and macOS CI, with browser E2E on Linux. Native Electron workflows passed on Linux and macOS. The desktop workflow builds native downloads and tests the installed or extracted app before saving artifacts; see each release's checks for its verified platforms.
 
 ## quickstart
 
@@ -221,10 +233,13 @@ Attach history only to a run for the same Steam account, or import it independen
 npm ci
 npm run verify
 VAPORA_BROWSER=/path/to/chrome npm run test:e2e
+npm run package
 npm run dev
 ```
 
 `verify` checks types, Oxlint, build and 15 domain/integration tests. The browser E2E suite needs installed Chrome/Chromium and checks real HTTP fixtures, persistence and downloads. These tests do not use a Steam key. CI runs core checks on Linux, Windows and macOS, plus browser E2E on Linux.
+
+`package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
 
 The app shares its scanner, analysis and storage across CLI, browser and desktop. See the [product contract](docs/product-contract.md), [E2E report](docs/e2e-verification.md) and [release runbook](docs/release-runbook.md). Live Steam verification is currently bounded to five accounts; it does not establish large-network behavior.
 

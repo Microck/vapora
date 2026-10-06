@@ -2,6 +2,7 @@
   "ignorePatterns": [
     "node_modules/**",
     "dist/**",
+    "release/**",
     "tools/oxlint/anti-slop/**",
     ".agents/**",
     ".codex/**",

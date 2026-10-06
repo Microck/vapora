@@ -1,9 +1,12 @@
 {
   "name": "vapora",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Explore public Steam friend networks",
   "type": "module",
+  "main": "scripts/desktop.mjs",
+  "author": "Microck <contact@micr.dev>",
+  "license": "MIT",
   "engines": {
     "node": ">=24"
   },
@@ -16,7 +19,9 @@
     "dev": "npm run build && npm start -- serve",
     "verify": "npm run check && npm run lint && npm test",
     "desktop": "npm run build && electron scripts/desktop.mjs",
-    "test:e2e": "npm run build && node --test dist/test/browser-e2e.js"
+    "test:e2e": "npm run build && node --test dist/test/browser-e2e.js",
+    "package": "npm run build && electron-builder --publish never",
+    "test:desktop": "node --test dist/test/desktop-e2e.js"
   },
   "dependencies": {
     "effect": "4.0.1",
@@ -25,12 +30,52 @@
     "graphology-metrics": "2.4.0"
   },
   "devDependencies": {
+    "@electron/asar": "4.3.1",
     "@oxlint/plugins": "1.87.0",
     "@types/node": "24.0.0",
     "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "esbuild": "0.25.11",
     "oxlint": "1.87.0",
     "puppeteer-core": "25.10.0",
     "typescript": "5.9.3"
+  },
+  "build": {
+    "appId": "dev.micr.vapora",
+    "productName": "Vapora",
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "vapora-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "dist/src/**",
+      "dist/ui/**",
+      "scripts/desktop.mjs",
+      "scripts/desktop-preload.cjs",
+      "assets/vapora.ico",
+      "LICENSE",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/vapora.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility",
+      "icon": "assets/vapora.svg"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "icon": "assets/vapora.svg",
+      "identity": "-",
+      "hardenedRuntime": false
+    }
   }
 }
