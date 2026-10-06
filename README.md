@@ -53,10 +53,10 @@ No Node.js or Python installation needed. Get the file for your system from the 
 
 | System | Download | Open it |
 | --- | --- | --- |
-| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.0.2/vapora-2.0.2-win-x64.exe) | run the installer |
-| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.0.2/vapora-2.0.2-win-x64-portable.exe) | run it from a writable folder |
-| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.0.2/vapora-2.0.2-linux-x86_64.AppImage) | make executable, then open |
-| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.0.2/vapora-2.0.2-mac-arm64.dmg) | drag Vapora into Applications |
+| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-win-x64.exe) | run the installer |
+| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-win-x64-portable.exe) | run it from a writable folder |
+| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-linux-x86_64.AppImage) | make executable, then open |
+| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-mac-arm64.dmg) | drag Vapora into Applications |
 
 Portable runs and settings live in `Vapora-data` beside the EXE. Move both together. Installed-app data lives in the OS app-data directory under `Vapora`. Enter your API key for each app session; it is not saved in reports.
 

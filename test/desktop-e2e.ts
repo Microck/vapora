@@ -163,7 +163,9 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
       const response = await fetch(movedLink, { headers: { "user-agent": userAgent } });
       assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength);
     }
-    assert.equal(fixture.requests.length, requestsBeforeReopen, "Reopening saved portable data must not repeat Steam collection");
+    // Reopened profile pictures use the fixture image endpoint, not the Steam API.
+    assert.deepEqual(fixture.requests.slice(requestsBeforeReopen).filter((request) => !/^\/avatars\/\d{17}\.svg$/.test(request.path)), [],
+      "Reopening saved portable data must not repeat Steam collection");
     await reopened.browser.close();
     const [movedExitCode] = await reopened.exited; assert.equal(movedExitCode, 0);
   }
