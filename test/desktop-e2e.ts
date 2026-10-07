@@ -59,7 +59,13 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
           await browser.disconnect();
         }
       });
-      return { browser, exited };
+      const target = await browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
+      const page = await target.page(); assert.ok(page);
+      // A state response can arrive before Electron shows its native window.
+      // Every restart must finish loading and become visible before user actions or shutdown.
+      await page.waitForFunction(() => document.readyState === "complete" && document.visibilityState === "visible" && document.body.classList.contains("desktop"));
+      console.info("Desktop E2E: loaded native window visible");
+      return { page, exited };
     }
     await delay(100);
   }
@@ -91,9 +97,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     // Stop native processes before removing their session files, including on failed assertions.
     for (const close of shutdown.reverse()) await close();
   });
-  const { browser, exited } = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable);
-  const target = await browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
-  const page = await target.page(); assert.ok(page);
+  const { page, exited } = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable);
   await page.setUserAgent(userAgent);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(String(error)));
@@ -194,8 +198,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   assert.ok(!(await readFile(resolve(archive))).includes(Buffer.from(key)));
   if (keyStorage.available) {
     const reopened = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable, "");
-    const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
-    const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
+    const reopenedPage = reopened.page;
     await reopenedPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready");
     console.info("Desktop E2E: remembered key loaded after restart");
     await reopenedPage.bringToFront(); await reopenedPage.locator("#open-key").click();
@@ -208,8 +211,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     assert.equal(await reopenedPage.$eval("#key-indicator", (element) => element.getAttribute("data-key")), "ready");
     await closeDesktop(reopenedPage); assert.equal((await reopened.exited)[0], 0);
     const forgotten = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable, "");
-    const forgottenTarget = await forgotten.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
-    const forgottenPage = await forgottenTarget.page(); assert.ok(forgottenPage);
+    const forgottenPage = forgotten.page;
     await forgottenPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "missing");
     console.info("Desktop E2E: forgotten key absent after restart");
     await closeDesktop(forgottenPage); assert.equal((await forgotten.exited)[0], 0);
@@ -224,8 +226,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     console.info("Desktop E2E: portable EXE and data moved together");
     const requestsBeforeReopen = fixture.requests.length;
     const reopened = await launchDesktop(shutdown, movedExecutable, join(moved, "Vapora-data"), fixture.url, true);
-    const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
-    const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
+    const reopenedPage = reopened.page;
     await reopenedPage.waitForFunction(() => document.body.classList.contains("desktop"));
     const movedOrigin = new URL(reopenedPage.url()).origin;
     const movedState = Schema.decodeUnknownSync(State)(await (await fetch(movedOrigin + "/api/state", { headers: { "user-agent": userAgent } })).json());
