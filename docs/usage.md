@@ -9,13 +9,14 @@ git clone https://github.com/Microck/vapora.git
 cd vapora
 npm ci
 npm run build
+npm run build:history
 ```
 
 Use **Set API key** in the toolbar for the current session, or copy `.env.example` to `.env` and fill in `STEAM_API_KEY`. An environment variable also works. The app checks a submitted key with Steam before replacing the session key, then continues the lookup, estimate or scan that requested it. The field clears after saving; the key stays on the local server and does not appear in reports or exports.
 
 The desktop dialog offers **Remember API key** when OS-backed encryption is available. It stores ciphertext in `steam-key.enc` in the desktop data folder. An environment key takes precedence at startup. **Forget saved key** removes the saved copy and keeps the current session working. Choosing session-only when submitting a new key also removes a previously saved copy. Linux's insecure `basic_text` backend disables remembering. A remembered key belongs to the OS account and machine that encrypted it; it is not a portable credential when moving the Windows EXE and its data to another machine. Browser keys remain session-only.
 
-`npm ci` downloads Electron's native binary for source launches. Linux needs a graphical desktop and GTK/NSS libraries. Windows source installs need the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
+`npm ci` downloads Electron's native binary for source launches. `npm run build:history` requires Python 3.10+ once to build the frozen Pydoll helper and download its pinned Chromium browser. Desktop packages include these resources and need no Python or separately installed browser. Linux needs a graphical desktop and GTK/NSS libraries. Windows source installs need the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
 
 Core and CLI checks passed on Linux, Windows and macOS CI, with browser E2E on Linux. Native packaged Electron checks run on Linux, Windows and macOS. The desktop workflow builds native downloads and tests the installed or extracted app before saving artifacts; see each release's checks for its verified platforms.
 
@@ -99,7 +100,7 @@ Estimates sample at most five friend lists and respect the node cap. At depth 3-
 4. Compute communities, centrality, friend rankings and location signals.
 5. Save reports and exports in a unique run folder.
 
-Vapora uses public API observations and local history files. It does not bypass Steam privacy or scrape SteamHistory. Missing observations and truncated graphs remain visible in the report.
+Vapora uses public API observations and local history files. SteamHistory is fetched separately after account verification or selection; blocked requests remain visible and do not stop Steam scans. Missing observations and truncated graphs remain visible in the report.
 
 ## reports and exports
 
@@ -119,9 +120,9 @@ outputs/<run-id>/
 
 | CSV | Columns |
 | --- | --- |
-| `gephi/nodes.csv` | `Id`, `Label`, `degree`, `betweenness`, `modularity_class`, `is_seed`, `is_hub`, `is_banned`, `is_public` |
+| `gephi/nodes.csv` | `Id`, `Label`, `degree`, `betweenness`, `modularity_class`, `is_seed`, `is_hub`, `is_banned`, `vac_bans`, `is_public` |
 | `gephi/edges.csv` | `Source`, `Target`, `Kind` with `friend` or `group` |
-| `probable-friends.csv` | `candidate_steamid`, `name`, `score`, `evidence_score`, `mutual_count`, `jaccard_with_seed`, `shared_groups`, `shared_games`, `friends_status` |
+| `probable-friends.csv` | `candidate_steamid`, `name`, `score`, `evidence_score`, `undirected_mutual_count`, `incoming_mutual_count`, `authored_count_index`, `admitted`, `jaccard_with_seed`, `shared_groups`, `shared_games`, `friends_status` |
 
 CSV fields are quoted when needed, and formula-like text is escaped for spreadsheet imports. Steam IDs stay strings in JSON; set spreadsheet ID columns to text.
 
@@ -165,7 +166,13 @@ Use **Import history** or `npm start -- history FILE` with a local normalized JS
 }
 ```
 
-Dates are Unix seconds. A missing or zero `UnfriendDate` means still friends at `lastChecked`. Invalid intervals fail visibly; overlapping intervals count once. NDJSON files must hold normalized snapshots of one account; the latest `lastChecked` wins. Friendship duration stays separate from network scores.
+Dates are Unix seconds. A missing or zero `UnfriendDate` means friends as of the source date, not necessarily today. `lastUpdated` is also accepted as the provider observation date. A newer closure supersedes an older open record. Overlapping intervals count once; invalid or contradictory periods remain inspectable and show an unknown duration.
+
+The viewer includes friendship periods, names, URLs, avatars, comments and profile/ban metadata. Search, friendship filters and date ranges help inspect captures. Comment ranking is separate from network ranking. Its friend index uses positive-count commenters with friendship evidence anywhere in the supplied captures, including former friends. Changing the friendship filter never changes that reference. Profile and ban date filters use the source observation date.
+
+Profile NDJSON and complete SteamHistory Svelte data/chunk streams are accepted. Every capture and unknown field stays in the export, along with the original input. **Original** buttons download those inputs unchanged.
+
+Verifying a target or selecting a recent avatar fetches its history independently. Typing never fetches it. Saved captures are reused until **Refresh**. Automatic loading opens a temporary browser session for verification, then fetches every history section with pagination, including deleted comments. It preserves raw profile/page responses in a reimportable capture. SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter). Automatic loading uses a fresh public session. Its returned comment total can differ from the profile-summary counter, which may be stale or include inaccessible records. Vapora keeps these totals separate and marks the gap partial without inventing comments. Imports preserve authenticated captures supplied by the user. Partial history names the failed section or provider count discrepancy; a blocked or failed refresh keeps the last dated capture and offers Retry. Source dates remain separate from retrieval time. Steam scanning remains available. Matching saved captures attach to run results, while current Steam facts stay separate from historical facts.
 
 Attach history only to a run for the same Steam account, or import it independently. Attached history reopens with the run and adds `history.json` to its exports. Browser imports accept up to 2 MB.
 
@@ -198,3 +205,12 @@ npm run dev
 `package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Windows CI also launches the actual portable EXE, moves it with its data, reopens the saved run and downloads its exports again. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
 
 The app shares its scanner, analysis and storage across CLI, browser and desktop. See the [product contract](product-contract.md), [E2E report](e2e-verification.md) and [release runbook](release-runbook.md). Live Steam verification is currently bounded to five accounts; it does not establish large-network behavior.
+
+
+## restored analysis controls
+
+**Ranking options** and the completed run's **Ranking** tab expose Top N (default 5), count baseline (50), location support (product or sum, default product), and location baseline (100). The default ranking uses the authored mutual index alone. Optional friend/group/game weights blend bounded Jaccard values with a fixed configured denominator. Missing comparisons stay unknown; all-zero weights show no combined index and sort incoming mutual counts.
+
+The incoming count uses appearances in other direct friends' observed lists. It differs from the undirected mutual count shown in Details. Every known direct friend stays in the ranking, even outside the admitted graph. Only admitted friendships affect graph metrics.
+
+Location support uses country and city codes. True products keep zero counts absorbing, and large raw values export as decimal strings. Zero total support has no index or share. Network locations and captured friend-comment locations stay separate. Indices describe supplied evidence, not friendship probabilities or verified residence. See [the formula contract](product-contract.md#formula-contract).

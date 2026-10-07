@@ -9,12 +9,16 @@ import type { Page } from "puppeteer-core";
 import { Schema } from "effect";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
-import { steamFixture, seed, second, key } from "./fixtures.js";
+import { steamFixture, historyFixture, seed, second, key } from "./fixtures.js";
 
 const userAgent = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 async function fill(page: Page, selector: string, value: string) {
-  await page.$eval(selector, (input) => { if (!(input instanceof HTMLInputElement)) throw new Error("Expected an input"); input.value = ""; });
-  await page.type(selector, value);
+  const dateInput = await page.$eval(selector, (input, value) => {
+    if (!(input instanceof HTMLInputElement)) throw new Error("Expected an input");
+    if (input.type === "date") { input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); return true; }
+    input.value = ""; return false;
+  }, value);
+  if (!dateInput) await page.type(selector, value);
 }
 async function visibleText(page: Page, selector: string) {
   return page.$eval(selector, (element) => element.textContent);
@@ -38,11 +42,12 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
     for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
   });
   const fixture = await steamFixture(); shutdown.push(() => fixture.close());
+  const historyProvider = await historyFixture(); historyProvider.setStatus(403); shutdown.push(() => historyProvider.close());
   root = await mkdtemp(join(tmpdir(), "vapora-browser-e2e-"));
   const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
   const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   shutdown.push(() => browser.close());
-  let server = await Server.start({ root, key: "b".repeat(32), port: 0, steamBaseUrl: fixture.url, retryBaseMs: 1 });
+  let server = await Server.start({ root, key: "b".repeat(32), port: 0, steamBaseUrl: fixture.url, historyBaseUrl: historyProvider.url, historySession: historyProvider.session, retryBaseMs: 1 });
   shutdown.push(() => server.close());
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   const runRequests: string[] = [];
@@ -104,11 +109,18 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.$eval("#open-key", (element) => element instanceof HTMLButtonElement && element.disabled), true);
   await page.click('[data-screen="results"]'); await page.click('[data-screen="history"]');
   assert.equal(await page.$eval("#progress-section", (element) => element instanceof HTMLElement && element.hidden), false);
-  await page.click("#cancel-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled");
+  await page.click("#cancel-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled").catch(async (error) => {
+    console.error("Cancellation failure", { job: (await state()).job, notice: await visibleText(page, "#notice"), report: await visibleText(page, "#report-error"), pageErrors: errors });
+    throw error;
+  });
   fixture.release("/ISteamUser/GetFriendList/v1/", second); const cancelled = await state(); const id = cancelled.job.id; assert.ok(id);
   assert.equal(cancelled.job.status, "cancelled"); const seedRequests = fixture.requests.filter((request) => request.path.includes("GetFriendList") && request.id === seed).length;
-  await server.close(); server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, retryBaseMs: 1 });
-  await page.goto(`${server.origin}/#${id}`); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled");
+  await server.close(); server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: historyProvider.url, historySession: historyProvider.session, retryBaseMs: 1 });
+  await page.goto(`${server.origin}/#${id}`); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled").catch(async (error) => {
+    const savedResponse = await fetch(`${server.origin}/api/runs/${id}`, { headers: { "user-agent": userAgent } });
+    console.error("Cancelled run reopen failure", { job: (await state()).job, notice: await visibleText(page, "#notice"), reportStatus: await visibleText(page, "#report-status"), responseStatus: savedResponse.status, response: await savedResponse.text(), pageErrors: errors });
+    throw error;
+  });
   await page.click("#resume-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
   assert.equal(fixture.requests.filter((request) => request.path.includes("GetFriendList") && request.id === seed).length, seedRequests);
   assert.equal(await page.$eval("#graph", (graph) => graph.children.length), 0);
@@ -147,7 +159,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(fixture.requests.length, requestCount);
   const history = join(root, "history-current.json"); const now = Math.floor(Date.now() / 1000);
   await writeFile(history, JSON.stringify({ steamID64: seed, name: "Current fixture", lastChecked: now, historic: { friends: [{ Friend: second, FriendDate: now - 1000 }] } }));
-  await page.click('[data-screen="history"]'); const upload = await page.$("input#history-file"); assert.ok(upload); await upload.uploadFile(history);
+  await page.click('[data-screen="history"]'); await page.click("#open-history-import"); const upload = await page.$("input#history-file"); assert.ok(upload); await upload.uploadFile(history);
   await page.click("#attach-history"); await page.click('#history-form button[type="submit"]');
   await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-download")?.hidden);
   await page.reload(); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
@@ -181,7 +193,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   }
   const scan = JSON.parse(await readFile(join(root, "outputs", id, "scan.json"), "utf8")); assert.equal(scan.settings.weights.mutual, 3);
   // Starting without a key must keep the workspace and resume the requested action after validation.
-  await server.close(); server = await Server.start({ root, key: "", port: 0, steamBaseUrl: fixture.url, retryBaseMs: 1 });
+  await server.close(); server = await Server.start({ root, key: "", port: 0, steamBaseUrl: fixture.url, historyBaseUrl: historyProvider.url, historySession: historyProvider.session, retryBaseMs: 1 });
   await page.goto(server.origin); await page.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "missing");
   await fill(page, "#target", seed); await fill(page, "#maxNodes", "0"); await fill(page, "#rpm", "0"); await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Saved default"));
@@ -199,10 +211,104 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   }), true);
   await page.keyboard.press("Escape");
   await page.setViewport({ width: 1078, height: 599 }); await page.click("#scan-button");
-  await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
+  await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete").catch(async (error) => {
+    console.error("Uncapped scan failure", { job: (await state()).job, notice: await visibleText(page, "#notice"), report: await visibleText(page, "#report-error") });
+    throw error;
+  });
   const uncapped = (await state()).runs[0]; assert.ok(uncapped); assert.equal(uncapped.nodes, 5);
   await page.click('[data-view="friends"]');
   assert.match(await visibleText(page, "#friend-rows") ?? "", /Off/);
   assert.match(await visibleText(page, "#friend-rows") ?? "", /Private/);
+  assert.deepEqual(errors, []);
+});
+
+test("history account selection, all viewer tabs, filters, original downloads and blocked refresh work end to end", { timeout: 90000 }, async (context) => {
+  const executablePath = process.env.VAPORA_BROWSER; assert.ok(executablePath);
+  const fixture = await steamFixture(); const history = await historyFixture();
+  const root = await mkdtemp(join(tmpdir(), "vapora-history-browser-")); const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
+  const server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: history.url, historySession: history.session, retryBaseMs: 1 });
+  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  context.after(async () => { await browser.close(); await server.close(); await fixture.close(); await history.close(); await rm(root, { recursive: true, force: true }); });
+  const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
+  await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 599 }); await page.goto(server.origin);
+  await fill(page, "#target", seed); assert.equal(history.requests(), 0);
+  await page.click("#lookup-target"); await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  assert.equal(history.requests(), 8); await page.click("#target-history");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 2);
+  await page.click('[data-history="ranking"]'); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 4);
+  const reference = await visibleText(page, "#history-scope");
+  const score = await page.$eval("#history-rows tr:nth-child(3) td:last-child", (cell) => cell.textContent);
+  await page.select("#history-status", "former"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  assert.equal(await visibleText(page, "#history-scope"), reference);
+  assert.equal(await page.$eval("#history-rows tr td:last-child", (cell) => cell.textContent), score);
+  await page.select("#history-status", "all");
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-comment-ranking.png") });
+  for (const [tab, count] of [["comments", 4], ["persona", 2], ["url", 1], ["pfp", 1], ["profile", 1], ["locations", 1]] as const) {
+    await page.click(`[data-history="${tab}"]`); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), count);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  }
+  await page.click('[data-history="profile"]'); await page.click("#history-rows button");
+  assert.match(await visibleText(page, "#history-inspect") ?? "", /customField/); await page.click("#history-details-close");
+  await page.click('[data-history="comments"]'); await fill(page, "#history-search", "Former friend");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "");
+  await fill(page, "#history-from", "2026-10-06"); await fill(page, "#history-to", "2026-10-08");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 3);
+  await page.click('[data-history="profile"]');
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  await fill(page, "#history-to", "2026-10-06");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 0);
+  await fill(page, "#history-from", ""); await fill(page, "#history-to", "");
+  await page.click("#history-sources button");
+  let original: string | undefined;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try { original = await readFile(join(downloadDirectory, `steamhistory-${seed}-1.json`), "utf8"); break; }
+    catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; await delay(100); }
+  }
+  assert.ok(original);
+  const capture = JSON.parse(original);
+  assert.equal(capture.type, "SteamHistoryCapture");
+  assert.equal(capture.steamID64, seed);
+  assert.equal(capture.pages.length, 7);
+  assert.match(capture.profile.contents, /customField/);
+  history.counts.set("comments", 8); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History partial");
+  assert.match(await visibleText(page, "#history-warnings") ?? "", /supporter access/);
+  assert.equal(await page.$eval("#history-warnings", (element) => element.getBoundingClientRect().bottom <= innerHeight), true);
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element instanceof HTMLElement && element.hidden), true);
+  await page.click('[data-history="comments"]');
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 4);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-partial-comments.png") });
+  history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  assert.equal(await page.$eval("#history-result", (element) => element instanceof HTMLElement && element.hidden), false);
+  await page.click("#history-retry"); await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-retry")?.hidden);
+  await page.setViewport({ width: 320, height: 800 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  await page.setViewport({ width: 1078, height: 599 }); await page.click('[data-screen="scan"]');
+  await fill(page, "#rpm", "0"); await fill(page, "#maxNodes", "2"); await page.click("#scan-button");
+  await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
+  const run = Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
+  assert.ok(run.job.id);
+  const attached = await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"); assert.ok(JSON.parse(attached).sources.length);
+  await page.click('[data-view="friends"]');
+  await page.$$eval("#friend-rows tr", (rows) => rows.find((row) => row.textContent?.includes("Outside graph"))?.querySelector("button")?.click());
+  assert.match(await visibleText(page, "#inspect-facts") ?? "", /Outside admitted graph/);
+  await page.click("#close-inspector");
+  const calls = history.requests(); await page.click('[data-screen="scan"]'); await page.click("#recent button");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History unavailable");
+  assert.equal(history.requests(), calls); // A known failed refresh is retried explicitly, not on every navigation.
+  await page.click("#target-history"); await page.click("#open-history-import");
+  const pagedFile = join(root, "history-pages.json");
+  await writeFile(pagedFile, JSON.stringify({ ...history.document, historic: { ...history.document.historic,
+    persona: Array.from({ length: 201 }, (_, index) => ({ Name: `History name ${index}`, Timestamp: 1791360000 })) } }));
+  const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(pagedFile);
+  await page.click('#history-form button[type="submit"]');
+  await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#history-import-dialog")?.open);
+  await page.click('[data-history="persona"]');
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 100);
+  assert.match(await visibleText(page, "#history-count") ?? "", /1–100 of 205/);
+  await page.click("#history-next"); assert.match(await visibleText(page, "#history-count") ?? "", /101–200 of 205/);
+  await page.click("#history-next"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 5);
+  await fill(page, "#history-search", "History name 200");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  assert.equal(await page.$eval("#history-next", (button) => button instanceof HTMLButtonElement && button.disabled), true);
   assert.deepEqual(errors, []);
 });

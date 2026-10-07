@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
+import { Cause, Effect, Fiber, ManagedRuntime, Schema, Semaphore } from "effect";
 import { InputError, Settings, Ranking, SteamId, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
@@ -11,10 +11,15 @@ import * as Storage from "./storage.js";
 import * as Scanner from "./scanner.js";
 import * as Analysis from "./analysis.js";
 import * as History from "./history.js";
+import * as HistoryProvider from "./history-provider.js";
+import * as HistoryBrowser from "./history-browser.js";
 import type { Job, State, RunView } from "./contracts.js";
 
 export interface Options {
   readonly root: string; readonly key: string; readonly port?: number; readonly steamBaseUrl?: string; readonly retryBaseMs?: number;
+  readonly historyBaseUrl?: string;
+  readonly historyRuntime?: string;
+  readonly historySession?: HistoryProvider.OpenSession;
   readonly keyStorage?: { readonly available: boolean; readonly remembered: boolean; readonly save: (key: string | null) => Promise<void> };
 }
 
@@ -23,6 +28,7 @@ const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
 const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)), remember: Schema.Boolean });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
+const AccountHistoryRequest = Schema.Struct({ id: SteamId, refresh: Schema.Boolean, runId: Schema.optionalKey(Schema.String) });
 const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranking });
 // Only bundled UI assets are public. Never resolve request paths against the filesystem.
 const files = new Map([
@@ -68,6 +74,53 @@ export async function start(options: Options) {
   let cancelJob: (() => Promise<void>) | null = null;
   let estimating = false;
   let origin = "";
+  const historyRequests = new Map<SteamId, Promise<History.HistoryState>>();
+  const historyErrors = new Map<SteamId, string>();
+  const historyGate = await Effect.runPromise(Semaphore.make(1));
+  const browserGate = await Effect.runPromise(Semaphore.make(1));
+  const historyCancellation = new Set<() => Promise<void>>();
+  let closing = false;
+  const saveHistory = (bundle: History.Bundle) => runtime.runPromise(historyGate.withPermit(Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const id = bundle.sources[0]?.snapshots[0]?.steamID64;
+    if (!id) return yield* Effect.fail(new InputError({ message: "No account found in history." }));
+    const previous = yield* store.accountHistory(id);
+    const report = History.view({ sources: [...(previous?.sources ?? []), ...bundle.sources] });
+    yield* store.saveHistory(report);
+    return report;
+  })));
+  const accountHistory = async (id: SteamId, refresh: boolean): Promise<History.HistoryState> => {
+    const running = historyRequests.get(id); if (running) return running;
+    const operation = (async (): Promise<History.HistoryState> => {
+      const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
+      const cachedError = saved ? History.coverageError(saved) : null;
+      if (!refresh && (saved || historyErrors.has(id))) return { id, status: historyErrors.has(id) ? "unavailable" : cachedError ? "partial" : "ready", error: historyErrors.get(id) ?? cachedError, report: saved };
+      if (closing) throw new InputError({ message: "Vapora is closing. Retry after reopening it." });
+      const fiber = runtime.runFork(browserGate.withPermit(HistoryProvider.fetchAccount(id,
+        options.historySession ?? HistoryBrowser.open(options.historyRuntime, options.historyBaseUrl))));
+      const cancel = () => Effect.runPromise(Fiber.interrupt(fiber)); historyCancellation.add(cancel);
+      const outcome = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.result)).finally(() => historyCancellation.delete(cancel));
+      if (outcome._tag === "Failure") {
+        historyErrors.set(id, outcome.failure.message);
+        return { id, status: "unavailable", error: outcome.failure.message, report: saved };
+      }
+      const report = await saveHistory(outcome.success); historyErrors.delete(id);
+      const error = History.coverageError(report);
+      return { id, status: error ? "partial" : "ready", error, report };
+    })();
+    historyRequests.set(id, operation);
+    try { return await operation; } finally { historyRequests.delete(id); }
+  };
+  const attachedHistory = (scan: Scan) => Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const attachment = yield* store.history(scan.id);
+    const cached = yield* store.accountHistory(scan.seed);
+    const source = cached ?? attachment;
+    if (!source) return null;
+    const report = History.view(source, scan);
+    yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
+    return report;
+  });
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
     if (busy()) throw new InputError({ message: "A Steam operation is already running. Wait or cancel it first." });
@@ -123,7 +176,7 @@ export async function start(options: Options) {
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
       const scan = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(runMatch[1] ?? ""); }));
-      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(scan.id); }));
+      const history = await runtime.runPromise(attachedHistory(scan));
       json(response, 200, { scan, report: Analysis.analyze(scan), history } satisfies RunView);
       return;
     }
@@ -190,6 +243,28 @@ export async function start(options: Options) {
     } finally { estimating = false; }
     return;
   }
+  async function updateHistory(path: string, contents: string, response: ServerResponse) {
+    if (path === "/api/history/account") {
+      const payload = await Effect.runPromise(decode(AccountHistoryRequest, contents));
+      // Check the target before requesting or modifying any attachment.
+      const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
+      if (scan && scan.seed !== payload.id) throw new InputError({ message: "Select the matching account before attaching its history." });
+      const state = await accountHistory(payload.id, payload.refresh);
+      const report = scan && state.report ? await runtime.runPromise(attachedHistory(scan)) : state.report;
+      json(response, 200, { ...state, report }); return;
+    }
+    if (path === "/api/history") {
+      const payload = await Effect.runPromise(decode(HistoryRequest, contents));
+      if (Buffer.byteLength(payload.contents, "utf8") > 2 * 1024 * 1024) throw new InputError({ message: "The history file exceeds 2 MB." });
+      const bundle = await Effect.runPromise(History.parse(payload.contents));
+      const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
+      const account = bundle.sources[0]?.snapshots[0]?.steamID64;
+      if (scan && scan.seed !== account) throw new InputError({ message: "This history belongs to another account. Import separately or open a matching run." });
+      const saved = await saveHistory(bundle); historyErrors.delete(saved.profile.steamID64);
+      const report = scan ? await runtime.runPromise(attachedHistory(scan)) : saved;
+      json(response, 200, report); return;
+    }
+  }
   async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {
     const contents = await body(request);
     if (path === "/api/key" || path === "/api/key/forget") { await updateKey(path, contents, response); return; }
@@ -234,20 +309,7 @@ export async function start(options: Options) {
       json(response, 200, { ok: true }); return;
     }
     if (path === "/api/analyze" || path === "/api/rebuild") { await updateAnalysis(path, contents, response); return; }
-    if (path === "/api/history") {
-      const payload = await Effect.runPromise(decode(HistoryRequest, contents));
-      if (Buffer.byteLength(payload.contents, "utf8") > 2 * 1024 * 1024) throw new InputError({ message: "The history file exceeds 2 MB." });
-      const report = await Effect.runPromise(History.parse(payload.contents).pipe(Effect.flatMap(History.analyze)));
-      if (payload.runId) {
-        await runtime.runPromise(Effect.gen(function* () {
-          const store = yield* Storage.Service;
-          const scan = yield* store.read(payload.runId ?? "");
-          if (scan.seed !== report.profile.steamID64) return yield* Effect.fail(new InputError({ message: "This history belongs to another account. Open a matching run or import it separately." }));
-          yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
-        }));
-      }
-      json(response, 200, report); return;
-    }
+    if (path === "/api/history/account" || path === "/api/history") { await updateHistory(path, contents, response); return; }
     json(response, 404, { error: "Unknown action." });
   }
   await runtime.runPromise(Effect.gen(function* () { yield* Storage.Service; }));
@@ -255,6 +317,9 @@ export async function start(options: Options) {
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   origin = `http://127.0.0.1:${address.port}`;
   return { origin, close: async () => {
+    closing = true;
+    await Promise.all([...historyCancellation].map((cancel) => cancel()));
+    await Promise.allSettled(historyRequests.values());
     if (cancelJob) await cancelJob();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await runtime.dispose();

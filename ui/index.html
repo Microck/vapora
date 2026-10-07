@@ -95,9 +95,10 @@
           <p id="target-help" class="sr-only">SteamID64, SteamID2, [U:1:ID], profile URL, or vanity name. Use the check button to resolve a profile.</p>
           <div class="identity">
             <p id="target-name" class="target-name"></p>
-            <p id="target-id" class="sr-only" hidden></p>
+          <p id="target-id" class="sr-only" hidden></p>
             <img id="target-avatar" class="avatar" src="/placeholder.jpg" width="210" height="210" alt="" referrerpolicy="no-referrer">
           </div>
+          <div class="target-history"><button id="target-history" type="button">History</button><span id="target-history-status" role="status"></span><button id="target-history-retry" type="button" hidden>Retry</button></div>
           <div class="target-actions">
             <button id="scan-button" type="submit" form="scan-form" aria-describedby="key-indicator">Analyze</button>
             <button id="estimate-button" type="button">Estimate</button>
@@ -125,6 +126,10 @@
       <form id="scan-ranking-form">
         <h2 id="scan-ranking-heading">Ranking options</h2>
         <div class="weights">
+          <label>Top N<input id="topN" type="number" min="1" max="1000" required></label>
+          <label>Count baseline<input id="countBaseline" type="number" min="1" max="1000000" required></label>
+          <label>Location support<select id="locationAggregation"><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location baseline<input id="locationBaseline" type="number" min="1" max="1000000" required></label>
           <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
           <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
           <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
@@ -142,7 +147,7 @@
     </dialog>
 
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
-      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">Import history</button><button type="button" data-screen="scan">New scan</button></div>
+      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">History</button><button type="button" data-screen="scan">New scan</button></div>
       <section id="run-library" class="panel" aria-label="Saved runs">
         <div class="section-line"><h2>Saved runs</h2><label>Find run<input id="run-search" type="search" placeholder="Name or Steam ID"></label><label>Status<select id="run-status"><option value="all">All</option><option value="complete">Complete</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="running">Unfinished</option></select></label></div>
         <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Created</th><th>Status</th><th>Profiles</th><th>Run</th></tr></thead><tbody id="run-rows"></tbody></table></div>
@@ -175,7 +180,7 @@
         <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col" data-tooltip="Relative network evidence on a 0 to 100 scale, not a friendship probability">Evidence / 100</th><th scope="col">Mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col" data-tooltip="Relative network evidence on a 0 to 100 scale, not a friendship probability">Evidence / 100</th><th scope="col" data-tooltip="Incoming count used by the authored index. Details also show undirected mutuals.">Incoming mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th><th scope="col">VAC</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
           <p id="friend-empty" class="hint" hidden>No friends match this filter.</p>
         </section>
         <section id="network-view" class="view" hidden>
@@ -188,9 +193,9 @@
 
         </section>
         <section id="locations-view" class="view" hidden>
-          <h2 data-tooltip="Self-reported Steam codes among observed friends; they do not verify residence">Self-reported location signals</h2>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Signal share</th></tr></thead><tbody id="location-rows"></tbody></table></div>
-          <p id="location-empty" class="hint" hidden>No admitted friends expose location fields.</p>
+          <div class="section-line"><h2 data-tooltip="Self-reported Steam codes among observed friends; they do not verify residence">Network location signals</h2><span id="location-coverage"></span></div>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Raw support</th><th scope="col">Share %</th><th scope="col">Index / 100</th><th scope="col">Details</th></tr></thead><tbody id="location-rows"></tbody></table></div>
+          <p id="location-empty" class="hint" hidden>No friends supply country and city fields.</p>
         </section>
         <section id="exports-view" class="view" hidden>
           <div class="section-line"><h2>Run exports</h2><button id="rebuild-exports" type="button" data-tooltip="Regenerate exports from saved observations, without Steam requests">Rebuild exports</button></div>
@@ -199,6 +204,10 @@
         <section id="ranking-view" class="view" hidden>
           <h2 data-tooltip="Recompute this run using its saved observations, without Steam requests">Ranking settings</h2>
           <form id="ranking-form"><div class="weights">
+          <label>Top N<input id="ranking-topN" type="number" min="1" max="1000" required></label>
+          <label>Count baseline<input id="ranking-countBaseline" type="number" min="1" max="1000000" required></label>
+          <label>Location support<select id="ranking-locationAggregation"><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location baseline<input id="ranking-locationBaseline" type="number" min="1" max="1000000" required></label>
             <label>Hub percentile<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required></label>
             <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
             <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
@@ -215,23 +224,35 @@
     </section>
 
     <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
-      <div class="page-heading"><h1 id="history-heading">SteamHistory</h1><button type="button" data-screen="results">Back to Results</button></div>
+      <div class="page-heading"><h1 id="history-heading">SteamHistory</h1><div class="results-actions"><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button type="button" data-screen="results">Back to Results</button></div></div>
+      <p id="history-fetch-status" role="status" hidden></p><button id="history-retry" type="button" hidden>Retry history</button>
       <section id="history-section">
-        <fieldset class="panel narrow-panel">
-          <legend>Import history</legend>
+        <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import SteamHistory</h2>
           <form id="history-form" class="stack-form">
             <label for="history-file">History file, up to 2 MB</label>
-            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" data-tooltip="Normalized JSON or NDJSON with steamID64, lastChecked and historic.friends" required>
+            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" data-tooltip="SteamHistory JSON, profile snapshots, or the complete data/chunk response" required>
             <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
             <button type="submit">Analyze history</button>
           </form>
-        </fieldset>
+          <div class="dialog-actions"><button type="button" data-close="history-import-dialog">Cancel</button></div>
+        </dialog>
         <div id="history-result" hidden>
-          <h2 id="history-name"></h2><a id="history-download" hidden>Download history.json</a>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Duration</th><th scope="col">Relative duration</th><th scope="col">Current</th></tr></thead><tbody id="history-rows"></tbody></table></div>
+          <div class="section-line"><h2 id="history-name"></h2><span id="history-asof"></span><button id="history-refresh" type="button">Refresh</button><button id="history-export" type="button">Export history</button><a id="history-download" hidden>Run history.json</a></div>
+          <p id="history-warnings" role="status" hidden></p>
+          <nav class="tabs" aria-label="History views">
+            <button type="button" data-history="friends" aria-current="page">Friends</button><button type="button" data-history="ranking">Comment ranking</button><button type="button" data-history="comments">Comments</button><button type="button" data-history="persona">Names</button><button type="button" data-history="url">URLs</button><button type="button" data-history="pfp">Avatars</button><button type="button" data-history="profile">Profile / bans</button><button type="button" data-history="locations">Comment locations</button>
+          </nav>
+          <div class="panel"><div class="section-line history-filters"><label>Search<input id="history-search" type="search" placeholder="Name, ID or text"></label><label id="history-status-label">Friend status<select id="history-status"><option value="all">All</option><option value="current">Current</option><option value="former">Former</option><option value="other">Other</option><option value="unknown">Unknown</option></select></label><label>From<input id="history-from" type="date"></label><label>To<input id="history-to" type="date"></label></div>
+          <p id="history-scope" data-tooltip="Counts cover supplied captures only. Undated comments appear only without a date range. Friendship filters never change the friend-comment scoring reference."></p>
+          <div class="table-wrap"><table><thead><tr id="history-columns"></tr></thead><tbody id="history-rows"></tbody></table></div>
+          <div class="section-line"><span id="history-count" role="status"></span><button id="history-previous" type="button">Previous</button><button id="history-next" type="button">Next</button></div>
+          <div id="history-sources" class="file-list"></div></div>
+
         </div>
       </section>
     </section>
+
+    <dialog id="history-details" aria-labelledby="history-details-heading"><h2 id="history-details-heading">Captured record</h2><pre id="history-inspect"></pre><div class="dialog-actions"><button id="history-details-close" type="button">Close</button></div></dialog>
 
     <dialog id="key-dialog" aria-labelledby="connection-heading" aria-describedby="key-session-note">
       <form id="key-form">

@@ -225,7 +225,7 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 202);
     await arrived;
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 400);
-    assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { hubPercentile: .99, weights: defaults.weights } }))).status, 400);
+    assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .99, weights: defaults.weights } }))).status, 400);
     assert.equal((await request("/api/rebuild", JSON.stringify({ id: "20261006T120000Z-123456789abc" }))).status, 400);
     assert.equal((await request("/api/cancel", "{}")).status, 200);
     fixture.release(friendPath, seed);
@@ -260,7 +260,7 @@ test("saved rankings change without Steam authority or collection and attached h
   const post = (path: string, payload: string) => fetch(`${server.origin}${path}`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: payload });
   const get = (path: string) => fetch(`${server.origin}${path}`, { headers: { "user-agent": userAgent } });
   try {
-    const ranking = { hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
+    const ranking = { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
     assert.equal((await get(`/api/runs/${observations.id}`)).status, 200);
     const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: { friends: [{ Friend: third, Name: "Third", FriendDate: 100 }] } };
     assert.equal((await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }))).status, 200);
@@ -295,7 +295,7 @@ test("saved rankings change without Steam authority or collection and attached h
     await rm(analysisPath, { recursive: true });
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { ...ranking, hubPercentile: 0 } }))).status, 400);
     await writeFile(join(root, "outputs", observations.id, "history.json"), "invalid history");
-    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { hubPercentile: .9, weights: defaults.weights } }))).status, 400);
+    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .9, weights: defaults.weights } }))).status, 400);
     const afterFailure = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
     assert.deepEqual(afterFailure.settings, persisted.settings);
     await writeFile(join(root, "outputs", observations.id, "history.json"), JSON.stringify(view.history));

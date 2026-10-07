@@ -12,7 +12,7 @@ const Summary = Schema.Struct({
   loccountrycode: Schema.optionalKey(Schema.String), locstatecode: Schema.optionalKey(Schema.String),
   loccityid: Schema.optionalKey(Player.fields.city),
 });
-const Ban = Schema.Struct({ SteamId, VACBanned: Schema.Boolean, NumberOfGameBans: Bans.fields.game, CommunityBanned: Schema.Boolean });
+const Ban = Schema.Struct({ SteamId, VACBanned: Schema.Boolean, NumberOfVACBans: Bans.fields.vacCount, NumberOfGameBans: Bans.fields.game, CommunityBanned: Schema.Boolean });
 export type Summary = typeof Summary.Type;
 export type Ban = typeof Ban.Type;
 export interface Observation<T> { readonly status: Availability; readonly values: readonly T[] }

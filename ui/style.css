@@ -318,3 +318,16 @@ tbody tr:hover { background: var(--GreenBG); }
   #coverage div:nth-child(3n) { border-right: 1px solid var(--GreenBG); }
   #coverage div:nth-child(2n) { border-right: 0; }
 }
+
+/* History shares the existing Steam tabs, table surfaces and compact spacing. */
+.target-history { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.target-history button { padding: 2px 8px; }
+.target-history span { font-size: 14px; }
+.history-filters { flex-wrap: wrap; }
+#history-scope { margin: 8px 0; }
+#history-warnings, #history-fetch-status { white-space: pre-line; color: var(--Maize); margin: 8px 0; }
+#history-details { width: min(760px, calc(100vw - 32px)); }
+#history-inspect { max-height: 65vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.4 var(--Mono); }
+#history-rows td { overflow-wrap: anywhere; }
+#history-rows td:nth-child(3) { max-width: 360px; }
+#history-asof { font-size: 14px; }

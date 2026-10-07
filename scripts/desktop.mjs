@@ -43,12 +43,18 @@ async function launch() {
       throw new Error("Could not save the encrypted key. Check data-folder permissions and disk space, then retry or use a session key.");
     } finally { await rm(temporary, { force: true }); }
   };
-  const options = { root, key, port: 0, keyStorage: { available, remembered, save: saveKey } };
+  const options = { root, key, port: 0, keyStorage: { available, remembered, save: saveKey },
+    historyRuntime: app.isPackaged ? join(process.resourcesPath, "history-runtime") : undefined };
   // Development fixtures stay opt-in and loopback-only, sharing the browser server's test transport.
   if (process.env.VAPORA_STEAM_FIXTURE) {
     const fixture = new URL(process.env.VAPORA_STEAM_FIXTURE);
     if (fixture.hostname !== "127.0.0.1") throw new Error("The desktop Steam fixture must use loopback.");
     options.steamBaseUrl = fixture.origin;
+  }
+  if (process.env.VAPORA_HISTORY_FIXTURE) {
+    const fixture = new URL(process.env.VAPORA_HISTORY_FIXTURE);
+    if (fixture.hostname !== "127.0.0.1") throw new Error("The desktop history fixture must use loopback.");
+    options.historyBaseUrl = fixture.origin;
   }
   const server = await start(options);
   const window = new BrowserWindow({

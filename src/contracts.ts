@@ -1,21 +1,22 @@
 import { Schema } from "effect";
 import { Scan, SteamId, Availability, RunId, RunStatus, Player } from "./model.js";
+import { LocationSignal, LocationCoverage } from "./scoring.js";
+export { LocationSignal } from "./scoring.js";
+export type { LocationSignal as LocationSignalType } from "./scoring.js";
 import { HistoryReport } from "./history.js";
 
 export const Edge = Schema.Struct({ source: SteamId, target: SteamId, kind: Schema.Literals(["friend", "group"]) });
 export interface Edge extends Schema.Schema.Type<typeof Edge> {}
 export const Metric = Schema.Struct({ id: SteamId, degree: Schema.Number, betweenness: Schema.Number, community: Schema.Number, hub: Schema.Boolean });
 export const FriendRank = Schema.Struct({
-  id: SteamId, name: Schema.String, score: Schema.Number, evidenceScore: Schema.Number, mutual: Schema.Number,
+  id: SteamId, name: Schema.String, score: Schema.NullOr(Schema.Number), evidenceScore: Schema.NullOr(Schema.Number), mutual: Schema.Number,
+  incomingMutual: Schema.Number, countIndex: Schema.NullOr(Schema.Number), admitted: Schema.Boolean,
+  groupJaccard: Schema.NullOr(Schema.Number), gameJaccard: Schema.NullOr(Schema.Number),
   jaccard: Schema.NullOr(Schema.Number), sharedGroups: Schema.NullOr(Schema.Number), sharedGames: Schema.NullOr(Schema.Number), friendsStatus: Availability,
 });
 export interface FriendRank extends Schema.Schema.Type<typeof FriendRank> {}
-export const LocationSignal = Schema.Struct({
-  country: Schema.String, state: Schema.NullOr(Schema.String), city: Schema.NullOr(Schema.Number), contributors: Schema.Number, weight: Schema.Number, share: Schema.Number,
-});
-export interface LocationSignal extends Schema.Schema.Type<typeof LocationSignal> {}
 export const Report = Schema.Struct({
-  runId: RunId, seed: SteamId, edges: Schema.Array(Edge), metrics: Schema.Array(Metric), friends: Schema.Array(FriendRank), locations: Schema.Array(LocationSignal),
+  runId: RunId, seed: SteamId, edges: Schema.Array(Edge), metrics: Schema.Array(Metric), friends: Schema.Array(FriendRank), locations: Schema.Array(LocationSignal), locationCoverage: LocationCoverage,
   coverage: Schema.Struct({ nodes: Schema.Number, publicLists: Schema.Number, privateLists: Schema.Number, skippedLists: Schema.Number, unavailableLists: Schema.Number, pendingLists: Schema.Number, directFriends: Schema.Number, admittedDirectFriends: Schema.Number, truncated: Schema.Boolean }),
   warnings: Schema.Array(Schema.String),
 });

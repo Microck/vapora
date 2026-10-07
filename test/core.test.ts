@@ -78,10 +78,11 @@ test("history merges overlapping periods and selects the latest NDJSON snapshot"
   const report = await Effect.runPromise(History.analyze(parsed));
   assert.equal(report.friends.find((f) => f.id === second)?.durationSeconds, 300);
   assert.equal(report.friends.find((f) => f.id === third)?.durationSeconds, 500);
-  assert.equal(report.friends.find((f) => f.id === third)?.currentlyFriends, true);
+  assert.equal(report.friends.find((f) => f.id === third)?.status, "current");
   assert.equal(report.profile.historic.persona?.length, 1);
   const ndjson = `${JSON.stringify({ ...profile, lastChecked: 900 })}\n${JSON.stringify(profile)}`;
-  assert.equal((await Effect.runPromise(History.parse(ndjson))).lastChecked, 1000);
+  assert.equal(History.view(await Effect.runPromise(History.parse(ndjson))).profile.lastChecked, 1000);
   await assert.rejects(Effect.runPromise(History.parse(`${JSON.stringify(profile)}\n${JSON.stringify({ ...profile, steamID64: second })}`)));
-  await assert.rejects(Effect.runPromise(History.analyze({ ...parsed, historic: { friends: [{ Friend: second, FriendDate: 1200 }] } })));
+  const inconsistent = await Effect.runPromise(History.parse(JSON.stringify({ ...profile, historic: { friends: [{ Friend: second, FriendDate: 1200 }] } })));
+  assert.equal(History.view(inconsistent).friends[0]?.durationSeconds, null);
 });

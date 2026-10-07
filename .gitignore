@@ -6,3 +6,5 @@ outputs/
 profiles/
 .vapora/
 *.log
+
+.history-runtime/

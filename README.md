@@ -37,7 +37,7 @@ map a Steam user's friend network, find communities and hubs, and export Gephi-r
 - an explicit **Skip private profiles** checkbox, with missing data shown in the report.
 - communities, degree, betweenness and hubs; searchable graphs and profile inspection.
 - probable-friend rankings from mutuals, Jaccard, shared groups and shared games.
-- saved settings, offline reranking, local SteamHistory imports and Gephi-ready exports.
+- saved settings, offline reranking, dated SteamHistory captures, comment ranking and Gephi-ready exports.
 
 ![network exploration and profile inspection](docs/screenshots/network.png)
 
@@ -64,13 +64,14 @@ Downloads are unsigned and not notarized. Check the release's `SHA256SUMS.txt` b
 
 ### browser / CLI / from source
 
-Install [Node.js 24+](https://nodejs.org/), then:
+Install [Node.js 24+](https://nodejs.org/) and Python 3.10+ for the one-time history-runtime build, then:
 
 ```sh
 git clone https://github.com/Microck/vapora.git
 cd vapora
 npm ci
 npm run build
+npm run build:history
 npm start -- serve
 ```
 

@@ -5,7 +5,8 @@ import { Effect } from "effect";
 import type { Player, Scan, SteamId } from "./model.js";
 import { InputError } from "./model.js";
 import type { Ranking } from "./model.js";
-import type { Edge, FriendRank, LocationSignal, Report } from "./contracts.js";
+import type { Edge, FriendRank, Report } from "./contracts.js";
+import * as Scoring from "./scoring.js";
 import * as Storage from "./storage.js";
 
 export type { Report } from "./contracts.js";
@@ -71,48 +72,51 @@ function graphMetrics(graph: UndirectedGraph, sorted: readonly SteamId[], percen
   return metrics;
 }
 
-function rankFriends(scan: Scan, players: ReadonlyMap<SteamId, Player>, seed: Player): FriendRank[] {
-  const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
-  const seedGroups = new Set(seed.groups); const seedGames = new Set(seed.games);
-  const neighbors = new Map(scan.players.map((p) => [p.id, new Set(p.friends)]));
-  const weights = scan.settings.weights;
-  const ranks: Omit<FriendRank, "evidenceScore">[] = [];
-  for (const id of seedFriends) {
-    const player = players.get(id);
-    if (!player) continue;
-    const friendSet = neighbors.get(id) ?? new Set<SteamId>();
-    const mutuals = new Set([...friendSet].filter((friend) => seedFriends.has(friend) && friend !== id));
-    // A public list can establish an undirected friendship even when the other list is private.
-    for (const other of seedFriends) if (other !== id && neighbors.get(other)?.has(id)) mutuals.add(other);
-    const union = new Set([...friendSet, ...seedFriends]);
-    const jaccard = seed.friendsStatus === "public" && player.friendsStatus === "public" ? intersection(seedFriends, friendSet) / Math.max(1, union.size) : null;
-    const groups = seed.groupsStatus === "public" && player.groupsStatus === "public" ? intersection(seedGroups, new Set(player.groups)) : null;
-    const games = seed.gamesStatus === "public" && player.gamesStatus === "public" ? intersection(seedGames, new Set(player.games)) : null;
-    ranks.push({ id, name: player.name, mutual: mutuals.size, jaccard, sharedGroups: groups, sharedGames: games,
-      score: mutuals.size * weights.mutual + (jaccard ?? 0) * weights.jaccard + (groups ?? 0) * weights.groups + (games ?? 0) * weights.games,
-      friendsStatus: player.friendsStatus,
-    });
-  }
-  ranks.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-  const maxScore = ranks[0]?.score ?? 0;
-  const friends: FriendRank[] = ranks.map((rank) => ({ ...rank, evidenceScore: maxScore ? rank.score / maxScore * 100 : 0 }));
-  return friends;
+function compareLists<T>(left: readonly T[], right: readonly T[] | undefined, leftStatus: string, rightStatus: string | undefined) {
+  if (leftStatus !== "public" || rightStatus !== "public" || !right) return null;
+  const l = new Set(left); const r = new Set(right); const shared = intersection(l, r);
+  return { shared, jaccard: shared / Math.max(1, l.size + r.size - shared) };
 }
 
-function locationSignals(friends: readonly FriendRank[], players: ReadonlyMap<SteamId, Player>): LocationSignal[] {
-  const signals = new Map<string, Omit<LocationSignal, "share">>();
-  for (const rank of friends) {
-    const player = players.get(rank.id);
-    if (!player?.country) continue;
-    const key = `${player.country}/${player.state ?? ""}/${player.city ?? ""}`;
-    const previous = signals.get(key);
-    signals.set(key, { country: player.country, state: player.state, city: player.city,
-      contributors: (previous?.contributors ?? 0) + 1, weight: (previous?.weight ?? 0) + rank.mutual + 1,
-    });
+function friendSignals(seed: Player, player: Player | undefined) {
+  const friends = compareLists(seed.friends, player?.friends, seed.friendsStatus, player?.friendsStatus);
+  const groups = compareLists(seed.groups, player?.groups, seed.groupsStatus, player?.groupsStatus);
+  const games = compareLists(seed.games, player?.games, seed.gamesStatus, player?.gamesStatus);
+  return { jaccard: friends?.jaccard ?? null, sharedGroups: groups?.shared ?? null, sharedGames: games?.shared ?? null,
+    groupJaccard: groups?.jaccard ?? null, gameJaccard: games?.jaccard ?? null };
+}
+function combinedScore(index: number | null, signals: ReturnType<typeof friendSignals>, weights: Ranking["weights"]) {
+  const denominator = weights.mutual + weights.jaccard + weights.groups + weights.games;
+  return denominator ? (weights.mutual * (index ?? 0) + 100 * weights.jaccard * (signals.jaccard ?? 0) +
+    100 * weights.groups * (signals.groupJaccard ?? 0) + 100 * weights.games * (signals.gameJaccard ?? 0)) / denominator : null;
+}
+
+function rankFriends(scan: Scan, players: ReadonlyMap<SteamId, Player>, seed: Player): FriendRank[] {
+  const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
+  const neighbors = new Map(scan.players.filter((p) => p.friendsStatus === "public").map((p) => [p.id, new Set(p.friends)]));
+  const incoming = new Map<SteamId, Set<SteamId>>();
+  for (const other of seedFriends) for (const id of neighbors.get(other) ?? []) {
+    if (id === other || !seedFriends.has(id)) continue;
+    const sources = incoming.get(id) ?? new Set<SteamId>(); sources.add(other); incoming.set(id, sources);
   }
-  const totalWeight = [...signals.values()].reduce((sum, signal) => sum + signal.weight, 0);
-  const locations = [...signals.values()].map((signal) => ({ ...signal, share: totalWeight ? signal.weight / totalWeight * 100 : 0 })).sort((a, b) => b.weight - a.weight);
-  return locations;
+  const counts = Scoring.countIndex([...seedFriends].map((id) => incoming.get(id)?.size ?? 0), scan.settings.topN, scan.settings.countBaseline);
+  const weights = scan.settings.weights;
+  const denominator = weights.mutual + weights.jaccard + weights.groups + weights.games;
+  const ranks: FriendRank[] = [];
+  const rank = (id: SteamId): FriendRank => {
+    const player = players.get(id);
+    const mutuals = new Set(incoming.get(id));
+    for (const friend of neighbors.get(id) ?? []) if (seedFriends.has(friend) && friend !== id) mutuals.add(friend);
+    const signals = friendSignals(seed, player);
+    const incomingMutual = incoming.get(id)?.size ?? 0;
+    const index = counts(incomingMutual);
+    const score = combinedScore(index, signals, weights);
+    return { id, name: player?.name ?? id, admitted: Boolean(player), mutual: mutuals.size, incomingMutual, countIndex: index,
+      ...signals,
+      score, evidenceScore: score, friendsStatus: player?.friendsStatus ?? "pending" };
+  };
+  for (const id of seedFriends) ranks.push(rank(id));
+  return ranks.sort((a, b) => denominator ? (b.score ?? 0) - (a.score ?? 0) || a.id.localeCompare(b.id) : b.incomingMutual - a.incomingMutual || a.id.localeCompare(b.id));
 }
 
 export function analyze(scan: Scan): Report {
@@ -120,7 +124,8 @@ export function analyze(scan: Scan): Report {
   const edges = [...friendships, ...sharedGroupEdges(scan)].sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target) || a.kind.localeCompare(b.kind));
   const metrics = graphMetrics(graph, sorted, scan.settings.hubPercentile);
   const friends = rankFriends(scan, players, seed);
-  const locations = locationSignals(friends, players);
+  const locations = Scoring.locations(friends.map((rank) => ({ country: players.get(rank.id)?.country ?? null,
+    state: players.get(rank.id)?.state ?? null, city: players.get(rank.id)?.city ?? null, count: rank.incomingMutual })), scan.settings);
   const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
   const listCounts = { public: 0, private: 0, skipped: 0, unavailable: 0, pending: 0, disabled: 0 };
   for (const player of scan.players) listCounts[player.friendsStatus]++;
@@ -131,11 +136,13 @@ export function analyze(scan: Scan): Report {
   if (skippedLists) warnings.push(`${skippedLists} private profile(s) skipped by collection policy. Known incoming friendships remain included.`);
   if (scan.players.some((p) => p.groupsStatus === "unavailable")) warnings.push("Steam denied or could not provide group membership. Publisher permissions may be required.");
   if (scan.players.some((p) => p.bans === null)) warnings.push("Ban data is unavailable or skipped for some profiles. Missing records mean unknown, not unbanned.");
-  if (seedFriends.size > friends.length) warnings.push("Some direct friends fall outside the node cap and are not ranked.");
+  if (friends.some((friend) => !friend.admitted)) warnings.push("Some direct friends fall outside the admitted graph. Their observed incoming signals remain ranked.");
   return {
     runId: scan.id, seed: scan.seed, edges, metrics, friends, locations, warnings,
+    locationCoverage: { referenceSize: friends.length, located: locations.reduce((count, city) => count + city.contributors, 0),
+      missingLocation: friends.length - locations.reduce((count, city) => count + city.contributors, 0), uncollected: friends.filter((friend) => !friend.admitted).length },
     coverage: { nodes: players.size, publicLists, privateLists, skippedLists, unavailableLists, pendingLists,
-      directFriends: seedFriends.size, admittedDirectFriends: friends.length, truncated: scan.truncated },
+      directFriends: seedFriends.size, admittedDirectFriends: friends.filter((friend) => friend.admitted).length, truncated: scan.truncated },
   };
 }
 
@@ -153,18 +160,19 @@ export const exportRun = Effect.fn("Analysis.exportRun")(function* (scan: Scan) 
   const report = analyze(scan);
   const players = new Map(scan.players.map((p) => [p.id, p]));
   const nodes = csv([
-    ["Id", "Label", "degree", "betweenness", "modularity_class", "is_seed", "is_hub", "is_banned", "is_public"],
+    ["Id", "Label", "degree", "betweenness", "modularity_class", "is_seed", "is_hub", "is_banned", "vac_bans", "is_public"],
     ...report.metrics.map((metric) => {
       const player = players.get(metric.id);
       return [metric.id, player?.name ?? metric.id, metric.degree, metric.betweenness, metric.community, metric.id === scan.seed,
         metric.hub, player?.bans ? player.bans.vac || player.bans.game > 0 || player.bans.community : null,
+        player?.bans?.vacCount ?? null,
         player?.visibility === "unavailable" || player?.visibility === "pending" ? null : player?.visibility === "public"];
     }),
   ]);
   const edges = csv([["Source", "Target", "Kind"], ...report.edges.map((edge) => [edge.source, edge.target, edge.kind])]);
   const friends = csv([
-    ["candidate_steamid", "name", "score", "evidence_score", "mutual_count", "jaccard_with_seed", "shared_groups", "shared_games", "friends_status"],
-    ...report.friends.map((rank) => [rank.id, rank.name, rank.score, rank.evidenceScore, rank.mutual, rank.jaccard, rank.sharedGroups, rank.sharedGames, rank.friendsStatus]),
+    ["candidate_steamid", "name", "score", "evidence_score", "undirected_mutual_count", "incoming_mutual_count", "authored_count_index", "admitted", "jaccard_with_seed", "shared_groups", "shared_games", "friends_status"],
+    ...report.friends.map((rank) => [rank.id, rank.name, rank.score, rank.evidenceScore, rank.mutual, rank.incomingMutual, rank.countIndex, rank.admitted, rank.jaccard, rank.sharedGroups, rank.sharedGames, rank.friendsStatus]),
   ]);
   yield* store.writeArtifact(scan.id, "analysis.json", JSON.stringify(report, null, 2));
   yield* store.writeArtifact(scan.id, "gephi/nodes.csv", nodes);
