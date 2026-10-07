@@ -161,7 +161,8 @@ export async function historyFixture() {
     },
   };
   const sections = ["persona", "realName", "url", "pfp", "comments", "friends"];
-  const rows = new Map<string, readonly { [key: string]: typeof Schema.Json.Type }[]>(Object.entries(document.historic)); rows.set("realName", []);
+  const rows = new Map<string, readonly { [key: string]: typeof Schema.Json.Type }[]>(Object.entries(document.historic));
+  rows.set("realName", [{ Name: "Alice Example", Timestamp: now - 100000 }]);
   let status = 200; let requests = 0;
   const paths: string[] = []; const failures = new Map<string, number>(); const replies = new Map<string, string>(); const counts = new Map<string, number>();
   const server = createServer((request, response) => {

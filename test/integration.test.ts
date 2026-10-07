@@ -15,6 +15,7 @@ import * as Scanner from "../src/scanner.js";
 import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
+import * as History from "../src/history.js";
 import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, player, scan } from "./fixtures.js";
 
 const friendPath = "/ISteamUser/GetFriendList/v1/";
@@ -260,16 +261,24 @@ test("saved rankings change without Steam authority or collection and attached h
   const post = (path: string, payload: string) => fetch(`${server.origin}${path}`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: payload });
   const get = (path: string) => fetch(`${server.origin}${path}`, { headers: { "user-agent": userAgent } });
   try {
-    const ranking = { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
+    const ranking = { topN: 5, countBaseline: 25, locationAggregation: "sum", locationBaseline: 200, hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
     assert.equal((await get(`/api/runs/${observations.id}`)).status, 200);
-    const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: { friends: [{ Friend: third, Name: "Third", FriendDate: 100 }] } };
-    assert.equal((await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }))).status, 200);
+    const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: {
+      friends: [{ Friend: third, Name: "Third", FriendDate: 100, countryCode: "ES", cityID: 1 }],
+      comments: [{ ID: "friend-comment", Commenter: third, Timestamp: 500, Message: "hello" }],
+    } };
+    const imported = await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }));
+    assert.equal(imported.status, 200);
+    const beforeRanking = Schema.decodeUnknownSync(History.HistoryReport)(await imported.json());
     const result = await post("/api/analyze", JSON.stringify({ id: observations.id, ranking })); assert.equal(result.status, 200);
     const view = Schema.decodeUnknownSync(Contracts.RunView)(await result.json());
     assert.equal(view.report.friends[0]?.id, third);
     assert.deepEqual(view.scan.players, observations.players);
     assert.deepEqual(view.scan.settings, { ...observations.settings, ...ranking });
     assert.equal(view.history?.friends[0]?.durationSeconds, 900);
+    assert.notEqual(view.history?.commenters[0]?.index, beforeRanking.commenters[0]?.index);
+    assert.notEqual(view.history?.locations[0]?.index, beforeRanking.locations[0]?.index);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), view.history);
     const persisted = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
     assert.deepEqual(persisted.settings, view.scan.settings);
     const exported = Schema.decodeUnknownSync(Schema.fromJsonString(Contracts.Report))(await readFile(join(root, "outputs", observations.id, "analysis.json"), "utf8"));

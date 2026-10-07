@@ -224,11 +224,19 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
 
 test("history account selection, all viewer tabs, filters, original downloads and blocked refresh work end to end", { timeout: 90000 }, async (context) => {
   const executablePath = process.env.VAPORA_BROWSER; assert.ok(executablePath);
+  const shutdown: (() => Promise<void>)[] = []; let root: string | undefined;
+  context.after(async () => {
+    const outcomes = await Promise.allSettled(shutdown.map((close) => close()));
+    if (root) await rm(root, { recursive: true, force: true });
+    for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
+  });
   const fixture = await steamFixture(); const history = await historyFixture();
-  const root = await mkdtemp(join(tmpdir(), "vapora-history-browser-")); const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
+  shutdown.push(() => fixture.close(), () => history.close());
+  root = await mkdtemp(join(tmpdir(), "vapora-history-browser-")); const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
   const server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: history.url, historySession: history.session, retryBaseMs: 1 });
+  shutdown.push(() => server.close());
   const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
-  context.after(async () => { await browser.close(); await server.close(); await fixture.close(); await history.close(); await rm(root, { recursive: true, force: true }); });
+  shutdown.push(() => browser.close());
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 599 }); await page.goto(server.origin);
   await fill(page, "#target", seed); assert.equal(history.requests(), 0);
@@ -243,10 +251,17 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(await page.$eval("#history-rows tr td:last-child", (cell) => cell.textContent), score);
   await page.select("#history-status", "all");
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-comment-ranking.png") });
-  for (const [tab, count] of [["comments", 4], ["persona", 2], ["url", 1], ["pfp", 1], ["profile", 1], ["locations", 1]] as const) {
+  for (const [tab, count] of [["comments", 4], ["persona", 2], ["realName", 1], ["url", 1], ["pfp", 1], ["profile", 1], ["locations", 1]] as const) {
     await page.click(`[data-history="${tab}"]`); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), count);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   }
+  await page.click('[data-history="realName"]');
+  assert.match(await visibleText(page, "#history-rows"), /Alice Example/);
+  await fill(page, "#history-search", "not in this capture"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 0);
+  await fill(page, "#history-search", "Alice Example"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-real-names.png") });
+  await page.click("#history-rows button"); assert.match(await visibleText(page, "#history-inspect"), /Alice Example/);
+  await page.click("#history-details-close"); await fill(page, "#history-search", "");
   await page.click('[data-history="profile"]'); await page.click("#history-rows button");
   assert.match(await visibleText(page, "#history-inspect") ?? "", /customField/); await page.click("#history-details-close");
   await page.click('[data-history="comments"]'); await fill(page, "#history-search", "Former friend");

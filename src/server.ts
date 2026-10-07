@@ -242,8 +242,18 @@ export async function start(options: Options) {
     estimating = true;
     try {
       // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
-      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
+      const source = await runtime.runPromise(Effect.gen(function* () {
+        const store = yield* Storage.Service;
+        const history = yield* store.history(payload.id);
+        // Validate the attachment against this run before changing its settings.
+        if (history) return History.view(history, yield* store.read(payload.id));
+        return null;
+      }));
       const view = await runtime.runPromise(payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
+      const history = source ? History.view(source, view.scan) : null;
+      if (history) await runtime.runPromise(Effect.gen(function* () {
+        yield* (yield* Storage.Service).writeArtifact(payload.id, "history.json", JSON.stringify(history, null, 2));
+      }));
       json(response, 200, { ...view, history, historyError: null } satisfies RunView);
     } finally { estimating = false; }
     return;

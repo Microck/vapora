@@ -1,6 +1,6 @@
 # SteamHistory restoration verification
 
-Checked locally on 2026-10-07 against the working copy based on main `2047f5e`. The local checks below precede PR submission. No release or installed app was changed.
+Checked locally on 2026-10-07 and 2026-10-08 against the working copy based on main `2047f5e`. PR #5 also checks each pushed head. No release or installed app was changed.
 
 ## Restored behavior
 
@@ -15,8 +15,8 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 | Check | Result |
 | --- | --- |
 | TypeScript, Oxlint and UI build | Passed |
-| Domain/integration suite | All 43 tests passed, including the 500-account fixture and current paginated history coverage |
-| History browser E2E | Focused history workflow passed after the comment-count fix; the broad workflow passed before the final warning-placement edit, then timed out on the memory-constrained host. The PR CI runs both again. |
+| Domain/integration suite | All 46 tests passed on the final local rerun, including the 500-account fixture, current pagination, comment identity and dated membership |
+| History browser E2E | Both workflows passed on the final local rerun (23.9 seconds total), including real-name search/details and the partial-warning placement |
 | Linux Electron | Passed in the source app under Xvfb; five-account scan, history attachment, membership filter and original metadata inspection; no page errors; clean exit 0 |
 | Linux packaged desktop | Passed twice with the frozen helper and bundled browser; paginated fixture history, scan, seven exports, native controls and clean shutdown |
 | Native window dimensions | 1078×599, maximized to 1280×778, restored to 1078×599 |
@@ -25,7 +25,7 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 
 The history browser workflow checks no fetching while typing, account fetch/cache reuse, every viewer tab, membership filters without index drift, date filters, exact original-file downloads, retained cache after blocked refresh, Steam scanning while history is unavailable, automatic attachment, outside-cap inspection and multi-page history navigation. Its providers are fixtures, not proof that SteamHistory accepts this host.
 
-Both browser workflows passed before the final comment-count investigation. The focused history workflow also passed afterward, including the partial-warning placement. The final broad rerun hit its existing 120-second timeout with about 150 MB free memory and full swap; its assertions and timeout remain unchanged. The native Linux packaged executable passed under Xvfb with its history browser/helper outside ASAR, current paginated fixture loading, five-account scan, seven exports, maximize/restore and clean exit. Closing the server during helper startup also stopped its session and removed the temporary browser profile.
+Earlier browser attempts timed out on the memory-constrained host. On 2026-10-08, both workflows passed after the final code changes. Their assertions and timeouts remain unchanged. Fixture cleanup now starts before browser acquisition, so failed launches do not leave local servers running. The native Linux packaged executable passed under Xvfb with its history browser/helper outside ASAR, current paginated fixture loading, five-account scan, seven exports, maximize/restore and clean exit. Closing the server during helper startup also stopped its session and removed the temporary browser profile.
 
 ## Inspected screenshots
 
@@ -35,6 +35,8 @@ These captures show fresh fixture accounts, not historical personal datasets. Ea
 
 ![Browser comment ranking](screenshots/history-restored-browser.png)
 
+![Real-name history](screenshots/history-real-names.png)
+
 ![Linux desktop history](screenshots/history-restored-desktop.png)
 
 ![Maximized desktop history](screenshots/history-restored-maximized.png)
@@ -43,7 +45,7 @@ These captures show fresh fixture accounts, not historical personal datasets. Ea
 
 The current schema requires ranking parameters, nullable observation dates and VAC counts. Earlier local checkpoint/settings/history formats are reported as invalid; files are not migrated or overwritten automatically. Start a fresh run and save current settings. Original SteamHistory source captures can be imported explicitly.
 
-Native Windows/macOS behavior remains unverified locally. PR #5's initial CI passed browser E2E, native Linux and macOS packages, and the installed Windows app. Its Windows portable check failed while waiting for history; diagnostics and a further CI pass are pending. No release was created.
+Native Windows/macOS behavior remains unverified locally. PR #5 head `2126d420c530` passed all nine CI checks, including native Linux/macOS packages, the installed Windows app and Windows portable app. An initial portable history wait failed; the next full packaging run passed. One Windows 500-account check encountered a replacement lock and passed its rerun without changing storage code or assertions. CI must verify the final head again. No release was created.
 
 SteamHistory’s current profile response contains account metadata; history is fetched from separate paginated endpoints. Successful raw responses and paths are retained in a reimportable capture, including unknown fields. Microck’s source was last checked on 2026-10-05; retrieval time remains separate. The provider summary reports 8 comments but returns 5. Vapora marks comments partial and preserves the successful sections. Friend-location fields were not supplied by this provider and are not invented.
 
@@ -62,3 +64,5 @@ SteamHistory's [supporter page](https://steamhistory.net/supporter) lists viewin
 Numeric and string comment IDs now reconcile through the same provider/analyzer helper. Membership selects the newest dated observation and exposes same-date disagreements. Identical imports reuse one source, while distinct captures remain retained. A damaged history file returns an explicit history error alongside a usable scan without replacing the file. The native worker accepts the complete Steam ID range; six boundary cases passed against its actual validation without opening a browser.
 
 The follow-up typecheck and Oxlint passed. Of 46 domain/integration tests, 45 passed and the existing 500-account stress test hit its unchanged 60-second timeout on the resource-constrained host. The previous 45-test run passed in full. CI must verify the final head; these local timeout results are not treated as passing checks.
+
+The last review pass added the Real names tab and recomputation of attached history when ranking controls change. The focused saved-ranking integration check passed, followed by all 46 domain/integration tests and both browser workflows. Fresh browser screenshots above were opened and inspected. CI also stores fixture screenshots as review artifacts.
