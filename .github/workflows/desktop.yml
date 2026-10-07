@@ -59,7 +59,16 @@ jobs:
           echo "VAPORA_DESKTOP_ASAR=$RUNNER_TEMP/vapora-dmg/Vapora.app/Contents/Resources/app.asar" >> "$GITHUB_ENV"
       - name: Test the packaged Linux app
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm run test:desktop
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y fluxbox
+          # Native maximize/restore needs a window manager on the virtual display.
+          xvfb-run -a bash -c '
+            fluxbox > "$RUNNER_TEMP/vapora-window-manager.log" 2>&1 &
+            window_manager_pid=$!
+            trap "kill $window_manager_pid" EXIT
+            npm run test:desktop
+          '
       - name: Test the packaged Windows/macOS app
         if: runner.os != 'Linux'
         run: npm run test:desktop

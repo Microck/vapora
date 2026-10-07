@@ -25,12 +25,13 @@ const help = `Vapora 2 | Public Steam friend networks
   vapora history FILE [--run RUN_ID]     Analyze normalized SteamHistory JSON/NDJSON
 
 Options:
-  --preset inner|community   --profile NAME   --depth 1..5   --max-nodes 1..1000
-  --rpm 1..120               --groups         --games       --hub-percentile 0.5..1
+  --preset inner|community   --profile NAME   --depth 1..5   --max-nodes 0..1000
+  --rpm 0..120               --groups         --games       --hub-percentile 0.5..1
   --mutual-weight N          --jaccard-weight N             --group-weight N
   --game-weight N            --skip-private   --root DIRECTORY --port PORT   --help
 
 Set STEAM_API_KEY in your environment or .env. The browser can also use a session-only key.
+Zero nodes removes the account cap; zero rpm removes pacing. Retry/backoff still applies.
 Run npm start -- COMMAND after npm run build. Profiles and runs stay under --root.
 Scores are public network heuristics, not proof of real-life friendship or residence.
 `;

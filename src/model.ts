@@ -11,8 +11,8 @@ const integer = (min: number, max: number) => Schema.Number.check(Schema.isInt()
 const weight = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
 export const Settings = Schema.Struct({
   depth: integer(1, 5),
-  maxNodes: integer(1, 1000),
-  requestsPerMinute: integer(1, 120),
+  maxNodes: integer(0, 1000),
+  requestsPerMinute: integer(0, 120),
   includeGroups: Schema.Boolean,
   includeGames: Schema.Boolean,
   skipPrivate: Schema.Boolean,

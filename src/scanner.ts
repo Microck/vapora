@@ -96,7 +96,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
       if (player.level < scan.settings.depth) {
         for (const friend of friends.values) {
           if (known.has(friend)) continue;
-          if (players.length >= scan.settings.maxNodes) { truncated = true; continue; }
+          if (scan.settings.maxNodes > 0 && players.length >= scan.settings.maxNodes) { truncated = true; continue; }
           known.add(friend);
           players.push(newPlayer(friend, player.level + 1, scan.settings));
           queue.push(friend);
@@ -177,7 +177,7 @@ export const estimate = Effect.fn("Scanner.estimate")(function* (target: string,
   const estimate = settings.depth === 1 ? firstLayer : firstLayer + (publicSamples.length ? added / publicSamples.length * friends.values.length : 0);
   return {
     seed, available: true, directFriends: friends.values.length, sampleSize: publicSamples.length,
-    estimatedNodes: Math.min(settings.maxNodes, Math.round(estimate)), cappedAt: settings.maxNodes,
+    estimatedNodes: settings.maxNodes > 0 ? Math.min(settings.maxNodes, Math.round(estimate)) : Math.round(estimate), cappedAt: settings.maxNodes,
     note: settings.depth > 2 ? `Samples only the first two levels, not the full depth ${settings.depth}. Private or skipped profiles and overlap limit coverage.` : "Sampling estimate; private lists and overlapping friends affect coverage.",
   };
 });

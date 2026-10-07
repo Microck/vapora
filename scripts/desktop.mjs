@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile } from "node:process";
@@ -19,8 +20,30 @@ app.setPath("userData", desktopRoot);
 app.setPath("sessionData", desktopRoot);
 async function launch() {
   const root = desktopRoot;
-  const key = Redacted.value(await Effect.runPromise(Config.Redacted("STEAM_API_KEY").pipe(Config.withDefault(Redacted.make("")))));
-  const options = { root, key, port: 0 };
+  const storedKeyPath = join(root, "steam-key.enc");
+  // Linux basic_text encryption uses a known password, so it cannot protect a remembered key.
+  const available = safeStorage.isEncryptionAvailable() && (process.platform !== "linux" || !["basic_text", "unknown"].includes(safeStorage.getSelectedStorageBackend()));
+  const remembered = existsSync(storedKeyPath);
+  let key = Redacted.value(await Effect.runPromise(Config.Redacted("STEAM_API_KEY").pipe(Config.withDefault(Redacted.make("")))));
+  if (!key && remembered && available) {
+    try {
+      key = Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)))(safeStorage.decryptString(await readFile(storedKeyPath)));
+    } catch {
+      throw new Error(`Cannot read the saved Steam key. Remove ${storedKeyPath}, then reopen Vapora and enter your key again.`);
+    }
+  }
+  const saveKey = async (candidate) => {
+    if (candidate === null) { await rm(storedKeyPath, { force: true }); return; }
+    if (!available) throw new Error("Secure key storage is unavailable. Use the key for this session.");
+    const temporary = `${storedKeyPath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, safeStorage.encryptString(candidate), { mode: 0o600 });
+      await rename(temporary, storedKeyPath);
+    } catch {
+      throw new Error("Could not save the encrypted key. Check data-folder permissions and disk space, then retry or use a session key.");
+    } finally { await rm(temporary, { force: true }); }
+  };
+  const options = { root, key, port: 0, keyStorage: { available, remembered, save: saveKey } };
   // Development fixtures stay opt-in and loopback-only, sharing the browser server's test transport.
   if (process.env.VAPORA_STEAM_FIXTURE) {
     const fixture = new URL(process.env.VAPORA_STEAM_FIXTURE);
@@ -45,6 +68,9 @@ async function launch() {
   }
   ipcMain.handle("vapora:minimize", (event) => { authorized(event); window.minimize(); });
   ipcMain.handle("vapora:maximize", (event) => { authorized(event); if (window.isMaximized()) window.unmaximize(); else window.maximize(); });
+  ipcMain.handle("vapora:maximized", (event) => { authorized(event); return window.isMaximized(); });
+  window.on("maximize", () => window.webContents.send("vapora:maximized-changed", true));
+  window.on("unmaximize", () => window.webContents.send("vapora:maximized-changed", false));
   ipcMain.handle("vapora:close", (event) => { authorized(event); window.close(); });
   ipcMain.handle("vapora:outputs", async (event, id) => {
     authorized(event);
@@ -71,4 +97,4 @@ async function launch() {
   await window.loadURL(`${server.origin}/`);
 }
 // Electron waits for the ESM entry to settle before emitting ready; do not await ready at module scope.
-void app.whenReady().then(launch).catch((error) => { console.error(error); app.quit(); });
+void app.whenReady().then(launch).catch((error) => { dialog.showErrorBox("Vapora could not start", error.message); app.quit(); });

@@ -16,7 +16,7 @@ export const LocationSignal = Schema.Struct({
 export interface LocationSignal extends Schema.Schema.Type<typeof LocationSignal> {}
 export const Report = Schema.Struct({
   runId: RunId, seed: SteamId, edges: Schema.Array(Edge), metrics: Schema.Array(Metric), friends: Schema.Array(FriendRank), locations: Schema.Array(LocationSignal),
-  coverage: Schema.Struct({ nodes: Schema.Number, publicLists: Schema.Number, skippedLists: Schema.Number, unavailableLists: Schema.Number, directFriends: Schema.Number, admittedDirectFriends: Schema.Number, truncated: Schema.Boolean }),
+  coverage: Schema.Struct({ nodes: Schema.Number, publicLists: Schema.Number, privateLists: Schema.Number, skippedLists: Schema.Number, unavailableLists: Schema.Number, pendingLists: Schema.Number, directFriends: Schema.Number, admittedDirectFriends: Schema.Number, truncated: Schema.Boolean }),
   warnings: Schema.Array(Schema.String),
 });
 export interface Report extends Schema.Schema.Type<typeof Report> {}
@@ -31,6 +31,7 @@ export interface Job extends Schema.Schema.Type<typeof Job> {}
 export const RunSummary = Schema.Struct({ id: RunId, seed: SteamId, name: Schema.String, avatar: Player.fields.avatar, createdAt: Schema.String, status: RunStatus, nodes: Schema.Number });
 export const State = Schema.Struct({
   hasKey: Schema.Boolean, profiles: Schema.Array(Schema.String), runs: Schema.Array(RunSummary), job: Job,
+  keyStorage: Schema.NullOr(Schema.Struct({ available: Schema.Boolean, remembered: Schema.Boolean })),
   runIssues: Schema.Array(Schema.Struct({ id: RunId, message: Schema.String })),
 });
 export interface State extends Schema.Schema.Type<typeof State> {}
