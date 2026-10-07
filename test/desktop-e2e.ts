@@ -14,14 +14,15 @@ import { key, seed, steamFixture, userAgent } from "./fixtures.js";
 
 // Portable NSIS launchers do not relay Electron stderr. Chromium writes this endpoint
 // into the real session directory, so every distribution uses the same startup check.
-async function launchDesktop(shutdown: (() => Promise<void>)[], executable: string, dataRoot: string, fixtureUrl: string, portable: boolean) {
+async function launchDesktop(shutdown: (() => Promise<void>)[], executable: string, dataRoot: string, fixtureUrl: string, portable: boolean, configuredKey = key) {
   await rm(join(dataRoot, "DevToolsActivePort"), { force: true });
-  const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: key, VAPORA_STEAM_FIXTURE: fixtureUrl };
+  const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: configuredKey, VAPORA_STEAM_FIXTURE: fixtureUrl };
   delete env.PORTABLE_EXECUTABLE_DIR;
   if (portable) delete env.VAPORA_ROOT; else env.VAPORA_ROOT = dataRoot;
   const args = ["--remote-debugging-port=0"];
   // Sandbox restrictions on CI hosts must not change the distributed app's defaults.
   if (process.platform === "linux") args.push("--no-sandbox", "--disable-dev-shm-usage");
+  if (process.platform === "linux" && process.env.VAPORA_TEST_KEY_BACKEND) args.push(`--password-store=${process.env.VAPORA_TEST_KEY_BACKEND}`);
   const child = spawn(executable, args, { cwd: tmpdir(), env, stdio: ["ignore", "pipe", "pipe"] });
   const exited = once(child, "exit");
   let output = "";
@@ -135,11 +136,27 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   assert.ok(!checkpoint.includes(Buffer.from(key)));
   assert.ok(!state.includes(key)); assert.ok(fixture.requests.length > 0);
   if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT });
-  await page.evaluate(async () => {
-    if (!window.vaporaDesktop) throw new Error("Desktop bridge missing");
-    await window.vaporaDesktop.maximize(); await window.vaporaDesktop.maximize();
-  });
+  await page.click("#window-maximize");
+  await page.waitForFunction(async () => await window.vaporaDesktop?.isMaximized() && document.querySelector("#window-maximize")?.getAttribute("aria-label") === "Restore");
+  if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT.replace(/\.png$/, "-maximized.png") });
+  await page.click("#window-maximize");
+  await page.waitForFunction(async () => !(await window.vaporaDesktop?.isMaximized()) && document.querySelector("#window-maximize")?.getAttribute("aria-label") === "Maximize");
   assert.deepEqual(errors, []);
+  const keyStorage = saved.keyStorage; assert.ok(keyStorage);
+  if (process.env.VAPORA_TEST_KEY_BACKEND === "gnome-libsecret") assert.equal(keyStorage.available, true, "The isolated Secret Service must provide OS-backed encryption");
+  if (process.env.VAPORA_TEST_KEY_BACKEND === "basic") assert.equal(keyStorage.available, false, "Linux basic_text storage must never enable remembering");
+  await page.click("#open-key");
+  assert.equal(await page.$eval("#remember-key", (input) => input instanceof HTMLInputElement && input.disabled), !keyStorage.available);
+  if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT.replace(/\.png$/, "-key.png") });
+  if (keyStorage.available) {
+    await page.type("#key", key); await page.click("#remember-key"); await page.click("#use-key");
+    await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#key-dialog")?.open);
+    const encrypted = await readFile(join(dataRoot, "steam-key.enc"));
+    assert.ok(encrypted.length > 0 && !encrypted.includes(Buffer.from(key)), "A remembered key must be encrypted on disk");
+  } else {
+    assert.match(await page.$eval("#key-session-note", (element) => element.textContent), /Secure storage unavailable/);
+    await page.click("#cancel-key"); await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
+  }
   // Closing the native window must stop its local server and exit normally.
   await page.evaluate(() => { void window.vaporaDesktop?.close(); }).catch((error: Error) => {
     if (!error.message.includes("Target closed")) throw error;
@@ -147,6 +164,25 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   const [exitCode] = await exited; assert.equal(exitCode, 0);
   await assert.rejects(fetch(origin + "/api/state", { headers: { "user-agent": userAgent } }));
   assert.ok(!(await readFile(resolve(archive))).includes(Buffer.from(key)));
+  if (keyStorage.available) {
+    const reopened = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable, "");
+    const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
+    const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
+    await reopenedPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready");
+    await reopenedPage.bringToFront(); await reopenedPage.click("#open-key");
+    assert.equal(await reopenedPage.$eval("#remember-key", (input) => input instanceof HTMLInputElement && input.checked), true);
+    await reopenedPage.click("#forget-key"); await reopenedPage.waitForSelector("#forget-key[hidden]");
+    await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
+    await reopenedPage.click("#cancel-key");
+    assert.equal(await reopenedPage.$eval("#key-indicator", (element) => element.getAttribute("data-key")), "ready");
+    await reopened.browser.close(); assert.equal((await reopened.exited)[0], 0);
+    const forgotten = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable, "");
+    const forgottenTarget = await forgotten.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
+    const forgottenPage = await forgottenTarget.page(); assert.ok(forgottenPage);
+    await forgottenPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "missing");
+    await forgotten.browser.close(); assert.equal((await forgotten.exited)[0], 0);
+    context.diagnostic("OS-encrypted key survived restart; forgetting removed it without ending the session.");
+  } else context.diagnostic("Secure storage unavailable; remembering disabled and no key file created.");
   if (portable) {
     // The launcher cleans up its extracted binaries. Persistent data must survive a move.
     const moved = join(root, "moved portable folder"); await mkdir(moved);

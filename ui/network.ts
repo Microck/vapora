@@ -99,7 +99,7 @@ export function render(graph: SVGSVGElement, legend: HTMLElement, matches: HTMLE
   if (query) {
     for (const player of found.slice(0, 20)) {
       const button = document.createElement("button"); button.type = "button"; button.textContent = player.name;
-      button.title = player.id; button.addEventListener("click", () => inspect(player.id)); matches.append(button);
+      button.dataset.tooltip = player.id; button.addEventListener("click", () => inspect(player.id)); matches.append(button);
     }
     const status = document.createElement("span"); status.textContent = `${found.length} matching profiles${found.length > 20 ? ", first 20 shown" : ""}`; matches.append(status);
   }

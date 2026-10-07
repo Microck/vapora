@@ -90,7 +90,7 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
       Effect.mapError(() => new StorageError({ message: "This checkpoint is invalid. Vapora 2 requires its current scan.json format." })),
     );
     const ids = new Set(scan.players.map((p) => p.id));
-    if (scan.id !== id || !ids.has(scan.seed) || ids.size !== scan.players.length || scan.players.length > scan.settings.maxNodes || scan.queue.some((sid) => !ids.has(sid))) {
+    if (scan.id !== id || !ids.has(scan.seed) || ids.size !== scan.players.length || (scan.settings.maxNodes > 0 && scan.players.length > scan.settings.maxNodes) || scan.queue.some((sid) => !ids.has(sid))) {
       return yield* Effect.fail(new StorageError({ message: "The checkpoint has inconsistent nodes, seed, or frontier. Start a new run." }));
     }
     return scan;

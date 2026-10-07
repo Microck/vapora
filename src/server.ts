@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
-import { InputError, Settings, Ranking, failureMessage } from "./model.js";
+import { InputError, Settings, Ranking, SteamId, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
@@ -13,11 +13,14 @@ import * as Analysis from "./analysis.js";
 import * as History from "./history.js";
 import type { Job, State, RunView } from "./contracts.js";
 
-export interface Options { readonly root: string; readonly key: string; readonly port?: number; readonly steamBaseUrl?: string; readonly retryBaseMs?: number }
+export interface Options {
+  readonly root: string; readonly key: string; readonly port?: number; readonly steamBaseUrl?: string; readonly retryBaseMs?: number;
+  readonly keyStorage?: { readonly available: boolean; readonly remembered: boolean; readonly save: (key: string | null) => Promise<void> };
+}
 
 const ScanRequest = Schema.Struct({ target: Schema.NonEmptyString, settings: Settings });
 const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
-const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)) });
+const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)), remember: Schema.Boolean });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
 const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranking });
@@ -60,6 +63,7 @@ const decode = <T>(schema: Schema.ConstraintDecoder<T>, contents: string) => Sch
 export async function start(options: Options) {
   const runtime = ManagedRuntime.make(Storage.layer(options.root));
   let key = options.key;
+  let remembered = options.keyStorage?.remembered ?? false;
   let job: Job = { operationId: null, status: "idle", id: null, error: null, progress: null };
   let cancelJob: (() => Promise<void>) | null = null;
   let estimating = false;
@@ -108,7 +112,8 @@ export async function start(options: Options) {
     if (url.pathname === "/api/state") {
       const recent = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).recent(); }));
       const profiles = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).profiles(); }));
-      json(response, 200, { hasKey: Boolean(key), profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => {
+      json(response, 200, { hasKey: Boolean(key), keyStorage: options.keyStorage ? { available: options.keyStorage.available, remembered } : null,
+        profiles, job, runIssues: recent.issues, runs: recent.runs.map((scan) => {
         const target = scan.players.find((p) => p.id === scan.seed);
         return { id: scan.id, seed: scan.seed, name: target?.name ?? scan.seed, avatar: target?.avatar ?? null,
           createdAt: scan.createdAt, status: scan.status, nodes: scan.players.length };
@@ -143,14 +148,51 @@ export async function start(options: Options) {
     response.writeHead(200, { "content-type": file.type });
     response.end(contents);
   }
-  async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {
-    const contents = await body(request);
+  async function updateKey(path: string, contents: string, response: ServerResponse) {
     if (path === "/api/key") {
       const payload = await Effect.runPromise(decode(KeyRequest, contents));
       if (busy()) throw new InputError({ message: "Wait for the active operation before changing the API key." });
-      key = payload.key;
+      if (payload.remember && !options.keyStorage?.available) throw new InputError({ message: "Secure key storage is unavailable. Use the key for this session." });
+      // A well-formed candidate is not authority. Keep the current key until Steam accepts it.
+      estimating = true;
+      try {
+        await runtime.runPromise(Effect.gen(function* () {
+          const steam = yield* Steam.Service;
+          yield* steam.summaries([Schema.decodeUnknownSync(SteamId)("76561197960287930")]);
+        }).pipe(Effect.provide(Steam.layer({ key: payload.key, requestsPerMinute: 120,
+          baseUrl: options.steamBaseUrl, retryBaseMs: options.retryBaseMs }))));
+        // Commit the candidate only after both Steam validation and the requested storage action succeed.
+        if (options.keyStorage) await options.keyStorage.save(payload.remember ? payload.key : null);
+        key = payload.key;
+        remembered = payload.remember;
+      } finally { estimating = false; }
       json(response, 200, { ok: true }); return;
     }
+    if (path === "/api/key/forget") {
+      if (busy()) throw new InputError({ message: "Wait for the active operation before forgetting the saved key." });
+      if (!options.keyStorage) throw new InputError({ message: "This browser session has no saved key." });
+      estimating = true;
+      try { await options.keyStorage.save(null); remembered = false; }
+      finally { estimating = false; }
+      json(response, 200, { ok: true }); return;
+    }
+  }
+  async function updateAnalysis(path: string, contents: string, response: ServerResponse) {
+    const payload = path === "/api/analyze" ? await Effect.runPromise(decode(AnalyzeRequest, contents))
+      : { ...await Effect.runPromise(decode(ResumeRequest, contents)), ranking: null };
+    if (busy()) throw new InputError({ message: "Wait for the active operation before updating exports or ranking." });
+    estimating = true;
+    try {
+      // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
+      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
+      const view = await runtime.runPromise(payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
+      json(response, 200, { ...view, history } satisfies RunView);
+    } finally { estimating = false; }
+    return;
+  }
+  async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {
+    const contents = await body(request);
+    if (path === "/api/key" || path === "/api/key/forget") { await updateKey(path, contents, response); return; }
     if (path === "/api/scan" || path === "/api/estimate" || path === "/api/target") {
       const payload = await Effect.runPromise(decode(ScanRequest, contents));
       ensureReady();
@@ -191,18 +233,7 @@ export async function start(options: Options) {
       await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).saveProfile(payload.name, payload.settings); }));
       json(response, 200, { ok: true }); return;
     }
-    if (path === "/api/analyze") {
-      const payload = await Effect.runPromise(decode(AnalyzeRequest, contents));
-      if (busy()) throw new InputError({ message: "Wait for the active operation before saving ranking settings." });
-      estimating = true;
-      try {
-        // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
-        const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
-        const view = await runtime.runPromise(Analysis.reanalyze(payload.id, payload.ranking));
-        json(response, 200, { ...view, history } satisfies RunView);
-      } finally { estimating = false; }
-      return;
-    }
+    if (path === "/api/analyze" || path === "/api/rebuild") { await updateAnalysis(path, contents, response); return; }
     if (path === "/api/history") {
       const payload = await Effect.runPromise(decode(HistoryRequest, contents));
       if (Buffer.byteLength(payload.contents, "utf8") > 2 * 1024 * 1024) throw new InputError({ message: "The history file exceeds 2 MB." });

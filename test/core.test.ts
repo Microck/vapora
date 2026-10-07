@@ -5,7 +5,7 @@ import { defaults, Settings } from "../src/model.js";
 import * as Identifiers from "../src/ids.js";
 import * as Analysis from "../src/analysis.js";
 import * as History from "../src/history.js";
-import { player, scan, seed, second, third, fourth } from "./fixtures.js";
+import { player, scan, seed, second, third, fourth, fifth } from "./fixtures.js";
 
 test("individual account IDs round-trip without Number precision loss", async () => {
   for (const input of [seed, "STEAM_0:1:0", "[U:1:1]", `https://steamcommunity.com/profiles/${seed}/`, `steamcommunity.com/profiles/${seed}`]) {
@@ -19,10 +19,19 @@ test("individual account IDs round-trip without Number precision loss", async ()
     await assert.rejects(Effect.runPromise(Identifiers.parse(input)));
   }
 });
-test("settings reject fractions, NaN, negative weights, and unbounded scans", () => {
-  for (const settings of [{ ...defaults, depth: 1.5 }, { ...defaults, depth: 6 }, { ...defaults, maxNodes: 1001 }, { ...defaults, requestsPerMinute: 0 }, { ...defaults, hubPercentile: NaN }, { ...defaults, weights: { ...defaults.weights, games: -1 } }]) {
+test("settings accept zero limits and reject fractions, NaN, negatives and invalid depth", () => {
+  assert.deepEqual(Schema.decodeUnknownSync(Settings)({ ...defaults, maxNodes: 0, requestsPerMinute: 0 }), { ...defaults, maxNodes: 0, requestsPerMinute: 0 });
+  for (const settings of [{ ...defaults, depth: 0 }, { ...defaults, depth: 1.5 }, { ...defaults, depth: 6 }, { ...defaults, maxNodes: -1 }, { ...defaults, maxNodes: 1001 }, { ...defaults, requestsPerMinute: -1 }, { ...defaults, requestsPerMinute: 0.5 }, { ...defaults, hubPercentile: NaN }, { ...defaults, weights: { ...defaults.weights, games: -1 } }]) {
     assert.throws(() => Schema.decodeUnknownSync(Settings)(settings));
   }
+});
+test("coverage separates private, skipped, pending and unavailable friend lists", () => {
+  const report = Analysis.analyze(scan([
+    player(seed, [second, third, fourth, fifth]), player(second, [], { friendsStatus: "private" }),
+    player(third, [], { friendsStatus: "skipped" }), player(fourth, [], { friendsStatus: "unavailable" }),
+    player(fifth, [], { friendsStatus: "pending" }),
+  ]));
+  assert.deepEqual(report.coverage, { nodes: 5, publicLists: 1, privateLists: 1, skippedLists: 1, unavailableLists: 1, pendingLists: 1, directFriends: 4, admittedDirectFriends: 4, truncated: false });
 });
 test("undirected metrics, percentile hubs, clean edges, and exact mutual signals", () => {
   const network = scan([

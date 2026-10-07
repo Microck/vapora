@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
@@ -73,6 +73,24 @@ test("provider pacing applies to every actual request", async () => {
     }).pipe(Effect.provide(Steam.layer({ key, requestsPerMinute: 120, baseUrl: fixture.url }))));
     assert.ok((fixture.requests[1]?.time ?? 0) - (fixture.requests[0]?.time ?? 0) >= 450);
   } finally { await fixture.close(); }
+});
+test("zero limits remove the cap and pacing while retaining retries and resumable cancellation", { timeout: 10000 }, async () => {
+  const fixture = await steamFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-zero-limits-"));
+  const runtime = ManagedRuntime.make(Layer.mergeAll(Storage.layer(root), Steam.layer({ key, requestsPerMinute: 0, baseUrl: fixture.url, retryBaseMs: 1 })));
+  try {
+    const settings = { ...defaults, maxNodes: 0, requestsPerMinute: 0 };
+    const estimate = await runtime.runPromise(Scanner.estimate(seed, settings));
+    assert.ok(estimate.estimatedNodes && estimate.estimatedNodes >= 5); assert.equal(estimate.cappedAt, 0);
+    fixture.failures.set(friendPath + seed, { status: 429, remaining: 1, retryAfter: "0" });
+    const initial = await runtime.runPromise(Scanner.create(seed, settings));
+    const held = fixture.hold(friendPath, second); const fiber = runtime.runFork(Scanner.run(initial)); await held;
+    await Effect.runPromise(Fiber.interrupt(fiber)); fixture.release(friendPath, second);
+    const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(initial.id); }));
+    assert.equal(saved.status, "cancelled"); assert.equal(saved.settings.maxNodes, 0); assert.equal(saved.settings.requestsPerMinute, 0);
+    const completed = await runtime.runPromise(Scanner.run(saved));
+    assert.equal(completed.status, "complete"); assert.equal(completed.players.length, 5); assert.equal(completed.truncated, false);
+    assert.equal(fixture.failures.get(friendPath + seed)?.remaining, 0);
+  } finally { await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("capped scan saves observations, real optional signals, reports, and resumes interrupted frontier", async () => {
   const fixture = await steamFixture();
@@ -173,8 +191,12 @@ test("local server validates host and origin, protects keys, and runs a complete
       request.once("error", reject); request.end();
     });
     assert.equal(foreignHostStatus, 403);
-    assert.equal((await fetch(`${server.origin}/api/key`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.test", "user-agent": userAgent }, body: JSON.stringify({ key }) })).status, 403);
-    assert.equal((await request("/api/key", JSON.stringify({ key }))).status, 200);
+    assert.equal((await fetch(`${server.origin}/api/key`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.test", "user-agent": userAgent }, body: JSON.stringify({ key, remember: false }) })).status, 403);
+    assert.equal((await request("/api/key", JSON.stringify({ key: "b".repeat(32), remember: false }))).status, 400);
+    assert.equal((await (await request("/api/state")).json()).hasKey, false);
+    assert.equal((await request("/api/key", JSON.stringify({ key, remember: false }))).status, 200);
+    assert.equal((await request("/api/key", JSON.stringify({ key: "b".repeat(32), remember: false }))).status, 400);
+    assert.equal((await (await request("/api/state")).json()).hasKey, true);
     assert.ok(!(await (await request("/api/state")).text()).includes(key));
     const target = await request("/api/target", JSON.stringify({ target: seed, settings: defaults }));
     assert.equal(target.status, 200);
@@ -204,6 +226,7 @@ test("local server validates host and origin, protects keys, and runs a complete
     await arrived;
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 400);
     assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { hubPercentile: .99, weights: defaults.weights } }))).status, 400);
+    assert.equal((await request("/api/rebuild", JSON.stringify({ id: "20261006T120000Z-123456789abc" }))).status, 400);
     assert.equal((await request("/api/cancel", "{}")).status, 200);
     fixture.release(friendPath, seed);
     const state = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
@@ -255,6 +278,21 @@ test("saved rankings change without Steam authority or collection and attached h
     assert.ok(rankedCsv.split('\r\n')[1]?.startsWith(third));
     const reopened = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
     assert.deepEqual(reopened.history, view.history);
+    const checkpointPath = join(root, "outputs", observations.id, "scan.json");
+    const checkpoint = await readFile(checkpointPath);
+    const analysisPath = join(root, "outputs", observations.id, "analysis.json");
+    await writeFile(analysisPath, "outdated export");
+    const rebuilt = await post("/api/rebuild", JSON.stringify({ id: observations.id })); assert.equal(rebuilt.status, 200);
+    const rebuiltView = Schema.decodeUnknownSync(Contracts.RunView)(await rebuilt.json());
+    assert.deepEqual(rebuiltView, reopened);
+    assert.deepEqual(await readFile(checkpointPath), checkpoint);
+    assert.deepEqual(JSON.parse(await readFile(analysisPath, "utf8")), reopened.report);
+    // A real filesystem failure must preserve the checkpoint and remain visible to the user.
+    await rm(analysisPath); await mkdir(analysisPath);
+    const failedRebuild = await post("/api/rebuild", JSON.stringify({ id: observations.id })); assert.equal(failedRebuild.status, 400);
+    assert.match((await failedRebuild.json()).error, /EISDIR|EACCES|EPERM/);
+    assert.deepEqual(await readFile(checkpointPath), checkpoint);
+    await rm(analysisPath, { recursive: true });
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { ...ranking, hubPercentile: 0 } }))).status, 400);
     await writeFile(join(root, "outputs", observations.id, "history.json"), "invalid history");
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { hubPercentile: .9, weights: defaults.weights } }))).status, 400);
@@ -263,8 +301,40 @@ test("saved rankings change without Steam authority or collection and attached h
     await writeFile(join(root, "outputs", observations.id, "history.json"), JSON.stringify(view.history));
     await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).save({ ...persisted, status: "cancelled" }); }));
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking }))).status, 400);
+    assert.equal((await post("/api/rebuild", JSON.stringify({ id: observations.id }))).status, 400);
     assert.deepEqual(fixture.requests, []);
   } finally { await server.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("desktop key storage exposes capabilities, retains authority on save failure and forgets without Steam calls", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-key-storage-")); const fixture = await steamFixture();
+  const keyPath = join(root, "steam-key.enc"); await writeFile(keyPath, "encrypted fixture");
+  const save = async (candidate: string | null) => {
+    if (candidate === null) await rm(keyPath, { force: true });
+    else await writeFile(join(root, "missing-directory", "steam-key.enc"), candidate);
+  };
+  let server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, keyStorage: { available: true, remembered: true, save } });
+  type KeyStorageAction = { key: string; remember: boolean } | { target: string; settings: Settings } | Record<string, never>;
+  const post = (path: string, payload: KeyStorageAction) => fetch(server.origin + path, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: JSON.stringify(payload) });
+  const state = async () => Schema.decodeUnknownSync(Contracts.State)(await (await fetch(server.origin + "/api/state", { headers: { "user-agent": userAgent } })).json());
+  try {
+    assert.equal((await post("/api/key", { key: "b".repeat(32), remember: true })).status, 400);
+    assert.equal((await readFile(keyPath, "utf8")), "encrypted fixture");
+    const failed = await post("/api/key", { key, remember: true }); assert.equal(failed.status, 400);
+    assert.deepEqual((await state()).keyStorage, { available: true, remembered: true });
+    assert.equal((await post("/api/target", { target: seed, settings: defaults })).status, 200);
+    const requests = fixture.requests.length;
+    assert.equal((await post("/api/key/forget", {})).status, 200);
+    assert.equal(fixture.requests.length, requests);
+    assert.equal((await state()).hasKey, true);
+    await assert.rejects(readFile(keyPath));
+    await server.close();
+    server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, keyStorage: { available: false, remembered: false, save } });
+    const denied = await post("/api/key", { key, remember: true }); assert.equal(denied.status, 400);
+    assert.match((await denied.json()).error, /Secure key storage is unavailable/);
+    assert.equal(fixture.requests.length, requests);
+    assert.equal((await post("/api/key", { key, remember: false })).status, 200);
+    assert.deepEqual((await state()).keyStorage, { available: false, remembered: false });
+  } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("private-profile policy survives resume and retains incoming evidence without collecting skipped accounts", async () => {
   const fixture = await steamFixture();
@@ -350,6 +420,9 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
     assert.match((await execute(process.execPath, [cli, "profile-save", "tiny", "--root", root, "--max-nodes", "1", "--depth", "5", "--skip-private"])).stdout, /Saved profile tiny/);
     const settings = Schema.decodeUnknownSync(Schema.fromJsonString(Settings))(await readFile(join(root, "profiles", "tiny.json"), "utf8"));
     assert.equal(settings.depth, 5); assert.equal(settings.skipPrivate, true);
+    await execute(process.execPath, [cli, "profile-save", "uncapped", "--root", root, "--max-nodes", "0", "--rpm", "0"]);
+    const uncapped = Schema.decodeUnknownSync(Schema.fromJsonString(Settings))(await readFile(join(root, "profiles", "uncapped.json"), "utf8"));
+    assert.equal(uncapped.maxNodes, 0); assert.equal(uncapped.requestsPerMinute, 0);
     assert.match((await execute(process.execPath, [cli, "profiles", "--root", root])).stdout, /tiny/);
     await assert.rejects(execute(process.execPath, [cli, "profile-save", "bad", "--root", root, "--depth", "20"]), /Invalid settings/);
     await assert.rejects(execute(process.execPath, [cli, "unknown", "--root", root]), /Unknown command/);

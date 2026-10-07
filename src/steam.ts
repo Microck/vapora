@@ -39,7 +39,8 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
       const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
       if (nextRequest > now) yield* Effect.sleep(nextRequest - now);
       const start = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-      nextRequest = start + 60000 / options.requestsPerMinute;
+      // Zero disables pacing, while the request gate and transient retry policy still apply.
+      nextRequest = start + (options.requestsPerMinute === 0 ? 0 : 60000 / options.requestsPerMinute);
       const url = new URL(path, options.baseUrl ?? "https://api.steampowered.com");
       url.search = new URLSearchParams({ ...parameters, key: options.key }).toString();
       return yield* client.execute(HttpClientRequest.get(url.toString()).pipe(

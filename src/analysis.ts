@@ -122,8 +122,9 @@ export function analyze(scan: Scan): Report {
   const friends = rankFriends(scan, players, seed);
   const locations = locationSignals(friends, players);
   const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
-  const publicLists = scan.players.filter((p) => p.friendsStatus === "public").length;
-  const skippedLists = scan.players.filter((p) => p.friendsStatus === "skipped").length;
+  const listCounts = { public: 0, private: 0, skipped: 0, unavailable: 0, pending: 0, disabled: 0 };
+  for (const player of scan.players) listCounts[player.friendsStatus]++;
+  const { public: publicLists, private: privateLists, skipped: skippedLists, unavailable: unavailableLists, pending: pendingLists } = listCounts;
   const warnings = ["Scores describe public network signals. They do not establish real-life friendship or residence."];
   if (scan.truncated) warnings.push("The node cap truncated the network. Missing nodes can change graph metrics and rankings.");
   if (publicLists < scan.players.length) warnings.push("Some friend lists are private, unavailable or skipped. Observed mutual counts are lower bounds.");
@@ -133,7 +134,7 @@ export function analyze(scan: Scan): Report {
   if (seedFriends.size > friends.length) warnings.push("Some direct friends fall outside the node cap and are not ranked.");
   return {
     runId: scan.id, seed: scan.seed, edges, metrics, friends, locations, warnings,
-    coverage: { nodes: players.size, publicLists, skippedLists, unavailableLists: players.size - publicLists - skippedLists,
+    coverage: { nodes: players.size, publicLists, privateLists, skippedLists, unavailableLists, pendingLists,
       directFriends: seedFriends.size, admittedDirectFriends: friends.length, truncated: scan.truncated },
   };
 }
@@ -170,6 +171,16 @@ export const exportRun = Effect.fn("Analysis.exportRun")(function* (scan: Scan) 
   yield* store.writeArtifact(scan.id, "gephi/edges.csv", edges);
   yield* store.writeArtifact(scan.id, "probable-friends.csv", friends);
   return report;
+});
+
+/** Rebuild files without rewriting the checkpoint or collecting provider data. */
+export const rebuild = Effect.fn("Analysis.rebuild")(function* (id: string) {
+  const store = yield* Storage.Service;
+  const scan = yield* store.read(id);
+  if (scan.status !== "complete") return yield* Effect.fail(new InputError({ message: "Finish or resume this run before rebuilding exports." }));
+  const report = yield* exportRun(scan);
+  yield* store.log(id, "Rebuilt analysis exports from saved observations; checkpoint unchanged");
+  return { scan, report };
 });
 
 /** Reranking changes analysis settings only; provider observations remain untouched. */

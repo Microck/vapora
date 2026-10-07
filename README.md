@@ -24,7 +24,7 @@ map a Steam user's friend network, find communities and hubs, and export Gephi-r
 - choose your depth and node cap, then **Analyze**. Start with the defaults: depth 2, 500 accounts.
 - inspect **Results**, or open the output folder and import the CSVs into Gephi.
 
-![the classic green Steam scan interface](docs/screenshots/e2e-scan.png)
+![the classic green Steam scan interface](docs/screenshots/estimate.png)
 
 ---
 
@@ -32,7 +32,7 @@ map a Steam user's friend network, find communities and hubs, and export Gephi-r
 
 - classic Steam UI, with profile pictures, saved runs and a browser version.
 - Steam IDs, profile URLs and vanity names.
-- depth 1-5, a hard node cap, request pacing and retries.
+- depth 1-5, optional node cap and request pacing, with retries. Set Nodes or Requests/min to 0 to remove that limit.
 - estimate before scanning; cancel and resume without starting over.
 - an explicit **Skip private profiles** checkbox, with missing data shown in the report.
 - communities, degree, betweenness and hubs; searchable graphs and profile inspection.
@@ -53,12 +53,12 @@ No Node.js or Python installation needed. Get the file for your system from the 
 
 | System | Download | Open it |
 | --- | --- | --- |
-| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-win-x64.exe) | run the installer |
-| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-win-x64-portable.exe) | run it from a writable folder |
-| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-linux-x86_64.AppImage) | make executable, then open |
-| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.0.3/vapora-2.0.3-mac-arm64.dmg) | drag Vapora into Applications |
+| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-win-x64.exe) | run the installer |
+| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-win-x64-portable.exe) | run it from a writable folder |
+| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-linux-x86_64.AppImage) | make executable, then open |
+| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-mac-arm64.dmg) | drag Vapora into Applications |
 
-Portable runs and settings live in `Vapora-data` beside the EXE. Move both together. Installed-app data lives in the OS app-data directory under `Vapora`. Enter your API key for each app session; it is not saved in reports.
+Portable runs and settings live in `Vapora-data` beside the EXE. Move both together. Installed-app data lives in the OS app-data directory under `Vapora`. Use a session key, or opt into **Remember API key** when secure OS storage is available. Keys never appear in reports.
 
 Downloads are unsigned and not notarized. Check the release's `SHA256SUMS.txt` before approving an OS warning. Linux without FUSE can use `--appimage-extract-and-run`.
 
@@ -125,7 +125,7 @@ VAPORA_BROWSER=/path/to/chrome npm run test:e2e
 npm run package
 ```
 
-[Core CI](https://github.com/Microck/vapora/actions/workflows/ci.yml) checks Linux, Windows and macOS. [Desktop CI](https://github.com/Microck/vapora/actions/workflows/desktop.yml) launches the packaged downloads before release. See the [product contract](docs/product-contract.md), [verification report](docs/e2e-verification.md) and [release runbook](docs/release-runbook.md).
+[Core CI](https://github.com/Microck/vapora/actions/workflows/ci.yml) checks Linux, Windows and macOS. [Desktop CI](https://github.com/Microck/vapora/actions/workflows/desktop.yml) launches the packaged downloads before release. See the [product contract](docs/product-contract.md), [current verification report](docs/verification-2.1.0.md) and [release runbook](docs/release-runbook.md).
 
 This is the TypeScript + Effect app. The original Python implementation stays on [legacy](https://github.com/Microck/vapora/tree/legacy), with its [1.0.2 release](https://github.com/Microck/vapora/releases/tag/1.0.2).
 

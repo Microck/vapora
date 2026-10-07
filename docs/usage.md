@@ -11,7 +11,9 @@ npm ci
 npm run build
 ```
 
-Enter your API key in the app for the current session, or copy `.env.example` to `.env` and fill in `STEAM_API_KEY`. An environment variable also works. The key field clears after saving; the key stays on the local server and does not appear in reports or exports.
+Use **Set API key** in the toolbar for the current session, or copy `.env.example` to `.env` and fill in `STEAM_API_KEY`. An environment variable also works. The app checks a submitted key with Steam before replacing the session key, then continues the lookup, estimate or scan that requested it. The field clears after saving; the key stays on the local server and does not appear in reports or exports.
+
+The desktop dialog offers **Remember API key** when OS-backed encryption is available. It stores ciphertext in `steam-key.enc` in the desktop data folder. An environment key takes precedence at startup. **Forget saved key** removes the saved copy and keeps the current session working. Choosing session-only when submitting a new key also removes a previously saved copy. Linux's insecure `basic_text` backend disables remembering. A remembered key belongs to the OS account and machine that encrypted it; it is not a portable credential when moving the Windows EXE and its data to another machine. Browser keys remain session-only.
 
 `npm ci` downloads Electron's native binary for source launches. Linux needs a graphical desktop and GTK/NSS libraries. Windows source installs need the Microsoft Visual C++ runtime for its architecture: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
 
@@ -29,7 +31,11 @@ Open the printed `http://127.0.0.1:3000` address. Use the printed address if you
 
 In **Scan**, enter a target, choose depth and node cap, then **Analyze**. The check button fetches its name and avatar without starting a scan. **Estimate** samples public friend lists. **Apply** saves default settings; the save/load icons manage named profiles. **All / Report / Gephi** filters visible output files without changing the scan.
 
+The avatar rail selects a recent account as the scan target without opening its report, changing settings or contacting Steam. Estimates show aligned counts; their help button explains sampling limits.
+
 Open **Results** to browse saved runs, inspect friends, explore the network or download exports. **Ranking** saves new weights for a completed run without making Steam requests. **Import history** also works without a selected run. Progress and cancellation stay accessible when switching views.
+
+**Exports → Rebuild exports** regenerates analysis and CSV files for a completed run using its saved ranking and observations. It needs no API key, makes no Steam requests and leaves the checkpoint and attached history unchanged. The Network graph builds only when opened, preserving its search, selection and zoom between tabs.
 
 ### desktop
 
@@ -67,8 +73,8 @@ Defaults come from [`src/model.ts`](../src/model.ts). Saved profiles contain set
 | Setting | Default | Range or behavior |
 | --- | --- | --- |
 | Depth | 2 | 1-5; depth 1 admits the target and direct friends |
-| Nodes | 500 | Hard cap of 1-1000 accounts, including the target |
-| Requests/min | 120 | 1-120; every provider request is paced |
+| Nodes | 500 | 1-1000 accounts, including the target; 0 removes the cap |
+| Requests/min | 120 | 1-120; 0 removes request pacing, while retry backoff still applies |
 | Skip private profiles | Off | Keep known private accounts and incoming links; skip their own observations |
 | Shared groups | Off | Optional group observations and edges |
 | Shared games | Off | Optional public owned-game overlap |
@@ -77,7 +83,11 @@ Defaults come from [`src/model.ts`](../src/model.ts). Saved profiles contain set
 
 The CLI presets are `inner` with depth 1 and cap 300, and `community` with the defaults above. GUI output choices select files, not presets.
 
+Zero limits also work in the CLI with `--max-nodes 0 --rpm 0` and in saved profiles. Depth stays at 1-5. With no node cap, a scan can collect a large network; cancellation saves a resumable checkpoint. Help icons explain settings inside the app on hover, keyboard focus or click. Press Escape to dismiss a tooltip.
+
 A private friend list remains different from an empty public list. With private skipping enabled, missing profile visibility is still unknown; it is not treated as proof of privacy. Public profiles with private friend lists can provide other enabled observations. Group access can be denied; Vapora reports it as unavailable and stops further group requests in that operation.
+
+Results count private lists separately from unavailable requests. Missing signals show **Off**, **Private**, **Skipped**, **Not scanned** or **Unavailable** according to the collected state. Missing public location fields show **Not provided**.
 
 Estimates sample at most five friend lists and respect the node cap. At depth 3-5, they describe the first two levels rather than predict the whole network. Scans query admitted boundary profiles for ranking signals without expanding beyond the chosen depth or cap.
 
@@ -188,4 +198,3 @@ npm run dev
 `package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Windows CI also launches the actual portable EXE, moves it with its data, reopens the saved run and downloads its exports again. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
 
 The app shares its scanner, analysis and storage across CLI, browser and desktop. See the [product contract](product-contract.md), [E2E report](e2e-verification.md) and [release runbook](release-runbook.md). Live Steam verification is currently bounded to five accounts; it does not establish large-network behavior.
-

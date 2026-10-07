@@ -1,15 +1,17 @@
 import { Effect, Schema } from "effect";
 import { artifacts, defaults, Player, Ranking, Settings } from "../src/model.js";
-import type { SteamId } from "../src/model.js";
+import type { Availability, SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
 import { HistoryReport } from "../src/history.js";
 import * as Network from "./network.js";
+import * as Tooltips from "./tooltips.js";
 
 declare global {
   interface Window {
     vaporaDesktop?: {
       minimize: () => Promise<void>; maximize: () => Promise<void>; close: () => Promise<void>;
       openOutputs: (id: string | null) => Promise<void>;
+      isMaximized: () => Promise<boolean>; onMaximized: (callback: (maximized: boolean) => void) => () => void;
     };
   }
 }
@@ -43,7 +45,7 @@ const inputs = {
 const profiles = select("profiles"); const edgeKind = select("edge-kind");
 const OutputMode = Schema.Literals(["all", "report", "gephi"]);
 let outputMode: typeof OutputMode.Type = "all";
-let preview: Player | null = null;
+let preview: Pick<Player, "id" | "name" | "avatar"> | null = null;
 let previewTarget = "";
 let selected: Contracts.RunView | null = null;
 // Only replace a target with its resolved seed while the submitted text is still unchanged.
@@ -59,8 +61,10 @@ let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let settingsVersion = 0;
-const Screen = Schema.Literals(["scan", "results", "history", "settings"]);
+const Screen = Schema.Literals(["scan", "results", "history"]);
 let navigationVersion = 0;
+let graphReport: Contracts.Report | null = null;
+let graphSelection = "";
 
 /** Keep view contents mounted so navigation preserves forms, reports, and keyboard state. */
 function showScreen(name: typeof Screen.Type) {
@@ -72,6 +76,7 @@ function showScreen(name: typeof Screen.Type) {
   }
   window.scrollTo({ top: 0, behavior: "instant" });
   get("results").scrollTo({ top: 0, behavior: "instant" });
+  if (name === "results") renderGraph();
 }
 
 function notice(message: string) { get("notice").textContent = message; get("notice").hidden = !message; }
@@ -140,21 +145,30 @@ function cell(row: HTMLTableRowElement, text: string | number) {
 function playerCell(row: HTMLTableRowElement, id: SteamId, name: string, avatar: string | null) {
   const td = cell(row, ""); const link = document.createElement("a"); link.className = "player-link"; link.append(avatarImage(avatar), document.createTextNode(name));
   link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
-  link.title = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
+  link.dataset.tooltip = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
   return td;
 }
-const number = (value: number | null, digits = 0) => value === null ? "unknown" : value.toFixed(digits);
+const availabilityLabels = {
+  public: "Public", private: "Private", pending: "Not scanned", unavailable: "Unavailable", disabled: "Off", skipped: "Skipped",
+} satisfies Record<Availability, string>;
+const observation = (value: number | null, statuses: readonly Availability[], digits = 0) => value !== null
+  ? value.toFixed(digits) : availabilityLabels[statuses.find((status) => status !== "public") ?? "unavailable"];
 function renderFriends() {
   const rows = get("friend-rows"); rows.replaceChildren();
   const query = inputs.search.value.toLowerCase().trim();
   const friends = selected?.report.friends.filter((friend) => friend.name.toLowerCase().includes(query) || friend.id.includes(query)) ?? [];
   const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
+  const seed = selected ? players.get(selected.scan.seed) : undefined;
   for (const friend of friends) {
     const row = document.createElement("tr"); const profile = playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
     const inspect = document.createElement("button"); inspect.type = "button"; inspect.className = "inspect-button"; inspect.textContent = "Details";
     inspect.setAttribute("aria-label", `Details for ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
-    cell(row, friend.evidenceScore.toFixed(1)); cell(row, friend.mutual); cell(row, number(friend.jaccard, 3));
-    cell(row, number(friend.sharedGroups)); cell(row, number(friend.sharedGames)); cell(row, friend.friendsStatus); rows.append(row);
+    const player = players.get(friend.id);
+    cell(row, friend.evidenceScore.toFixed(1)); cell(row, friend.mutual);
+    cell(row, observation(friend.jaccard, [seed?.friendsStatus ?? "unavailable", friend.friendsStatus], 3));
+    cell(row, observation(friend.sharedGroups, [seed?.groupsStatus ?? "unavailable", player?.groupsStatus ?? "unavailable"]));
+    cell(row, observation(friend.sharedGames, [seed?.gamesStatus ?? "unavailable", player?.gamesStatus ?? "unavailable"]));
+    cell(row, availabilityLabels[friend.friendsStatus]); rows.append(row);
   }
   get("friend-empty").hidden = friends.length > 0;
 }
@@ -162,7 +176,7 @@ function renderLocations() {
   const rows = get("location-rows"); rows.replaceChildren();
   for (const location of selected?.report.locations ?? []) {
     const row = document.createElement("tr");
-    for (const value of [location.country, location.state ?? "unknown", location.city ?? "unknown", location.contributors, `${location.share.toFixed(1)}%`]) cell(row, value);
+    for (const value of [location.country, location.state ?? "Not provided", location.city ?? "Not provided", location.contributors, `${location.share.toFixed(1)}%`]) cell(row, value);
     rows.append(row);
   }
   get("location-empty").hidden = Boolean(selected?.report.locations.length);
@@ -177,7 +191,7 @@ function renderOutput() {
   const heading = document.createElement("p"); heading.className = "output-root";
   const scan = selected?.scan;
   heading.textContent = scan ? `outputs/${scan.id}/` : "outputs/<run-id>/";
-  if (scan) heading.title = `${scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed} · ${new Date(scan.createdAt).toLocaleString()}`;
+  if (scan) heading.dataset.tooltip = `${scan.players.find((p) => p.id === scan.seed)?.name ?? scan.seed} · ${new Date(scan.createdAt).toLocaleString()}`;
   tree.append(heading);
   const files = (selected?.history ? artifacts : downloads).filter((file) => file === "scan.json" || file === "run.log" || outputMode === "all" || (outputMode === "gephi" ? file.startsWith("gephi/") : !file.startsWith("gephi/")));
   for (const file of files) {
@@ -195,12 +209,12 @@ function renderReport() {
   get("report-name").textContent = target?.name ?? scan.seed;
   profileImage("report-avatar", target?.avatar ?? null);
   const profile = get("report-profile"); profile.setAttribute("href", `https://steamcommunity.com/profiles/${scan.seed}/`); profile.textContent = "Steam profile ↗";
-  profile.title = `Steam ID ${scan.seed}`;
+  profile.dataset.tooltip = `Steam ID ${scan.seed}`;
   get("report-status").textContent = scan.status;
-  get("report-details").textContent = `${new Date(scan.createdAt).toLocaleString()} · Steam ID ${scan.seed} · depth ${scan.settings.depth} · cap ${scan.settings.maxNodes}`;
+  get("report-details").textContent = `${new Date(scan.createdAt).toLocaleString()} · Steam ID ${scan.seed} · depth ${scan.settings.depth} · ${scan.settings.maxNodes === 0 ? "no node cap" : `cap ${scan.settings.maxNodes}`}`;
   buttons("resume-button").hidden = scan.status === "complete" || (currentState?.job.status === "running" && currentState.job.id === scan.id);
   const coverage = get("coverage"); coverage.replaceChildren();
-  for (const [label, value] of [["Profiles", report.coverage.nodes], ["Friendships", report.edges.filter((e) => e.kind === "friend").length], ["Public friend lists", report.coverage.publicLists], ["Direct friends included", `${report.coverage.admittedDirectFriends}/${report.coverage.directFriends}`], ["Skipped lists", report.coverage.skippedLists], ["Unavailable lists", report.coverage.unavailableLists]] as const) {
+  for (const [label, value] of [["Profiles", report.coverage.nodes], ["Friendships", report.edges.filter((e) => e.kind === "friend").length], ["Public lists", report.coverage.publicLists], ["Direct friends", `${report.coverage.admittedDirectFriends}/${report.coverage.directFriends}`], ["Private lists", report.coverage.privateLists], ["Unavailable lists", report.coverage.unavailableLists]] as const) {
     const group = document.createElement("div"); const term = document.createElement("dt"); const detail = document.createElement("dd");
     term.textContent = label; detail.textContent = String(value); group.append(term, detail); coverage.append(group);
   }
@@ -215,10 +229,15 @@ function renderReport() {
 function renderCoverageNotice() {
   if (!selected) return;
   const { scan, report } = selected;
-  const missing = report.coverage.unavailableLists; const skipped = report.coverage.skippedLists;
-  const partial = scan.status !== "complete" || scan.truncated || missing > 0 || skipped > 0;
+  const coverage = report.coverage;
+  const reasons = scan.truncated ? ["node cap reached"] : [];
+  for (const [count, label] of [[coverage.privateLists, "private list"], [coverage.unavailableLists, "unavailable list"],
+    [coverage.skippedLists, "skipped profile"], [coverage.pendingLists, "unscanned list"]] as const) {
+    if (count) reasons.push(`${count} ${label}${count === 1 ? "" : "s"}`);
+  }
+  const partial = scan.status !== "complete" || reasons.length > 0;
   const warning = get("coverage-warning"); warning.hidden = !partial;
-  warning.textContent = `Partial results${scan.truncated ? " · node cap reached" : ""} · ${skipped} skipped · ${missing} unavailable friend lists`;
+  warning.textContent = ["Partial results", ...reasons].join(" · ");
   get("open-history").hidden = !selected.history;
 }
 function renderRanking() {
@@ -228,6 +247,7 @@ function renderRanking() {
   control("ranking-hub").value = String(ranking.hubPercentile);
   for (const name of ["mutual", "jaccard", "groups", "games"] as const) control(`ranking-${name}`).value = String(ranking.weights[name]);
   buttons("save-ranking").disabled = scan.status !== "complete" || currentState?.job.status === "running";
+  buttons("rebuild-exports").disabled = buttons("save-ranking").disabled;
 }
 function inspectNode(id: SteamId) {
   selectedNode = id; renderInspector(); renderGraph();
@@ -239,15 +259,15 @@ function renderInspector() {
   if (!player) return;
   get("inspect-name").textContent = player.name; profileImage("inspect-avatar", player.avatar);
   get("inspect-link").setAttribute("href", `https://steamcommunity.com/profiles/${player.id}/`);
-  get("inspect-link").textContent = player.id; get("inspect-link").title = "Open Steam profile";
+  get("inspect-link").textContent = player.id; get("inspect-link").dataset.tooltip = "Open Steam profile";
   const facts = get("inspect-facts"); facts.replaceChildren();
   const bans = player.bans;
   const fields: readonly (readonly [string, string | number])[] = [
-    ["Depth", player.level], ["Profile", player.visibility], ["Friend list", player.friendsStatus],
-    ["Groups", player.groupsStatus === "public" ? player.groups.length : player.groupsStatus],
-    ["Games", player.gamesStatus === "public" ? player.games.length : player.gamesStatus],
-    ["VAC ban", bans ? bans.vac ? "yes" : "no" : player.bansStatus],
-    ["Game bans", bans ? bans.game : player.bansStatus], ["Community ban", bans ? bans.community ? "yes" : "no" : player.bansStatus],
+    ["Depth", player.level], ["Profile", availabilityLabels[player.visibility]], ["Friend list", availabilityLabels[player.friendsStatus]],
+    ["Groups", player.groupsStatus === "public" ? player.groups.length : availabilityLabels[player.groupsStatus]],
+    ["Games", player.gamesStatus === "public" ? player.games.length : availabilityLabels[player.gamesStatus]],
+    ["VAC ban", bans ? bans.vac ? "yes" : "no" : availabilityLabels[player.bansStatus]],
+    ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "yes" : "no" : availabilityLabels[player.bansStatus]],
     ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
     ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
   ];
@@ -257,14 +277,18 @@ function renderInspector() {
 }
 function renderGraph() {
   const graph = get("graph");
-  if (!(graph instanceof SVGSVGElement) || !selected) return;
+  if (!(graph instanceof SVGSVGElement) || !selected || get("network-view").hidden || get("results-screen").hidden || get("report").hidden) return;
+  const selection = JSON.stringify([selectedNode, inputs.networkSearch.value, edgeKind.value]);
+  if (graphReport === selected.report && graphSelection === selection) return;
   Network.render(graph, get("community-legend"), get("network-matches"), get("graph-count"), selected,
     { id: selectedNode, zoom, query: inputs.networkSearch.value, edges: edgeKind.value }, inspectNode);
+  graphReport = selected.report; graphSelection = selection;
 }
 function toggleRuns(visible: boolean) {
   get("run-library").hidden = !visible; buttons("toggle-runs").setAttribute("aria-expanded", String(visible));
   buttons("toggle-runs").textContent = visible && selected ? "Back to report" : "Saved runs";
   get("report").hidden = visible || !selected; get("empty").hidden = visible || Boolean(selected);
+  if (!visible) renderGraph();
 }
 function renderRuns() {
   if (!currentState) return;
@@ -289,7 +313,7 @@ function renderRuns() {
 }
 function renderHistory(report: HistoryReport, runId: string | null) {
   get("history-result").hidden = false; get("history-name").textContent = report.profile.name ?? report.profile.steamID64;
-  get("history-name").title = report.warning;
+  get("history-name").dataset.tooltip = report.warning;
   const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
   const rows = get("history-rows"); rows.replaceChildren();
   const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
@@ -313,8 +337,16 @@ async function openRun(id: string, navigation = navigationVersion) {
     get("results").focus({ preventScroll: true });
   }
 }
+function preselectTarget(run: typeof Contracts.RunSummary.Type) {
+  // Selecting a target must also invalidate a saved-report response still in flight.
+  runRequest++;
+  inputs.target.value = run.seed;
+  preview = { id: run.seed, name: run.name, avatar: run.avatar }; previewTarget = run.seed;
+  get("estimate-result").replaceChildren();
+  showScreen("scan"); renderTarget(); renderRecent();
+}
 function renderRecent() {
-  const signature = JSON.stringify([currentState?.runs, currentState?.runIssues, selected?.scan.id]);
+  const signature = JSON.stringify([currentState?.runs, currentState?.runIssues, inputs.target.value.trim()]);
   if (signature === recentSignature) return;
   recentSignature = signature; const recent = get("recent"); recent.replaceChildren();
   const runs = currentState?.runs ?? [];
@@ -322,34 +354,36 @@ function renderRecent() {
   for (const run of runs) {
     const button = document.createElement("button"); button.type = "button";
     button.append(avatarImage(run.avatar));
-    button.setAttribute("aria-current", String(selected?.scan.id === run.id));
-    button.title = `${run.status} · ${run.nodes} profiles · ${new Date(run.createdAt).toLocaleString()}`;
-    button.setAttribute("aria-label", `${run.name}, ${button.title}`);
-    button.addEventListener("click", () => task(() => openRun(run.id))); recent.append(button);
+    button.setAttribute("aria-pressed", String(inputs.target.value.trim() === run.seed));
+    button.dataset.tooltip = `Select ${run.name} as target`;
+    button.setAttribute("aria-label", button.dataset.tooltip);
+    button.addEventListener("click", () => preselectTarget(run)); recent.append(button);
   }
   for (const issue of issues) {
     const button = document.createElement("button"); button.type = "button"; button.append(avatarImage(null));
-    button.title = `Invalid run ${issue.id}`; button.setAttribute("aria-label", button.title);
+    button.dataset.tooltip = `Invalid run ${issue.id}`; button.setAttribute("aria-label", button.dataset.tooltip);
     button.addEventListener("click", () => notice(issue.message)); recent.append(button);
   }
   const emptySlots = Math.max(0, 5 - runs.length - issues.length);
   for (let i = 0; i < emptySlots; i++) {
-    const empty = avatarImage(null); empty.title = "No saved run"; empty.setAttribute("aria-hidden", "true"); recent.append(empty);
+    const empty = avatarImage(null); empty.setAttribute("aria-hidden", "true"); recent.append(empty);
   }
   if (runs.length + issues.length === 0) {
     const status = document.createElement("span"); status.className = "sr-only"; status.textContent = "No saved runs."; recent.append(status);
   }
 }
 function renderProgress(state: Contracts.State) {
-    get("key-status").textContent = state.hasKey ? "Key set for this session." : "Key required.";
     get("key-indicator").textContent = state.hasKey ? "Key ready" : "Key needed";
     get("key-indicator").dataset.key = state.hasKey ? "ready" : "missing";
+    get("key-label").hidden = state.hasKey;
     const running = state.job.status === "running";
-    buttons("scan-button").disabled = running || !state.hasKey;
-    buttons("estimate-button").disabled = running || !state.hasKey;
-    buttons("resume-button").disabled = running || !state.hasKey;
-    buttons("lookup-target").disabled = running || !state.hasKey;
+    buttons("scan-button").disabled = running;
+    buttons("estimate-button").disabled = running;
+    buttons("resume-button").disabled = running;
+    buttons("lookup-target").disabled = running;
+    buttons("open-key").disabled = running;
     buttons("save-ranking").disabled = running || selected?.scan.status !== "complete";
+    buttons("rebuild-exports").disabled = running || selected?.scan.status !== "complete";
     get("progress-section").hidden = !running;
     get("progress-title").textContent = state.job.progress?.phase ?? "Resolving profile";
     const progress = state.job.progress;
@@ -385,51 +419,129 @@ async function refresh() {
       if (job.error) notice(job.error);
     }
   } catch (error) {
-    get("key-status").textContent = "Disconnected";
+    get("key-indicator").textContent = "Disconnected";
     notice(error instanceof Error ? error.message : "Cannot reach the local server.");
   } finally {
     refreshing = false; clearTimeout(timer); timer = setTimeout(() => void refresh(), currentState?.job.status === "running" ? 1500 : 10000);
   }
 }
 
-get("scan-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
+let pendingKeyAction: (() => Promise<void>) | null = null;
+function openKey(action: (() => Promise<void>) | null = null) {
+  pendingKeyAction = action;
+  get("key-error").hidden = true; get("key-status").textContent = "";
+  const storage = currentState?.keyStorage;
+  get("remember-key-label").hidden = !storage;
+  control("remember-key").disabled = !storage?.available;
+  control("remember-key").checked = Boolean(storage?.available && storage.remembered);
+  buttons("forget-key").hidden = !storage?.remembered;
+  get("key-session-note").textContent = storage
+    ? storage.available ? "Session only unless remembered." : "Secure storage unavailable. Session only."
+    : "Used for this session.";
+  dialog("key-dialog").showModal();
+}
+function keyTask(action: () => Promise<void>) {
+  get("key-error").hidden = true;
+  for (const id of ["use-key", "cancel-key", "forget-key", "show-key"]) buttons(id).disabled = true;
+  inputs.key.readOnly = true; control("remember-key").disabled = true;
+  void action().catch((error) => {
+    get("key-error").textContent = error instanceof Error ? error.message : "The key could not be updated. Try again.";
+    get("key-error").hidden = false;
+  }).finally(() => {
+    for (const id of ["use-key", "cancel-key", "forget-key", "show-key"]) buttons(id).disabled = false;
+    inputs.key.readOnly = false; control("remember-key").disabled = !currentState?.keyStorage?.available;
+    get("key-status").textContent = "";
+  });
+}
+buttons("forget-key").addEventListener("click", () => keyTask(async () => {
+  get("key-status").textContent = "Removing saved key…";
+  await api("/api/key/forget", Contracts.Ok, {}); await refresh();
+  control("remember-key").checked = false; buttons("forget-key").hidden = true;
+}));
+function steamTask(action: () => Promise<void>) {
+  if (!currentState?.hasKey) openKey(action);
+  else task(action);
+}
+buttons("open-key").addEventListener("click", () => openKey());
+get("scan-form").addEventListener("submit", (event) => { event.preventDefault(); steamTask(async () => {
   buttons("scan-button").disabled = true;
   const target = inputs.target.value;
   try { await api("/api/scan", Contracts.Ok, { target, settings: readSettings() }); linkedTarget = target.trim(); }
   finally { await refresh(); }
 }); });
-buttons("estimate-button").addEventListener("click", () => task(async () => {
+buttons("estimate-button").addEventListener("click", () => { if (!inputs.target.reportValidity()) return; steamTask(async () => {
   buttons("estimate-button").disabled = true;
+  const target = inputs.target.value.trim(); const version = settingsVersion;
   try {
-    const estimate = await api("/api/estimate", Contracts.Estimate, { target: inputs.target.value, settings: readSettings() });
-    get("estimate-result").textContent = estimate.available ? `${estimate.directFriends} direct friends · approximately ${estimate.estimatedNodes} admitted nodes · ${estimate.sampleSize} public samples. ${estimate.note ?? ""}` : estimate.note ?? "The friend list is private or unavailable. No estimate is possible.";
+    const estimate = await api("/api/estimate", Contracts.Estimate, { target, settings: readSettings() });
+    if (inputs.target.value.trim() === target && settingsVersion === version) renderEstimate(estimate);
   } finally { await refresh(); }
-}));
+}); });
+function renderEstimate(estimate: typeof Contracts.Estimate.Type) {
+  const result = get("estimate-result"); result.replaceChildren();
+  if (!estimate.available) { result.textContent = estimate.note ?? "The friend list is private or unavailable. No estimate is possible."; return; }
+  const heading = document.createElement("div"); heading.className = "estimate-heading";
+  const title = document.createElement("span"); title.textContent = "Sampling estimate";
+  const help = document.createElement("button"); help.type = "button"; help.className = "info"; help.textContent = "i";
+  help.setAttribute("aria-label", "About this estimate"); help.dataset.tooltip = estimate.note ?? "Sampling estimate; private lists and overlapping friends affect coverage.";
+  heading.append(title, help);
+  const facts = document.createElement("dl"); facts.className = "estimate-facts";
+  for (const [label, value] of [["Direct friends", estimate.directFriends], ["Profiles", `≈ ${estimate.estimatedNodes?.toLocaleString()}`], ["Public samples", estimate.sampleSize]] as const) {
+    const term = document.createElement("dt"); term.textContent = label;
+    const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
+  }
+  result.append(heading, facts);
+}
 get("output-mode").addEventListener("change", (event) => {
   if (!(event.target instanceof HTMLInputElement)) return;
   outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
 for (const form of ["scan-form", "scan-ranking-form"]) get(form).addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
-inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; get("estimate-result").textContent = ""; renderTarget(); });
+inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
   settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
 });
-buttons("lookup-target").addEventListener("click", () => task(async () => {
-  if (!inputs.target.reportValidity()) return;
+buttons("lookup-target").addEventListener("click", () => { if (!inputs.target.reportValidity()) return; steamTask(async () => {
   const target = inputs.target.value.trim(); buttons("lookup-target").disabled = true;
   try {
     const player = await api("/api/target", Player, { target, settings: readSettings() });
     if (inputs.target.value.trim() === target) { preview = player; previewTarget = target; renderTarget(); }
   } finally { await refresh(); }
-}));
+}); });
 buttons("apply-settings").addEventListener("click", () => task(async () => {
   if (!get("scan-form").querySelector<HTMLInputElement>(":invalid")) {
     await api("/api/profiles", Contracts.Ok, { name: "default", settings: readSettings() }); await refresh(); notice("Saved default settings.");
   } else throw new Error("Check the node limit and request rate.");
 }));
-get("key-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
-  await api("/api/key", Contracts.Ok, { key: inputs.key.value }); inputs.key.value = ""; await refresh();
-}); });
+buttons("show-key").addEventListener("click", () => {
+  const show = inputs.key.type === "password";
+  inputs.key.type = show ? "text" : "password";
+  buttons("show-key").textContent = show ? "Hide" : "Show";
+  buttons("show-key").setAttribute("aria-label", show ? "Hide API key" : "Show API key");
+  buttons("show-key").setAttribute("aria-pressed", String(show));
+});
+dialog("key-dialog").addEventListener("close", () => {
+  inputs.key.value = ""; inputs.key.type = "password"; pendingKeyAction = null;
+  buttons("show-key").textContent = "Show"; buttons("show-key").setAttribute("aria-label", "Show API key");
+  buttons("show-key").setAttribute("aria-pressed", "false");
+});
+dialog("key-dialog").addEventListener("cancel", (event) => {
+  if (buttons("use-key").disabled) event.preventDefault();
+});
+get("key-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  keyTask(async () => {
+    const key = inputs.key.value.trim();
+    const remember = control("remember-key").checked;
+    if (!/^[a-fA-F0-9]{32}$/.test(key)) throw new Error("Enter the 32-character key from Steam's API key page.");
+    get("key-status").textContent = "Checking key with Steam…";
+    await api("/api/key", Contracts.Ok, { key, remember });
+    inputs.key.value = ""; await refresh();
+    const continuation = pendingKeyAction;
+    dialog("key-dialog").close();
+    if (continuation) task(continuation);
+  });
+});
 get("profile-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   await api("/api/profiles", Contracts.Ok, { name: inputs.name.value, settings: readSettings() }); dialog("save-dialog").close(); await refresh();
 }); });
@@ -447,6 +559,12 @@ if (desktop) {
   buttons("window-minimize").addEventListener("click", () => task(desktop.minimize));
   buttons("window-maximize").addEventListener("click", () => task(desktop.maximize));
   buttons("window-close").addEventListener("click", () => task(desktop.close));
+  const showMaximized = (maximized: boolean) => {
+    buttons("window-maximize").dataset.maximized = String(maximized);
+    buttons("window-maximize").setAttribute("aria-label", maximized ? "Restore" : "Maximize");
+  };
+  desktop.onMaximized(showMaximized);
+  task(async () => showMaximized(await desktop.isMaximized()));
 }
 buttons("output-folder").addEventListener("click", () => {
   if (desktop) task(() => desktop.openOutputs(selected?.scan.id ?? null));
@@ -464,7 +582,7 @@ get("scan-ranking-form").addEventListener("submit", (event) => { event.preventDe
 buttons("open-run-info").addEventListener("click", () => dialog("run-info-dialog").showModal());
 for (const button of document.querySelectorAll<HTMLElement>("[data-close]")) button.addEventListener("click", () => dialog(button.dataset.close ?? "").close());
 buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
-buttons("resume-button").addEventListener("click", () => task(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
+buttons("resume-button").addEventListener("click", () => steamTask(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
 inputs.search.addEventListener("input", renderFriends);
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-screen]")) {
   const screen = Schema.decodeUnknownSync(Screen)(tab.dataset.screen);
@@ -474,7 +592,17 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-view]")) t
   for (const other of document.querySelectorAll("[data-view]")) other.removeAttribute("aria-current");
   tab.setAttribute("aria-current", "page");
   for (const view of document.querySelectorAll<HTMLElement>(".view")) view.hidden = view.id !== `${tab.dataset.view}-view`;
+  if (tab.dataset.view === "network") renderGraph();
 });
+buttons("rebuild-exports").addEventListener("click", () => task(async () => {
+  if (!selected) return;
+  const id = selected.scan.id; buttons("rebuild-exports").disabled = true;
+  try {
+    const view = await api("/api/rebuild", Contracts.RunView, { id });
+    if (selected?.scan.id === id) { selected = view; renderReport(); renderInspector(); }
+    notice("Rebuilt exports from saved observations.");
+  } finally { await refresh(); }
+}));
 inputs.runSearch.addEventListener("input", renderRuns); select("run-status").addEventListener("change", renderRuns);
 inputs.networkSearch.addEventListener("input", renderGraph);
 buttons("toggle-runs").addEventListener("click", () => toggleRuns(get("run-library").hidden));
@@ -501,7 +629,7 @@ function renderZoom() {
 }
 buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderZoom(); });
 buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderZoom(); });
-buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderInspector(); renderGraph(); });
+buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderInspector(); renderGraph(); renderZoom(); });
 get("history-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   const file = inputs.file.files?.[0];
   if (!file) throw new Error("Choose a normalized history file.");
@@ -515,6 +643,7 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 window.addEventListener("focus", () => void refresh());
 applySettings(defaults);
-renderTarget(); renderOutput();
+Tooltips.install(get("app-tooltip"));
+renderTarget(); renderOutput(); renderRecent();
 const initialNavigation = navigationVersion;
 void refresh().then(() => { const id = location.hash.slice(1); if (id && !selected) task(() => openRun(id, initialNavigation)); });
