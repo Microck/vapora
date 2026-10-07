@@ -9,8 +9,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Schema } from "effect";
 import { State } from "../src/contracts.js";
 import { listPackage } from "@electron/asar";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Page } from "puppeteer-core";
 import { key, seed, steamFixture, userAgent } from "./fixtures.js";
+
+// Closing Chromium through DevTools bypasses Electron's native window lifecycle.
+async function closeDesktop(page: Page) {
+  await page.evaluate(() => { void window.vaporaDesktop?.close(); }).catch((error: Error) => {
+    if (!error.message.includes("Target closed")) throw error;
+  });
+}
 
 // Portable NSIS launchers do not relay Electron stderr. Chromium writes this endpoint
 // into the real session directory, so every distribution uses the same startup check.
@@ -46,7 +53,12 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
     if (endpoint) {
       const browser = await puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${endpoint[1]}${endpoint[2]}`, defaultViewport: null });
       console.info("Desktop E2E: connected to packaged browser");
-      shutdown.push(async () => { if (browser.connected) await browser.close(); });
+      shutdown.push(async () => {
+        if (browser.connected) {
+          await Promise.all((await browser.pages()).map(closeDesktop));
+          await browser.disconnect();
+        }
+      });
       return { browser, exited };
     }
     await delay(100);
@@ -175,9 +187,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     await page.click("#cancel-key"); await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
   }
   // Closing the native window must stop its local server and exit normally.
-  await page.evaluate(() => { void window.vaporaDesktop?.close(); }).catch((error: Error) => {
-    if (!error.message.includes("Target closed")) throw error;
-  });
+  await closeDesktop(page);
   const [exitCode] = await exited; assert.equal(exitCode, 0);
   console.info("Desktop E2E: initial app closed");
   await assert.rejects(fetch(origin + "/api/state", { headers: { "user-agent": userAgent } }));
@@ -196,13 +206,13 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
     await reopenedPage.click("#cancel-key");
     assert.equal(await reopenedPage.$eval("#key-indicator", (element) => element.getAttribute("data-key")), "ready");
-    await reopened.browser.close(); assert.equal((await reopened.exited)[0], 0);
+    await closeDesktop(reopenedPage); assert.equal((await reopened.exited)[0], 0);
     const forgotten = await launchDesktop(shutdown, launchPath, dataRoot, fixture.url, portable, "");
     const forgottenTarget = await forgotten.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
     const forgottenPage = await forgottenTarget.page(); assert.ok(forgottenPage);
     await forgottenPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "missing");
     console.info("Desktop E2E: forgotten key absent after restart");
-    await forgotten.browser.close(); assert.equal((await forgotten.exited)[0], 0);
+    await closeDesktop(forgottenPage); assert.equal((await forgotten.exited)[0], 0);
     context.diagnostic("OS-encrypted key survived restart; forgetting removed it without ending the session.");
   } else context.diagnostic("Secure storage unavailable; remembering disabled and no key file created.");
   if (portable) {
@@ -229,7 +239,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     // Reopened profile pictures use the fixture image endpoint, not the Steam API.
     assert.deepEqual(fixture.requests.slice(requestsBeforeReopen).filter((request) => !/^\/avatars\/\d{17}\.svg$/.test(request.path)), [],
       "Reopening saved portable data must not repeat Steam collection");
-    await reopened.browser.close();
+    await closeDesktop(reopenedPage);
     const [movedExitCode] = await reopened.exited; assert.equal(movedExitCode, 0);
   }
 });
