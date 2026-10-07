@@ -15,6 +15,7 @@ import { key, seed, steamFixture, userAgent } from "./fixtures.js";
 // Portable NSIS launchers do not relay Electron stderr. Chromium writes this endpoint
 // into the real session directory, so every distribution uses the same startup check.
 async function launchDesktop(shutdown: (() => Promise<void>)[], executable: string, dataRoot: string, fixtureUrl: string, portable: boolean, configuredKey = key) {
+  console.info(`Desktop E2E: launching ${portable ? "portable" : "installed"} app (${configuredKey ? "session key" : "no session key"})`);
   await rm(join(dataRoot, "DevToolsActivePort"), { force: true });
   const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: configuredKey, VAPORA_STEAM_FIXTURE: fixtureUrl };
   delete env.PORTABLE_EXECUTABLE_DIR;
@@ -29,7 +30,7 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   // External helpers can inherit these pipes and outlive Electron. Release them when the app exits.
-  child.once("exit", () => { child.stdout.destroy(); child.stderr.destroy(); });
+  child.once("exit", (code) => { console.info(`Desktop E2E: launcher exited ${code}`); child.stdout.destroy(); child.stderr.destroy(); });
   shutdown.push(async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await exited;
@@ -44,6 +45,7 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
     const endpoint = /^(\d+)\r?\n(\/devtools\/browser\/[^\s]+)/.exec(activePort);
     if (endpoint) {
       const browser = await puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${endpoint[1]}${endpoint[2]}`, defaultViewport: null });
+      console.info("Desktop E2E: connected to packaged browser");
       shutdown.push(async () => { if (browser.connected) await browser.close(); });
       return { browser, exited };
     }
@@ -88,6 +90,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   await page.waitForFunction(() => document.visibilityState === "visible" && document.body.classList.contains("desktop") &&
     document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready" &&
     !document.querySelector<HTMLButtonElement>("#lookup-target")?.disabled);
+  console.info("Desktop E2E: initial window ready");
   await page.bringToFront();
   // Font loading can move the native window's controls before its first painted frame.
   await page.evaluate(async () => { await document.fonts.ready; });
@@ -121,6 +124,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   });
   await page.click("#scan-button");
   await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete", { timeout: 60000 });
+  console.info("Desktop E2E: fixture scan completed");
   const downloadLinks = await page.$$eval("#downloads a", (links) => links.map((link) => {
     if (!(link instanceof HTMLAnchorElement)) throw new Error("Expected an export link");
     return link.href;
@@ -152,6 +156,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     throw new Error(`Native restore failed: ${JSON.stringify(windowState)}`, { cause: error });
   });
   assert.deepEqual(errors, []);
+  console.info("Desktop E2E: native maximize and restore checked");
   const keyStorage = saved.keyStorage; assert.ok(keyStorage);
   if (process.env.VAPORA_TEST_KEY_BACKEND === "gnome-libsecret") assert.equal(keyStorage.available, true, "The isolated Secret Service must provide OS-backed encryption");
   if (process.env.VAPORA_TEST_KEY_BACKEND === "basic") assert.equal(keyStorage.available, false, "Linux basic_text storage must never enable remembering");
@@ -164,6 +169,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#key-dialog")?.open);
     const encrypted = await readFile(join(dataRoot, "steam-key.enc"));
     assert.ok(encrypted.length > 0 && !encrypted.includes(Buffer.from(key)), "A remembered key must be encrypted on disk");
+    console.info("Desktop E2E: encrypted key saved");
   } else {
     assert.match(await page.$eval("#key-session-note", (element) => element.textContent), /Secure storage unavailable/);
     await page.click("#cancel-key"); await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
@@ -173,6 +179,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     if (!error.message.includes("Target closed")) throw error;
   });
   const [exitCode] = await exited; assert.equal(exitCode, 0);
+  console.info("Desktop E2E: initial app closed");
   await assert.rejects(fetch(origin + "/api/state", { headers: { "user-agent": userAgent } }));
   assert.ok(!(await readFile(resolve(archive))).includes(Buffer.from(key)));
   if (keyStorage.available) {
@@ -180,10 +187,12 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
     const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
     await reopenedPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready");
+    console.info("Desktop E2E: remembered key loaded after restart");
     await reopenedPage.bringToFront(); await reopenedPage.locator("#open-key").click();
     await reopenedPage.waitForSelector("#key-dialog[open]");
     assert.equal(await reopenedPage.$eval("#remember-key", (input) => input instanceof HTMLInputElement && input.checked), true);
     await reopenedPage.click("#forget-key"); await reopenedPage.waitForSelector("#forget-key[hidden]");
+    console.info("Desktop E2E: remembered key forgotten");
     await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));
     await reopenedPage.click("#cancel-key");
     assert.equal(await reopenedPage.$eval("#key-indicator", (element) => element.getAttribute("data-key")), "ready");
@@ -192,6 +201,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     const forgottenTarget = await forgotten.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
     const forgottenPage = await forgottenTarget.page(); assert.ok(forgottenPage);
     await forgottenPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "missing");
+    console.info("Desktop E2E: forgotten key absent after restart");
     await forgotten.browser.close(); assert.equal((await forgotten.exited)[0], 0);
     context.diagnostic("OS-encrypted key survived restart; forgetting removed it without ending the session.");
   } else context.diagnostic("Secure storage unavailable; remembering disabled and no key file created.");
@@ -201,6 +211,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     const movedExecutable = join(moved, "Vapora portable.exe");
     await rename(launchPath, movedExecutable);
     await rename(dataRoot, join(moved, "Vapora-data"));
+    console.info("Desktop E2E: portable EXE and data moved together");
     const requestsBeforeReopen = fixture.requests.length;
     const reopened = await launchDesktop(shutdown, movedExecutable, join(moved, "Vapora-data"), fixture.url, true);
     const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
