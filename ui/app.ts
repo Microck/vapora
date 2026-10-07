@@ -383,6 +383,7 @@ async function openRun(id: string, navigation = navigationVersion) {
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
   selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; renderInspector(); toggleRuns(false);
   location.hash = id; renderReport(); renderRecent();
+  if (view.historyError) notice(view.historyError);
   if (view.scan.status === "complete") void loadAccountHistory(view.scan.seed, false, view.scan.id);
   // A report response must not override a navigation choice made while it loaded.
   if (navigation === navigationVersion) {

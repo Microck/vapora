@@ -85,7 +85,7 @@ export async function start(options: Options) {
     const id = bundle.sources[0]?.snapshots[0]?.steamID64;
     if (!id) return yield* Effect.fail(new InputError({ message: "No account found in history." }));
     const previous = yield* store.accountHistory(id);
-    const report = History.view({ sources: [...(previous?.sources ?? []), ...bundle.sources] });
+    const report = History.view(History.merge(previous ?? { sources: [] }, bundle));
     yield* store.saveHistory(report);
     return report;
   })));
@@ -117,9 +117,16 @@ export async function start(options: Options) {
     const cached = yield* store.accountHistory(scan.seed);
     const source = cached ?? attachment;
     if (!source) return null;
-    const report = History.view(source, scan);
+    const report = yield* Effect.try({ try: () => History.view(source, scan),
+      catch: () => new InputError({ message: "Saved history could not be analyzed. Inspect its original captures before replacing it." }) });
     yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
     return report;
+  });
+  const savedRun = (id: string) => Effect.gen(function* () {
+    const scan = yield* (yield* Storage.Service).read(id);
+    const history = yield* attachedHistory(scan).pipe(Effect.result);
+    return { scan, report: Analysis.analyze(scan), history: history._tag === "Success" ? history.success : null,
+      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies RunView;
   });
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
@@ -175,9 +182,7 @@ export async function start(options: Options) {
     }
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
-      const scan = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(runMatch[1] ?? ""); }));
-      const history = await runtime.runPromise(attachedHistory(scan));
-      json(response, 200, { scan, report: Analysis.analyze(scan), history } satisfies RunView);
+      json(response, 200, await runtime.runPromise(savedRun(runMatch[1])));
       return;
     }
     const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -239,7 +244,7 @@ export async function start(options: Options) {
       // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
       const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
       const view = await runtime.runPromise(payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
-      json(response, 200, { ...view, history } satisfies RunView);
+      json(response, 200, { ...view, history, historyError: null } satisfies RunView);
     } finally { estimating = false; }
     return;
   }

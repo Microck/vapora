@@ -59,6 +59,15 @@ test("all captures, unknown fields and original UTF-8 formatting survive the rep
   assert.deepEqual(reopened.profile.fields.unknown, { keep: ["é", null] });
   assert.equal(reopened.profile.fields.vacBanned, true);
 });
+test("byte-identical reimports reuse one source while distinct original captures remain retained", async () => {
+  const first = await parse(profile(100));
+  const repeated = await parse(profile(100));
+  const newer = await parse(profile(200));
+  const merged = History.merge(first, repeated, newer, newer);
+  assert.equal(merged.sources.length, 2);
+  assert.deepEqual(merged.sources, [...first.sources, ...newer.sources]);
+  assert.equal(History.view(merged).profile.lastChecked, 200);
+});
 test("devalue pools resolve each reference once without chasing small scalar values and keep deferred chunks", async () => {
   const stream = JSON.stringify({ type: "data", nodes: [{ type: "data", data: [
     { profile: 1 }, { steamID64: 2, name: 3, lastUpdated: 4, historic: 5, vacBanned: 6 }, seed, "Alice", 3, ["Promise", 7], false,
@@ -107,6 +116,19 @@ test("identified comment versions remain one event and undated comments stay out
   assert.equal(report.comments.find((row) => !row.estimated)?.message, "after");
   assert.equal(History.view(report, undefined, { from: 1, to: 100 }).comments.length, 1);
 });
+test("numeric comment identifiers reconcile All, Deleted and edited versions without inflating rankings", async () => {
+  const friend = { Friend: second, FriendDate: 1 };
+  const event = { CommentID: 42, Commenter: second, Timestamp: 20, Message: "before" };
+  const old = await parse(profile(100, [friend], [event, { ...event, IsDeleted: 1 }]));
+  const recent = await parse(profile(200, [friend], [{ ...event, CommentID: "42", Message: "after" }]));
+  const report = History.view({ sources: [...old.sources, ...recent.sources] });
+  assert.equal(report.comments.length, 1);
+  assert.equal(report.comments[0]?.estimated, false);
+  assert.equal(report.comments[0]?.message, "after");
+  assert.equal(report.comments[0]?.versions.length, 3);
+  assert.equal(report.commenters[0]?.count, 1);
+  assert.equal(History.commentId({ ID: 0 }), "0");
+});
 test("account fetching reuses current paginated captures; failure retains data and scan API stays independent", async () => {
   const fixture = await historyFixture();
   const root = await mkdtemp(join(tmpdir(), "vapora-history-"));
@@ -125,6 +147,9 @@ test("account fetching reuses current paginated captures; failure retains data a
     assert.equal(original.pages.length, 7); assert.match(original.profile.contents, /userdata/);
     assert.equal((await Effect.runPromise(History.parse(contents))).sources[0]?.contents, contents);
     fixture.setStatus(200); assert.equal((await post(true)).report?.sources.length, 2);
+    const imported = await fetch(`${app.origin}/api/history`, { method: "POST", headers: { origin: app.origin, "content-type": "application/json", "user-agent": "OpenAI File Downloader, XaiImageApiFetch/1.0" }, body: JSON.stringify({ contents }) });
+    assert.equal(imported.status, 200);
+    assert.equal(Schema.decodeUnknownSync(History.HistoryReport)(await imported.json()).sources.length, 2);
   } finally { await app.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 
@@ -292,6 +317,27 @@ test("older friendship evidence stays in the comment reference and undated live 
   assert.equal(report.commenters[0]?.status, "former");
   const open = await parse(profile(100, [{ Friend: second, FriendDate: 10 }]));
   assert.equal(History.view(open, scan([player(seed, [], { friendsObservedAt: null })])).friends[0]?.status, "current");
+});
+
+test("friend and commenter membership select the newest observation and expose same-date contradictions", async () => {
+  const event = { ID: "dated", Commenter: second, Timestamp: 20, Message: "hello" };
+  const current = await parse(profile(200, [{ Friend: second, FriendDate: 10 }], [event]));
+  const former = await parse(profile(200, [{ Friend: second, FriendDate: 10, UnfriendDate: 150 }], [event]));
+  const datedScan = (stamp: number, friends: readonly typeof second[], friendsStatus: "public" | "private" = "public") =>
+    scan([player(seed, friends, { friendsObservedAt: new Date(stamp * 1000).toISOString(), friendsStatus })]);
+  for (const [bundle, list, expected] of [[current, [], "current"], [former, [second], "former"]] as const) {
+    const report = History.view(bundle, datedScan(100, list));
+    assert.equal(report.friends[0]?.status, expected); assert.equal(report.friends[0]?.asOf, 200);
+    assert.equal(report.commenters[0]?.status, expected); assert.equal(report.commenters[0]?.asOf, 200);
+  }
+  const newer = History.view(current, datedScan(300, []));
+  assert.equal(newer.friends[0]?.status, "former"); assert.equal(newer.friends[0]?.asOf, 300);
+  assert.equal(newer.commenters[0]?.status, "former"); assert.equal(newer.commenters[0]?.asOf, 300);
+  assert.equal(History.view(current, datedScan(300, [], "private")).friends[0]?.status, "current");
+  const contradiction = History.view(current, datedScan(200, []));
+  assert.equal(contradiction.friends[0]?.status, "unknown");
+  assert.equal(contradiction.commenters[0]?.status, "unknown");
+  assert.ok(contradiction.warnings.some((warning) => warning.includes("Same-date")));
 });
 
 test("cyclic deferred chunks fail explicitly at the stream boundary", async () => {

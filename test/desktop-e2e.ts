@@ -132,7 +132,10 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     return input.value;
   }), seed, "Keyboard entry did not reach the target field");
   await page.click("#lookup-target");
-  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready", { timeout: 110000 });
+  await page.waitForFunction(() => ["History ready", "History partial", "History unavailable"].includes(document.querySelector("#target-history-status")?.textContent ?? ""), { timeout: 110000 });
+  const historyState = await page.evaluate(() => ({ status: document.querySelector("#target-history-status")?.textContent,
+    error: document.querySelector("#history-fetch-status")?.textContent }));
+  assert.equal(historyState.status, "History ready", `Bundled history failed: ${JSON.stringify({ historyState, requests: history.requests() })}`);
   await page.bringToFront();
   await page.waitForFunction(() => document.querySelector("#target-name")?.textContent === "Player 29").catch(async (error: Error) => {
     const renderer = await page.evaluate(() => ({

@@ -86,9 +86,9 @@ export const fetchAccount = Effect.fn("SteamHistory.fetchAccount")(function* (id
       for (const page of pages) {
         const records = Schema.decodeUnknownSync(Schema.fromJsonString(History.PageResponse))(page.response.contents).data;
         for (const row of records) {
-          const identifier = row.CommentID ?? row.ID;
-          if (identifier !== undefined && identifier !== null) {
-            const key = JSON.stringify(identifier); if (seen.has(key)) continue; seen.add(key);
+          const identifier = History.commentId(row);
+          if (identifier !== null) {
+            if (seen.has(identifier)) continue; seen.add(identifier);
           }
           captured++;
         }

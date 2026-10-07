@@ -25,6 +25,14 @@ const Capture = Schema.Struct({ provider: Schema.Literal("SteamHistory"), captur
   snapshots: Schema.Array(Profile), coverage: Schema.Array(Coverage) });
 export const Bundle = Schema.Struct({ sources: Schema.Array(Capture) });
 export interface Bundle extends Schema.Schema.Type<typeof Bundle> {}
+/** Repeated imports reuse their exact source; every distinct capture remains retained. */
+export function merge(...bundles: readonly Bundle[]): Bundle {
+  const known = new Set<string>();
+  return { sources: bundles.flatMap((bundle) => bundle.sources).filter((source) => {
+    if (known.has(source.contents)) return false;
+    known.add(source.contents); return true;
+  }) };
+}
 const Membership = Schema.Literals(["current", "former", "other", "unknown"]);
 const DurationRank = Schema.Struct({
   id: SteamId, name: Schema.String, avatar: Schema.NullOr(Schema.String), durationSeconds: Schema.NullOr(Schema.Number),
@@ -67,6 +75,14 @@ const records = (value: typeof Schema.Json.Type | undefined): Record[] => {
 const object = (value: typeof Schema.Json.Type | undefined) => Schema.is(Record)(value) ? value : null;
 const hashAvatar = (hash: string | null) => hash && /^[a-f0-9]{40}$/i.test(hash) ? `https://avatars.steamstatic.com/${hash}_full.jpg` : null;
 export function avatar(record: Record): string | null { return hashAvatar(text(record.AvatarHash) ?? text(record.avatarHash)); }
+/** The provider uses numeric and string identifiers; both denote the same comment. */
+export function commentId(record: Record): string | null {
+  for (const value of [record.CommentID, record.ID]) {
+    if (Schema.is(Schema.Number)(value)) return String(value);
+    if (Schema.is(Schema.String)(value) && value.length) return value;
+  }
+  return null;
+}
 
 /** A devalue object/array contains references; a primitive in the value pool is already a value, even if small. */
 function unflatten(pool: readonly typeof Schema.Json.Type[], chunks: ReadonlyMap<number, readonly typeof Schema.Json.Type[]>, activeChunks = new Set<number>()): typeof Schema.Json.Type {
@@ -241,18 +257,22 @@ function friends(bundle: Bundle, scan: Scan | undefined, range: Filter) {
   const versions = friendshipVersions(bundle);
   const live = scan?.players.find((player) => player.id === scan.seed);
   const seed = live?.friendsObservedAt ? live : undefined;
+  const liveAsOf = seed?.friendsObservedAt ? Math.floor(Date.parse(seed.friendsObservedAt) / 1000) : null;
   const result = [...versions].map(([id, records]) => {
     const { periods, asOf, periodSources } = friendshipRecords(records);
     // Latest source resolves closures before intervals are unioned. No OR of old open flags.
     const historicalStatus = membership(periods, asOf);
     const livePresence = seed?.friends.includes(id) ?? false;
-    const liveAuthority = livePresence || seed?.friendsStatus === "public";
-    const status = livePresence ? "current" as const : seed?.friendsStatus === "public" ? "former" as const : historicalStatus;
+    const liveAuthority = liveAsOf !== null && liveAsOf >= (asOf ?? -1) && (livePresence || seed?.friendsStatus === "public");
+    const liveStatus = livePresence ? "current" as const : "former" as const;
+    const contradiction = liveAuthority && liveAsOf === asOf && historicalStatus !== "unknown" && historicalStatus !== liveStatus;
+    const status = contradiction ? "unknown" as const : liveAuthority ? liveStatus : historicalStatus;
     const duration = unionDuration(periodSources, range);
     const metadata = periods[0] ?? {};
     if (historicalStatus === "unknown") duration.conflicts.push("Historical membership unresolved");
+    if (contradiction) duration.conflicts.push("Same-date membership observations disagree");
     return { id, name: text(metadata.Name) ?? id, avatar: avatar(metadata), durationSeconds: duration.conflicts.length ? null : duration.seconds,
-      relativeDuration: null, status, asOf: liveAuthority && seed?.friendsObservedAt ? Math.floor(Date.parse(seed.friendsObservedAt) / 1000) : asOf,
+      relativeDuration: null, status, asOf: liveAuthority ? liveAsOf : asOf,
       periods, periodSources, conflicts: duration.conflicts, metadata };
   });
   const maximum = Math.max(0, ...result.map((friend) => friend.durationSeconds ?? 0));
@@ -264,7 +284,7 @@ function comments(bundle: Bundle): Omit<typeof Comment.Type, "friendAtComment">[
   bundle.sources.forEach((capture, captureIndex) => {
     capture.snapshots.forEach((profile, snapshotIndex) => { for (const row of profile.historic.comments ?? []) {
       const author = sid(row.Commenter); const timestamp = time(row.Timestamp); const message = text(row.Message) ?? "";
-      const identity = text(row.ID) ?? text(row.CommentID) ?? (Schema.is(Schema.Number)(row.ID) ? String(row.ID) : null);
+      const identity = commentId(row);
       const key = JSON.stringify([capture.provider, profile.steamID64, identity ? ["id", identity] : ["anonymous", author, timestamp, message]]);
       const previous: NonNullable<ReturnType<typeof all.get>> = all.get(key) ?? { author, timestamp, message, estimated: !identity, occurrences: 0, versions: [], selectedDate: -1, perCapture: new Map<string, number>() };
       previous.versions.push({ record: row, sourceAsOf: profile.lastChecked, capturedAt: capture.capturedAt }); previous.occurrences++; const captureKey = `${captureIndex}:${snapshotIndex}`;
@@ -310,7 +330,7 @@ export function view(bundle: Bundle, scan?: Scan, range: Filter = {}, settings: 
   const commenters = [...authors].map(([id, author]) => {
     const friend = id === null ? undefined : friendsById.get(id);
     const inReference = id !== null && referenceIds.has(id);
-    const status = id === null ? "unknown" as const : liveSeed?.friends.includes(id) ? "current" as const : friend?.status ?? "other" as const;
+    const status = id === null ? "unknown" as const : friend?.status ?? (liveSeed?.friends.includes(id) ? "current" as const : "other" as const);
     return { id, name: friend?.name ?? id ?? "Unknown author", avatar: friend?.avatar ?? null, ...author,
       status, asOf: friend?.asOf ?? null, share: captured.length ? author.count / captured.length * 100 : 0,
       index: inReference ? index(author.count) : null, inReference };

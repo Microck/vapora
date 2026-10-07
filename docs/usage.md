@@ -137,9 +137,9 @@ Start with friendship edges, then inspect shared-group links separately. Degree 
 
 ### probable friends and location signals
 
-Friend ranking combines mutual count, neighbor-set Jaccard similarity, shared groups and shared games. The evidence score scales the highest observed score to 100. Missing signals stay unknown, and a private friend list can still have mutuals observed through another public list.
+Friend ranking defaults to the authored incoming-mutual count index. Optional friend, group and game Jaccard weights combine with that index. The evidence score uses the same bounded score without rescaling the leading row. Missing signals stay unknown, and a private friend list can still have mutuals observed through another public list. See [restored analysis controls](#restored-analysis-controls) for the formulas.
 
-Location signals group self-reported Steam country, state and city codes among admitted direct friends. Each contribution has weight `1 + observed mutuals`.
+Location signals group supplied Steam country, state and city codes among admitted direct friends. Support uses incoming mutual counts, with product aggregation by default: any zero contribution makes that city's support zero. Sum aggregation is also available.
 
 **These are network heuristics, not proof of real-life friendship or residence.** Privacy, depth and node caps affect the result. The report shows coverage and partial-result warnings.
 

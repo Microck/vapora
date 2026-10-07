@@ -28,7 +28,7 @@ async def evaluate(tab, script):
 
 async def serve():
     browser_path, profile_path, account, origin, sandbox = sys.argv[1:]
-    if not re.fullmatch(r"7656119\d{10}", account):
+    if not re.fullmatch(r"[0-9]{17}", account) or not 76561197960265728 < int(account) <= 76561202255233023:
         raise ValueError("Invalid Steam account.")
     if origin != "https://steamhistory.net" and not re.fullmatch(r"http://127\.0\.0\.1:\d+", origin):
         raise ValueError("Only SteamHistory or a loopback test provider is accepted.")

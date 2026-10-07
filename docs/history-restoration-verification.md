@@ -43,7 +43,7 @@ These captures show fresh fixture accounts, not historical personal datasets. Ea
 
 The current schema requires ranking parameters, nullable observation dates and VAC counts. Earlier local checkpoint/settings/history formats are reported as invalid; files are not migrated or overwritten automatically. Start a fresh run and save current settings. Original SteamHistory source captures can be imported explicitly.
 
-Native Windows/macOS behavior and installer/portable release artifacts remain unverified locally. Their existing native packaging workflow now builds and exercises the bundled history runtime. No CI workflow or release was triggered in this pass.
+Native Windows/macOS behavior remains unverified locally. PR #5's initial CI passed browser E2E, native Linux and macOS packages, and the installed Windows app. Its Windows portable check failed while waiting for history; diagnostics and a further CI pass are pending. No release was created.
 
 SteamHistory’s current profile response contains account metadata; history is fetched from separate paginated endpoints. Successful raw responses and paths are retained in a reimportable capture, including unknown fields. Microck’s source was last checked on 2026-10-05; retrieval time remains separate. The provider summary reports 8 comments but returns 5. Vapora marks comments partial and preserves the successful sections. Friend-location fields were not supplied by this provider and are not invented.
 
@@ -56,3 +56,9 @@ Repeat local checks with `npm run build:history`, `npm run verify` and `VAPORA_B
 On 2026-10-07, the live profile summary returned `totalHistoricCounts.comments = 8`. The public comments endpoint returned five records with `total = 5`. Explicit `commentFilter=all` returned the same five IDs. The deleted filter returned zero rows with total zero; an offset-5 All request returned no rows with total five. All four requests returned HTTP 200. The loaded SteamHistory page changed its comments heading from the initial summary count of eight to five after receiving its records. Vapora did not discard three returned comments.
 
 SteamHistory's [supporter page](https://steamhistory.net/supporter) lists viewing deleted comments as a supporter feature. Its current client code groups deleted comments behind a supporter prompt. This establishes an access restriction, but does not prove the exact three missing records are deleted rather than a stale summary count. That distinction needs authenticated provider evidence. Vapora now explicitly requests the All filter, retains the summary and accessible totals separately, and explains access restrictions and potentially outdated summary counts. The available comments remain usable and exportable.
+
+## Review follow-up
+
+Numeric and string comment IDs now reconcile through the same provider/analyzer helper. Membership selects the newest dated observation and exposes same-date disagreements. Identical imports reuse one source, while distinct captures remain retained. A damaged history file returns an explicit history error alongside a usable scan without replacing the file. The native worker accepts the complete Steam ID range; six boundary cases passed against its actual validation without opening a browser.
+
+The follow-up typecheck and Oxlint passed. Of 46 domain/integration tests, 45 passed and the existing 500-account stress test hit its unchanged 60-second timeout on the resource-constrained host. The previous 45-test run passed in full. CI must verify the final head; these local timeout results are not treated as passing checks.

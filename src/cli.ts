@@ -113,7 +113,7 @@ export async function main(args = process.argv.slice(2)) {
       const scan = parsed.values.run ? yield* store.read(parsed.values.run) : undefined;
       if (scan && scan.seed !== id) return yield* Effect.fail(new InputError({ message: "History belongs to another account." }));
       const saved = yield* store.accountHistory(id);
-      const merged = { sources: [...(saved?.sources ?? []), ...bundle.sources] };
+      const merged = History.merge(saved ?? { sources: [] }, bundle);
       const report = History.view(merged, scan);
       yield* store.saveHistory(History.view(merged));
       if (scan) yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
