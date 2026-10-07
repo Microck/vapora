@@ -28,6 +28,8 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  // External helpers can inherit these pipes and outlive Electron. Release them when the app exits.
+  child.once("exit", () => { child.stdout.destroy(); child.stderr.destroy(); });
   shutdown.push(async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await exited;

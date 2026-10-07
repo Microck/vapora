@@ -21,7 +21,7 @@
     "desktop": "npm run build && electron scripts/desktop.mjs",
     "test:e2e": "npm run build && node --test dist/test/browser-e2e.js",
     "package": "npm run build && electron-builder --publish never",
-    "test:desktop": "node --test dist/test/desktop-e2e.js"
+    "test:desktop": "node --test --test-reporter=tap dist/test/desktop-e2e.js"
   },
   "dependencies": {
     "effect": "4.0.1",
