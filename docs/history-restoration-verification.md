@@ -16,7 +16,7 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 | --- | --- |
 | TypeScript, Oxlint and UI build | Passed |
 | Domain/integration suite | All 43 tests passed, including the 500-account fixture and current paginated history coverage |
-| History browser E2E | Both workflows passed with real Chromium, local HTTP providers and filesystem storage |
+| History browser E2E | Focused history workflow passed after the comment-count fix; the broad workflow passed before the final warning-placement edit, then timed out on the memory-constrained host. The PR CI runs both again. |
 | Linux Electron | Passed in the source app under Xvfb; five-account scan, history attachment, membership filter and original metadata inspection; no page errors; clean exit 0 |
 | Linux packaged desktop | Passed twice with the frozen helper and bundled browser; paginated fixture history, scan, seven exports, native controls and clean shutdown |
 | Native window dimensions | 1078×599, maximized to 1280×778, restored to 1078×599 |
@@ -25,11 +25,13 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 
 The history browser workflow checks no fetching while typing, account fetch/cache reuse, every viewer tab, membership filters without index drift, date filters, exact original-file downloads, retained cache after blocked refresh, Steam scanning while history is unavailable, automatic attachment, outside-cap inspection and multi-page history navigation. Its providers are fixtures, not proof that SteamHistory accepts this host.
 
-Both browser workflows now pass, including the earlier broad regression workflow. The native Linux packaged executable passed under Xvfb with its history browser/helper outside ASAR, current paginated fixture loading, five-account scan, seven exports, maximize/restore and clean exit. Closing the server during helper startup also stopped its session and removed the temporary browser profile.
+Both browser workflows passed before the final comment-count investigation. The focused history workflow also passed afterward, including the partial-warning placement. The final broad rerun hit its existing 120-second timeout with about 150 MB free memory and full swap; its assertions and timeout remain unchanged. The native Linux packaged executable passed under Xvfb with its history browser/helper outside ASAR, current paginated fixture loading, five-account scan, seven exports, maximize/restore and clean exit. Closing the server during helper startup also stopped its session and removed the temporary browser profile.
 
 ## Inspected screenshots
 
 These captures show fresh fixture accounts, not historical personal datasets. Each image was opened and visually checked. The original olive palette, Motiva Sans, tiny white eye and placeholder assets remain in use.
+
+![Comment-count coverage warning](screenshots/history-partial-comments.png)
 
 ![Browser comment ranking](screenshots/history-restored-browser.png)
 
