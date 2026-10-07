@@ -136,11 +136,19 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   assert.ok(!checkpoint.includes(Buffer.from(key)));
   assert.ok(!state.includes(key)); assert.ok(fixture.requests.length > 0);
   if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT });
-  await page.click("#window-maximize");
+  // Maximize changes the control's position. Locators wait for its bounds to settle before clicking.
+  await page.locator("#window-maximize").click();
   await page.waitForFunction(async () => await window.vaporaDesktop?.isMaximized() && document.querySelector("#window-maximize")?.getAttribute("aria-label") === "Restore");
   if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT.replace(/\.png$/, "-maximized.png") });
-  await page.click("#window-maximize");
-  await page.waitForFunction(async () => !(await window.vaporaDesktop?.isMaximized()) && document.querySelector("#window-maximize")?.getAttribute("aria-label") === "Maximize");
+  await page.locator("#window-maximize").click();
+  await page.waitForFunction(async () => !(await window.vaporaDesktop?.isMaximized()) && document.querySelector("#window-maximize")?.getAttribute("aria-label") === "Maximize").catch(async (error: Error) => {
+    const windowState = await page.evaluate(async () => ({
+      maximized: await window.vaporaDesktop?.isMaximized(),
+      label: document.querySelector("#window-maximize")?.getAttribute("aria-label"),
+      width: innerWidth, height: innerHeight,
+    }));
+    throw new Error(`Native restore failed: ${JSON.stringify(windowState)}`, { cause: error });
+  });
   assert.deepEqual(errors, []);
   const keyStorage = saved.keyStorage; assert.ok(keyStorage);
   if (process.env.VAPORA_TEST_KEY_BACKEND === "gnome-libsecret") assert.equal(keyStorage.available, true, "The isolated Secret Service must provide OS-backed encryption");
