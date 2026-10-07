@@ -155,7 +155,8 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   const keyStorage = saved.keyStorage; assert.ok(keyStorage);
   if (process.env.VAPORA_TEST_KEY_BACKEND === "gnome-libsecret") assert.equal(keyStorage.available, true, "The isolated Secret Service must provide OS-backed encryption");
   if (process.env.VAPORA_TEST_KEY_BACKEND === "basic") assert.equal(keyStorage.available, false, "Linux basic_text storage must never enable remembering");
-  await page.click("#open-key");
+  await page.locator("#open-key").click();
+  await page.waitForSelector("#key-dialog[open]");
   assert.equal(await page.$eval("#remember-key", (input) => input instanceof HTMLInputElement && input.disabled), !keyStorage.available);
   if (process.env.VAPORA_DESKTOP_SCREENSHOT) await page.screenshot({ path: process.env.VAPORA_DESKTOP_SCREENSHOT.replace(/\.png$/, "-key.png") });
   if (keyStorage.available) {
@@ -179,7 +180,8 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     const reopenedTarget = await reopened.browser.waitForTarget((candidate) => candidate.type() === "page" && candidate.url().startsWith("http://127.0.0.1:"));
     const reopenedPage = await reopenedTarget.page(); assert.ok(reopenedPage);
     await reopenedPage.waitForFunction(() => document.querySelector<HTMLElement>("#key-indicator")?.dataset.key === "ready");
-    await reopenedPage.bringToFront(); await reopenedPage.click("#open-key");
+    await reopenedPage.bringToFront(); await reopenedPage.locator("#open-key").click();
+    await reopenedPage.waitForSelector("#key-dialog[open]");
     assert.equal(await reopenedPage.$eval("#remember-key", (input) => input instanceof HTMLInputElement && input.checked), true);
     await reopenedPage.click("#forget-key"); await reopenedPage.waitForSelector("#forget-key[hidden]");
     await assert.rejects(readFile(join(dataRoot, "steam-key.enc")));

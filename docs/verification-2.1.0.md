@@ -15,6 +15,7 @@ Checked on 2026-10-07 against the shared browser and Electron UI. This records t
 | Packaged Linux ARM64 | Actual bundled executable, native window manager | Fixture scan/downloads, isolated renderer, maximize/restore and clean shutdown passed |
 | Remembered key | Isolated real GNOME Secret Service and private D-Bus session | OS-encrypted bytes exclude plaintext key; reopening without an environment key works; forgetting removes the file and keeps the current session working; following restart has no key |
 | Insecure storage | Actual Electron `basic_text` backend | Remember option disabled with a visible explanation; no key file created |
+| Live Steam | Microck profile, depth 1, five-account cap | Five profiles with names, avatars and ban responses; 48 direct friends reported, cap marked as partial, populated exports and no API key in saved files |
 
 Public screenshots use fixture names and avatars. Captures were opened and inspected after the final changes. Tests use a fixture key and temporary storage, including a separate OS keyring. Original user data, the local `.env`, and the daily-driver keyring were not touched.
 
@@ -36,7 +37,7 @@ CI and reviewer results must be green on the exact release commit before publish
 
 ## Limits
 
-No new live Steam crawl was performed in this follow-up. Large live networks remain untested. Remembered credentials are bound to their OS account and machine. Browser keys stay session-only.
+The live check covers a five-account scan. Large live networks remain untested. Remembered credentials are bound to their OS account and machine. Browser keys stay session-only.
 
 Export files are atomically replaced individually, rather than as a multi-file transaction. A visible storage failure can leave a mixture of earlier and rebuilt exports; resolve the filesystem error and rebuild again. Incomplete runs must finish or resume before rebuilding exports.
 
