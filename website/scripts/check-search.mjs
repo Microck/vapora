@@ -10,7 +10,7 @@ const server = createServer((request, response) => {
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 try {
   const address = server.address();
-  assert(address && typeof address === 'object');
+  assert(address && 'port' in address);
   const client = staticClient({ from: `http://127.0.0.1:${address.port}/api/search` });
   for (const [query, path] of [['mutual', '/docs/reference/scoring'], ['port', '/docs/reference/cli'], ['SteamHistory', '/docs/guides/history']]) {
     const results = await client.search(query);
