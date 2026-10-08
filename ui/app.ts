@@ -698,14 +698,15 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
 }); });
 window.addEventListener("focus", () => void refresh());
 buttons("open-history-import").addEventListener("click", () => dialog("history-import-dialog").showModal());
-buttons("history-retry").addEventListener("click", () => { if (historyAccount) void loadAccountHistory(historyAccount, true); });
 buttons("target-history").addEventListener("click", () => {
   if (accountHistory?.report) renderHistory(accountHistory.report, null);
   else if (!historyAccount) { notice("Verify or select an account to load its history."); return; }
   showScreen("history");
 });
 buttons("target-history-retry").addEventListener("click", () => { const id = preview?.id ?? historyAccount; if (id) void loadAccountHistory(id, true); });
-buttons("history-refresh").addEventListener("click", () => { if (historyAccount) void loadAccountHistory(historyAccount, true, selected?.scan.seed === historyAccount ? selected.scan.id : undefined); });
+for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => {
+  if (historyAccount) void loadAccountHistory(historyAccount, true, selected?.scan.seed === historyAccount ? selected.scan.id : undefined);
+});
 HistoryUI.initialize();
 applySettings(defaults);
 Tooltips.install(get("app-tooltip"));

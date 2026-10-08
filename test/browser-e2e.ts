@@ -325,5 +325,23 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await fill(page, "#history-search", "History name 200");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
   assert.equal(await page.$eval("#history-next", (button) => button instanceof HTMLButtonElement && button.disabled), true);
+  // A recovered refresh must update the open run, its attachment and its download without reopening it.
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  history.rows.set("comments", [...history.document.historic.comments, { ID: "recovered", Commenter: second, Message: "Recovered attached comment", Timestamp: 1791360000 }]);
+  history.counts.set("comments", 5); history.setStatus(200);
+  await fill(page, "#history-search", ""); await page.click('[data-history="comments"]');
+  await page.click("#history-retry");
+  await page.waitForFunction(() => document.querySelector("#history-rows")?.textContent?.includes("Recovered attached comment"));
+  const attachmentUrl = await page.$eval("#history-download", (link) => {
+    if (link instanceof HTMLElement && link.hidden) throw new Error("Run download disappeared after retry");
+    return link instanceof HTMLAnchorElement ? link.href : "";
+  });
+  const download = await fetch(attachmentUrl, { headers: { "user-agent": userAgent } });
+  assert.equal(download.status, 200); assert.match(await download.text(), /Recovered attached comment/);
+  assert.match(await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"), /Recovered attached comment/);
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered attached comment/);
   assert.deepEqual(errors, []);
 });

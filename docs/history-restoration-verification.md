@@ -16,7 +16,7 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 | --- | --- |
 | TypeScript, Oxlint and UI build | Passed |
 | Domain/integration suite | All 46 tests passed on the final local rerun, including the 500-account fixture, current pagination, comment identity and dated membership |
-| History browser E2E | Both workflows passed on the final local rerun (23.9 seconds total), including real-name search/details and the partial-warning placement |
+| History browser E2E | Both workflows passed on the final local rerun (27.9 seconds total), including real-name search/details, partial-warning placement and successful Retry updating the selected run, its saved attachment and its download |
 | Linux Electron | Passed in the source app under Xvfb; five-account scan, history attachment, membership filter and original metadata inspection; no page errors; clean exit 0 |
 | Linux packaged desktop | Passed twice with the frozen helper and bundled browser; paginated fixture history, scan, seven exports, native controls and clean shutdown |
 | Native window dimensions | 1078×599, maximized to 1280×778, restored to 1078×599 |
