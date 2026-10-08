@@ -245,7 +245,8 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal(current.runs.find((run) => run.id === current.job.id)?.avatar, `${fixture.url}/avatars/${seed}.svg`);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=gephi%2Fnodes.csv`)).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=..%2F.env`)).status, 404);
-    assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { friends: [] } }) }))).status, 200);
+    assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000,
+      historic: { friends: [{ Friend: fourth, Name: "Known outside friend", FriendDate: 500 }, { Friend: second, Name: "Older Bob", FriendDate: 500 }] } }) }))).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
     const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(attached.history?.profile.steamID64, seed);
@@ -273,6 +274,9 @@ test("local server validates host and origin, protects keys, and runs a complete
     const outside = view.report.friends.find((friend) => !view.scan.players.some((player) => player.id === friend.id));
     assert.ok(outside); assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /Outside admitted graph/);
     assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /VAC bans: Unknown/);
+    assert.match(strFromU8(notes[`Profiles/${fourth}.md`]!), /name: "Known outside friend"/);
+    assert.match(strFromU8(notes["Vapora.md"]!), new RegExp(`\\[\\[Profiles/${fourth}\\|Known outside friend\\]\\]`));
+    assert.ok(strFromU8(notes[`Profiles/${second}.md`]!).includes(`name: ${JSON.stringify(view.scan.players.find((player) => player.id === second)?.name)}`));
     for (const bytes of Object.values(notes)) {
       const contents = strFromU8(bytes); assert.ok(!contents.includes(key));
       for (const link of contents.replace(/^---\n[\s\S]*?\n---\n/, "").matchAll(/\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/g)) assert.ok(notes[`${link[1]}.md`], `Broken vault link: ${link[1]}`);

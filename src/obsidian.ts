@@ -15,9 +15,10 @@ const value = (number: number | null | undefined) => number === null || number =
 function collect({ scan, report, history }: RunView) {
   const names = new Map(scan.players.map((player) => [player.id, player.name]));
   if (!names.has(scan.seed)) names.set(scan.seed, scan.seed);
-  for (const friend of report.friends) if (!names.has(friend.id)) names.set(friend.id, friend.name);
   for (const friend of history?.friends ?? []) if (!names.has(friend.id)) names.set(friend.id, friend.name);
   for (const author of history?.commenters ?? []) if (author.id && !names.has(author.id)) names.set(author.id, author.name);
+  // Outside-cap report names are ID placeholders; retained history can supply a known alias.
+  for (const friend of report.friends) if (!names.has(friend.id)) names.set(friend.id, friend.name);
   const link = (id: SteamId) => {
     const name = names.get(id) ?? id;
     // Wiki-link delimiters cannot be escaped inside an alias with Markdown backslashes.
