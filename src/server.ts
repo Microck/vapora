@@ -122,13 +122,17 @@ export async function start(options: Options) {
     historyRequests.set(id, operation);
     try { return await operation; } finally { if (historyRequests.get(id) === operation) historyRequests.delete(id); }
   };
-  // Call under historyGate so scan settings and attachment writes stay in one operation.
-  const projectAttachedHistory = (scan: Scan) => Effect.gen(function* () {
+  // Call under historyGate so attachment and cache reads cannot split a persistence operation.
+  const attachedSources = (scan: Scan) => Effect.gen(function* () {
     const store = yield* Storage.Service;
     const attachment = yield* store.history(scan.id);
     if (attachment && attachment.profile.steamID64 !== scan.seed) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
     const cached = yield* store.accountHistory(scan.seed);
-    const source = attachment && cached ? History.merge(attachment, cached) : cached ?? attachment;
+    return attachment && cached ? History.merge(attachment, cached) : cached ?? attachment;
+  });
+  const projectAttachedHistory = (scan: Scan) => Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const source = yield* attachedSources(scan);
     if (!source) return null;
     const report = yield* Effect.try({ try: () => History.view(source, scan),
       catch: () => new InputError({ message: "Saved history could not be analyzed. Inspect its original captures before replacing it." }) });
@@ -260,9 +264,10 @@ export async function start(options: Options) {
     try {
       const view = await runtime.runPromise(historyGate.withPermit(Effect.gen(function* () {
         const store = yield* Storage.Service;
-        const attachment = yield* store.history(payload.id);
-        // Validate the attachment against this run before changing its settings.
-        const source = attachment ? History.view(attachment, yield* store.read(payload.id)) : null;
+        const scan = yield* store.read(payload.id);
+        const bundle = yield* attachedSources(scan);
+        // Validate both sources before changing ranking settings or exports.
+        const source = bundle ? History.view(bundle, scan) : null;
         const analyzed = yield* (payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
         const history = source ? History.view(source, analyzed.scan) : null;
         if (history) yield* store.writeArtifact(payload.id, "history.json", JSON.stringify(history, null, 2));

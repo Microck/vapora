@@ -270,12 +270,20 @@ test("saved rankings change without Steam authority or collection and attached h
     const imported = await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }));
     assert.equal(imported.status, 200);
     const beforeRanking = Schema.decodeUnknownSync(History.HistoryReport)(await imported.json());
+    const cacheOnly = { ...history, historic: { ...history.historic, comments: [...history.historic.comments,
+      { ID: "cache-only-1", Commenter: third, Timestamp: 600, Message: "Cache-only capture" },
+      { ID: "cache-only-2", Commenter: third, Timestamp: 700, Message: "Second cache-only comment" },
+    ] } };
+    assert.equal((await post("/api/history", JSON.stringify({ contents: JSON.stringify(cacheOnly) }))).status, 200);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), beforeRanking);
     const result = await post("/api/analyze", JSON.stringify({ id: observations.id, ranking })); assert.equal(result.status, 200);
     const view = Schema.decodeUnknownSync(Contracts.RunView)(await result.json());
     assert.equal(view.report.friends[0]?.id, third);
     assert.deepEqual(view.scan.players, observations.players);
     assert.deepEqual(view.scan.settings, { ...observations.settings, ...ranking });
     assert.equal(view.history?.friends[0]?.durationSeconds, 900);
+    assert.equal(view.history?.sources.length, 2);
+    assert.ok(view.history?.comments.some((comment) => comment.message === "Cache-only capture"));
     assert.notEqual(view.history?.commenters[0]?.index, beforeRanking.commenters[0]?.index);
     assert.notEqual(view.history?.locations[0]?.index, beforeRanking.locations[0]?.index);
     assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), view.history);
