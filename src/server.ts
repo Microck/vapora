@@ -274,7 +274,11 @@ export async function start(options: Options) {
       const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
       if (scan && scan.seed !== payload.id) throw new InputError({ message: "Select the matching account before attaching its history." });
       const state = await accountHistory(payload.id, payload.refresh);
-      const report = scan && state.report ? await runtime.runPromise(attachedHistory(scan)) : state.report;
+      const report = scan && state.report ? await runtime.runPromise(Effect.gen(function* () {
+        // Ranking can change while the provider is pending; project the current saved run.
+        const current = yield* (yield* Storage.Service).read(scan.id);
+        return yield* attachedHistory(current);
+      })) : state.report;
       json(response, 200, { ...state, report }); return;
     }
     if (path === "/api/history") {

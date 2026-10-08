@@ -15,7 +15,7 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 | Check | Result |
 | --- | --- |
 | TypeScript, Oxlint and UI build | Passed |
-| Domain/integration suite | All 53 tests passed on the final local rerun, including the 500-account fixture, current pagination, safe comment identity, live-only membership dates and mismatched history preservation, merging run-only captures with a recreated cache, pending-fetch import ownership, capture-date ties, CLI preservation of run-only captures, storage account validation and malformed observation dates |
+| Domain/integration suite | All 54 tests passed on the final local rerun, including the 500-account fixture, current pagination, safe comment identity, live-only membership dates and mismatched history preservation, merging run-only captures with a recreated cache, pending-fetch import ownership, capture-date ties, CLI preservation of run-only captures, storage account validation, malformed observation dates and ranking changes during history collection |
 | History browser E2E | Both workflows passed on the final local rerun (28.4 seconds total), including real-name search/details, navigation after imports, partial-warning placement and both Retry buttons updating the selected run, its saved attachment and its download |
 | Linux Electron | Passed in the source app under Xvfb; five-account scan, history attachment, membership filter and original metadata inspection; no page errors; clean exit 0 |
 | Linux packaged desktop | Passed twice with the frozen helper and bundled browser; paginated fixture history, scan, seven exports, native controls and clean shutdown |

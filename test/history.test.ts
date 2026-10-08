@@ -3,12 +3,13 @@ import { test } from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Schema } from "effect";
+import { Effect, ManagedRuntime, Schema } from "effect";
 import { defaults } from "../src/model.js";
 import * as History from "../src/history.js";
 import * as Scoring from "../src/scoring.js";
 import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
+import * as Storage from "../src/storage.js";
 import { seed, second, third, fourth, player, scan, historyFixture } from "./fixtures.js";
 
 const profile = (lastChecked: number, friends: readonly History.Record[] = [], comments: readonly History.Record[] = []) => ({
@@ -213,6 +214,29 @@ test("an import supersedes a pending fetch failure without poisoning cached stat
   } finally { fixture.release(path); await app.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("history finishing after a ranking change uses current settings in its response and attachment", { timeout: 10000 }, async () => {
+  const fixture = await historyFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-history-ranking-"));
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [second, third]), player(second, [seed]), player(third, [seed])]);
+  await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).create(observations); }));
+  const app = await Server.start({ root, key: "", port: 0, historySession: fixture.session });
+  const post = (path: string, body: History.Record) => fetch(`${app.origin}${path}`, { method: "POST", headers: { origin: app.origin, "content-type": "application/json", "user-agent": "OpenAI File Downloader, XaiImageApiFetch/1.0" }, body: JSON.stringify(body) });
+  const path = `/id/${seed}/__data.json`;
+  try {
+    const arrived = fixture.hold(path);
+    const pending = post("/api/history/account", { id: seed, refresh: true, runId: observations.id }); await arrived;
+    const ranking = { topN: 2, countBaseline: 1, locationBaseline: 1, locationAggregation: "sum", hubPercentile: .9, weights: defaults.weights };
+    assert.equal((await post("/api/analyze", { id: observations.id, ranking })).status, 200);
+    fixture.release(path);
+    const completed = Schema.decodeUnknownSync(History.HistoryState)(await (await pending).json());
+    assert.ok(completed.report);
+    const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
+    assert.equal(saved.settings.countBaseline, 1); assert.equal(saved.settings.locationAggregation, "sum");
+    const expected = History.view(completed.report, saved);
+    assert.deepEqual(completed.report, expected);
+    assert.notDeepEqual(completed.report.commenters, History.view(completed.report, observations).commenters);
+    assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), expected);
+  } finally { fixture.release(path); await app.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
 test("current history paginates all records and retains deleted comment versions and page metadata", async () => {
   const Provider = await import("../src/history-provider.js"); const fixture = await historyFixture();
   const friends = Array.from({ length: 205 }, (_, index) => ({ Friend: String(BigInt(seed) + 1000n + BigInt(index)), FriendDate: 10, Name: `Friend ${index}`, unknown: { keep: true } }));
