@@ -67,6 +67,21 @@ test("recognized real-name history rejects malformed records rather than hiding 
   assert.equal(report.profile.historic.realName?.[0]?.Name, "Alice Example");
   assert.deepEqual(report.profile.fields.historic, { realName: [{ Name: "Alice Example" }], providerMetadata: "preserved" });
 });
+test("observation dates distinguish unknown values from malformed supplied dates and preserve zero", async () => {
+  for (const key of ["lastChecked", "lastUpdated"]) {
+    for (const invalid of ["100", -1, 1.5, 4102444801, false, {}]) {
+      await assert.rejects(parse({ ...profile(100), lastUpdated: 200, [key]: invalid }), new RegExp(`History ${key} must be integer Unix seconds`));
+    }
+  }
+  const unknown = { steamID64: seed, historic: {} };
+  for (const supplied of [unknown, { ...unknown, lastChecked: null, lastUpdated: null }]) {
+    assert.equal(History.view(await parse(supplied)).profile.lastChecked, null);
+  }
+  assert.equal(History.view(await parse({ ...unknown, lastUpdated: 200 })).profile.lastChecked, 200);
+  assert.equal(History.view(await parse({ ...unknown, lastChecked: null, lastUpdated: 200 })).profile.lastChecked, 200);
+  assert.equal(History.view(await parse({ ...unknown, lastChecked: 0, lastUpdated: 200 })).profile.lastChecked, 0);
+  assert.equal(History.view(await parse(profile(4102444800))).profile.lastChecked, 4102444800);
+});
 test("byte-identical reimports reuse one source while distinct original captures remain retained", async () => {
   const first = await parse(profile(100));
   const repeated = await parse(profile(100));

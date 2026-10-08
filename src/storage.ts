@@ -108,9 +108,11 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
         throw error;
       }));
       if (contents === null) return null;
-      return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryReport))(contents).pipe(
+      const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryReport))(contents).pipe(
         Effect.mapError(() => new StorageError({ message: "Saved account history is invalid. Import a valid capture explicitly." })),
       );
+      if (report.profile.steamID64 !== id) return yield* Effect.fail(new StorageError({ message: "Cached history belongs to another Steam account. Inspect its original captures before replacing it." }));
+      return report;
     }),
     create: Effect.fn("Storage.create")(function* (scan: Scan) {
       yield* io("Could not create a unique output directory.", () => mkdir(join(output, scan.id), { mode: 0o700 }));

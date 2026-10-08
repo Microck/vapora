@@ -112,8 +112,10 @@ export async function main(args = process.argv.slice(2)) {
       if (!id) return yield* Effect.fail(new InputError({ message: "History has no account." }));
       const scan = parsed.values.run ? yield* store.read(parsed.values.run) : undefined;
       if (scan && scan.seed !== id) return yield* Effect.fail(new InputError({ message: "History belongs to another account." }));
+      const attachment = scan ? yield* store.history(scan.id) : null;
+      if (attachment && attachment.profile.steamID64 !== id) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
       const saved = yield* store.accountHistory(id);
-      const merged = History.merge(saved ?? { sources: [] }, bundle);
+      const merged = History.merge(attachment ?? { sources: [] }, saved ?? { sources: [] }, bundle);
       const report = History.view(merged, scan);
       yield* store.saveHistory(History.view(merged));
       if (scan) yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));

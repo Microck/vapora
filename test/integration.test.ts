@@ -361,6 +361,7 @@ test("recreated account cache preserves run-only original captures and comment v
     assert.deepEqual(Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json()).history, merged.history);
     const wrongCache = JSON.stringify(History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, lastChecked: 3000, historic: {} })))));
     await writeFile(join(root, "history", `${seed}.json`), wrongCache);
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(seed); })), /Cached history belongs to another Steam account/);
     const mismatched = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
     assert.equal(mismatched.history, null); assert.match(mismatched.historyError ?? "", /Cached history belongs to another Steam account/);
     assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
@@ -489,6 +490,41 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
     await assert.rejects(execute(process.execPath, [cli, "profile-save", "bad", "--root", root, "--depth", "20"]), /Invalid settings/);
     await assert.rejects(execute(process.execPath, [cli, "unknown", "--root", root]), /Unknown command/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+test("CLI history imports preserve run-only captures and reject invalid saved history before either write", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-cli-history-")); const execute = promisify(execFile);
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [])]);
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url)); const inputPath = join(root, "import.json");
+  const attachmentPath = join(root, "outputs", observations.id, "history.json"); const cachePath = join(root, "history", `${seed}.json`);
+  const oldContents = JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { comments: [{ ID: "shared", Message: "before" }] } });
+  const recentContents = JSON.stringify({ steamID64: seed, lastChecked: 2000, historic: { comments: [{ ID: "shared", Message: "after" }] } });
+  const old = History.view(await Effect.runPromise(History.parse(oldContents)));
+  try {
+    await runtime.runPromise(Effect.gen(function* () {
+      const store = yield* Storage.Service; yield* store.create(observations);
+      yield* store.writeArtifact(observations.id, "history.json", JSON.stringify(old));
+    }));
+    await writeFile(inputPath, recentContents);
+    const importHistory = () => execute(process.execPath, [cli, "history", inputPath, "--run", observations.id, "--root", root]);
+    await importHistory();
+    const merged = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(attachmentPath, "utf8"));
+    assert.deepEqual(merged.sources.map((source) => source.contents), [oldContents, recentContents]);
+    assert.equal(merged.comments[0]?.message, "after"); assert.equal(merged.comments[0]?.versions.length, 2);
+    assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(cachePath, "utf8")).sources, merged.sources);
+    await importHistory();
+    assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(attachmentPath, "utf8")), merged);
+    const validAttachment = await readFile(attachmentPath, "utf8"); const validCache = await readFile(cachePath, "utf8");
+    const wrongAccount = JSON.stringify(History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, historic: {} })))));
+    await writeFile(cachePath, wrongAccount);
+    await assert.rejects(importHistory(), /Cached history belongs to another Steam account/);
+    assert.equal(await readFile(cachePath, "utf8"), wrongAccount); assert.equal(await readFile(attachmentPath, "utf8"), validAttachment);
+    await writeFile(cachePath, validCache);
+    for (const { invalidAttachment, error } of [{ invalidAttachment: wrongAccount, error: /Attached history belongs to another Steam account/ }, { invalidAttachment: "invalid JSON", error: /invalid/ }]) {
+      await writeFile(attachmentPath, invalidAttachment);
+      await assert.rejects(importHistory(), error);
+      assert.equal(await readFile(attachmentPath, "utf8"), invalidAttachment); assert.equal(await readFile(cachePath, "utf8"), validCache);
+    }
+  } finally { await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 test("assertion lint accepts justified exports and rejects undocumented assertions", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-lint-")); const execute = promisify(execFile);

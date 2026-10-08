@@ -181,6 +181,10 @@ function normalize(record: Record): Profile {
     // Unknown metadata remains in fields and the original bytes, outside the interpreted record lists.
   }
   for (const comment of history.comments ?? []) commentId(comment);
+  for (const key of ["lastChecked", "lastUpdated"]) {
+    const value = record[key];
+    if (value !== undefined && value !== null && !Schema.is(timestamp)(value)) throw new InputError({ message: `History ${key} must be integer Unix seconds from 0 through 4102444800, or null when unknown. The original file was not changed.` });
+  }
   return { steamID64: id, name: text(record.name) ?? id, lastChecked: time(record.lastChecked) ?? time(record.lastUpdated), fields: record, historic: history };
 }
 /** Preserve the exact input and every snapshot; normalization is a projection, never a replacement of source bytes. */

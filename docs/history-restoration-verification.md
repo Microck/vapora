@@ -15,8 +15,8 @@ The formula contract restores the authored 2:2:1 count index with explicit refer
 | Check | Result |
 | --- | --- |
 | TypeScript, Oxlint and UI build | Passed |
-| Domain/integration suite | All 51 tests passed on the final local rerun, including the 500-account fixture, current pagination, safe comment identity, live-only membership dates and mismatched history preservation, merging run-only captures with a recreated cache, pending-fetch import ownership and capture-date ties |
-| History browser E2E | Both workflows passed on the final local rerun (21.5 seconds total), including real-name search/details, navigation after imports, partial-warning placement and both Retry buttons updating the selected run, its saved attachment and its download |
+| Domain/integration suite | All 53 tests passed on the final local rerun, including the 500-account fixture, current pagination, safe comment identity, live-only membership dates and mismatched history preservation, merging run-only captures with a recreated cache, pending-fetch import ownership, capture-date ties, CLI preservation of run-only captures, storage account validation and malformed observation dates |
+| History browser E2E | Both workflows passed on the final local rerun (28.4 seconds total), including real-name search/details, navigation after imports, partial-warning placement and both Retry buttons updating the selected run, its saved attachment and its download |
 | Linux Electron | Passed in the source app under Xvfb; five-account scan, history attachment, membership filter and original metadata inspection; no page errors; clean exit 0 |
 | Linux packaged desktop | Passed twice with the frozen helper and bundled browser; paginated fixture history, scan, seven exports, native controls and clean shutdown |
 | Native window dimensions | 1078×599, maximized to 1280×778, restored to 1078×599 |
@@ -55,7 +55,7 @@ Repeat local checks with `npm run build:history`, `npm run verify` and `VAPORA_B
 
 ## Comment-count investigation
 
-On 2026-10-07, the live profile summary returned `totalHistoricCounts.comments = 8`. The public comments endpoint returned five records with `total = 5`. Explicit `commentFilter=all` returned the same five IDs. The deleted filter returned zero rows with total zero; an offset-5 All request returned no rows with total five. All four requests returned HTTP 200. The loaded SteamHistory page changed its comments heading from the initial summary count of eight to five after receiving its records. Vapora did not discard three returned comments.
+On 2026-10-07, the live profile summary returned `totalHistoricCounts.comments = 8`. The public comments endpoint returned five records with `total = 5`. Explicit `commentFilter=all` returned the same five IDs. The deleted filter returned zero rows with total zero; an offset-5 All request returned no rows with total five. All four requests returned HTTP 200. The loaded SteamHistory page changed its comments heading from the initial summary count of eight to five after receiving its records. Vapora did not discard three returned comments. A fresh automatic fetch on 2026-10-08, after strict observation-date validation, again returned five comments with accessible total five and summary total eight.
 
 SteamHistory's [supporter page](https://steamhistory.net/supporter) lists viewing deleted comments as a supporter feature. Its current client code groups deleted comments behind a supporter prompt. This establishes an access restriction, but does not prove the exact three missing records are deleted rather than a stale summary count. That distinction needs authenticated provider evidence. Vapora now explicitly requests the All filter, retains the summary and accessible totals separately, and explains access restrictions and potentially outdated summary counts. The available comments remain usable and exportable.
 
