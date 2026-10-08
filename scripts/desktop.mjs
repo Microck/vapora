@@ -11,7 +11,7 @@ import { start } from "../dist/src/server.js";
 
 if (existsSync(".env")) loadEnvFile(".env");
 app.setName("Vapora");
-// The portable launcher extracts binaries into TEMP; data belongs beside the original EXE.
+// Portable binaries are temporary; data belongs beside the original EXE.
 const desktopRoot = resolve(process.env.VAPORA_ROOT ?? (process.env.PORTABLE_EXECUTABLE_DIR
   ? join(process.env.PORTABLE_EXECUTABLE_DIR, "Vapora-data")
   : join(app.getPath("appData"), "Vapora")));

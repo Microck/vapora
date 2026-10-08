@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -26,7 +26,11 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
   await rm(join(dataRoot, "DevToolsActivePort"), { force: true });
   const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: configuredKey, VAPORA_STEAM_FIXTURE: fixtureUrl, VAPORA_HISTORY_FIXTURE: historyUrl };
   delete env.PORTABLE_EXECUTABLE_DIR;
-  if (portable) delete env.VAPORA_ROOT; else env.VAPORA_ROOT = dataRoot;
+  if (portable) {
+    delete env.VAPORA_ROOT;
+    // CI mounts a real small volume: the old launcher cannot stage its app there.
+    if (process.env.VAPORA_PORTABLE_TEST_TEMP) env.TEMP = env.TMP = process.env.VAPORA_PORTABLE_TEST_TEMP;
+  } else env.VAPORA_ROOT = dataRoot;
   const args = ["--remote-debugging-port=0"];
   // Sandbox restrictions on CI hosts must not change the distributed app's defaults.
   if (process.platform === "linux") args.push("--no-sandbox", "--disable-dev-shm-usage");
@@ -42,7 +46,7 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await exited;
   });
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + (portable ? 60000 : 30000);
   while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
     const activePort = await readFile(join(dataRoot, "DevToolsActivePort"), "utf8").catch((error: Error) => {
       // Chromium can still hold its newly created endpoint file open on Windows.
@@ -231,6 +235,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   } else context.diagnostic("Secure storage unavailable; remembering disabled and no key file created.");
   if (portable) {
     // The launcher cleans up its extracted binaries. Persistent data must survive a move.
+    assert.deepEqual((await readdir(root)).filter((name) => name.endsWith(".vapora-runtime") || name.endsWith(".tmp")), [], "Portable launches must remove their temporary binaries and reservations");
     const moved = join(root, "moved portable folder"); await mkdir(moved);
     const movedExecutable = join(moved, "Vapora portable.exe");
     await rename(launchPath, movedExecutable);
@@ -254,5 +259,6 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
       "Reopening saved portable data must not repeat Steam collection");
     await closeDesktop(reopenedPage);
     const [movedExitCode] = await reopened.exited; assert.equal(movedExitCode, 0);
+    assert.deepEqual((await readdir(moved)).filter((name) => name.endsWith(".vapora-runtime") || name.endsWith(".tmp")), [], "Moved portable launch must also remove temporary files");
   }
 });
