@@ -111,7 +111,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
     if (!process.env.VAPORA_BROWSER_SCREENSHOTS) return;
     if (name === "exports") await page.setViewport({ width: 1078, height: 800 });
     const clip = name === "exports" ? await page.$eval("body", (body) => ({ x: 0, y: 0, width: innerWidth, height: body.getBoundingClientRect().height })) : undefined;
-    await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`), clip });
+    await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`), ...(clip ? { clip } : {}) });
     if (name === "exports") await page.setViewport({ width: 1078, height: 599 });
   };
   const state = async () => Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
