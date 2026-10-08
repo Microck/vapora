@@ -162,8 +162,10 @@ const availabilityLabels = {
 const observation = (value: number | null, statuses: readonly Availability[], digits = 0) => value !== null
   ? value.toFixed(digits) : availabilityLabels[statuses.find((status) => status !== "public") ?? "unavailable"];
 const playerStatus = (player: Player | undefined, field: "groupsStatus" | "gamesStatus") => player?.[field] ?? "unavailable";
+const profileOpeners = new Map<SteamId, HTMLButtonElement>();
+const locationOpeners = new Map<string, HTMLButtonElement>();
 function renderFriends() {
-  const rows = get("friend-rows"); rows.replaceChildren();
+  const rows = get("friend-rows"); rows.replaceChildren(); profileOpeners.clear();
   const query = inputs.search.value.toLowerCase().trim();
   const friends = selected?.report.friends.filter((friend) => friend.name.toLowerCase().includes(query) || friend.id.includes(query)) ?? [];
   const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
@@ -171,7 +173,8 @@ function renderFriends() {
   for (const friend of friends) {
     const row = document.createElement("tr"); const profile = playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
     const inspect = document.createElement("button"); inspect.type = "button"; inspect.className = "inspect-button"; inspect.textContent = "Details";
-    inspect.setAttribute("aria-label", `Details for ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
+    profileOpeners.set(friend.id, inspect);
+    inspect.setAttribute("aria-label", `Details for ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id, () => profileOpeners.get(friend.id) ?? null)); profile.append(inspect);
     const player = players.get(friend.id);
     cell(row, friend.evidenceScore === null ? "Off" : friend.evidenceScore.toFixed(1)); cell(row, friend.incomingMutual);
     cell(row, observation(friend.jaccard, [seed?.friendsStatus ?? "unavailable", friend.friendsStatus], 3));
@@ -182,12 +185,13 @@ function renderFriends() {
   get("friend-empty").hidden = friends.length > 0;
 }
 function renderLocations() {
-  const rows = get("location-rows"); rows.replaceChildren();
+  const rows = get("location-rows"); rows.replaceChildren(); locationOpeners.clear();
   for (const location of selected?.report.locations ?? []) {
     const row = document.createElement("tr");
     for (const value of [location.country, location.state ?? "Not provided", location.city ?? "Not provided", location.contributors, displaySupport(location.support), location.share === null ? "Unknown" : location.share.toFixed(1), location.index === null ? "Unknown" : location.index.toFixed(1)]) cell(row, value);
     const details = document.createElement("button"); details.type = "button"; details.textContent = "Details";
-    details.addEventListener("click", () => Details.record(`Location ${location.country}`, { source: "Steam incoming mutual counts", ...location, coverage: selected?.report.locationCoverage }));
+    const identity = JSON.stringify([location.country, location.state, location.city]); locationOpeners.set(identity, details);
+    details.addEventListener("click", () => Details.record(`Location ${location.country}`, { source: "Steam incoming mutual counts", ...location, coverage: selected?.report.locationCoverage }, () => locationOpeners.get(identity) ?? null));
     cell(row, "").append(details); rows.append(row);
   }
   const coverage = selected?.report.locationCoverage;
@@ -267,13 +271,9 @@ function renderRanking() {
   buttons("save-ranking").disabled = scan.status !== "complete" || currentState?.job.status === "running";
   buttons("rebuild-exports").disabled = buttons("save-ranking").disabled;
 }
-function inspectNode(id: SteamId) {
-  const graphOpener = document.activeElement?.closest("#graph, #network-matches");
+function inspectNode(id: SteamId, resolveOpener: Details.Opener) {
   selectedNode = id; renderGraph();
-  // Other Details windows can redraw the graph; resolve the opener by its account ID.
-  const resolveGraphNode = () => document.querySelector<SVGGElement>(`#graph [data-node-id="${id}"]`);
-  if (graphOpener) resolveGraphNode()?.focus({ preventScroll: true });
-  openProfileDetails(id, graphOpener ? resolveGraphNode : undefined);
+  openProfileDetails(id, resolveOpener);
 }
 function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
   const rank = selected?.report.friends.find((friend) => friend.id === id);
@@ -296,7 +296,7 @@ function profileFacts(player: Player, metric: Contracts.Report["metrics"][number
     ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
   ];
 }
-function openProfileDetails(account: SteamId, resolveOpener?: () => Element | null) {
+function openProfileDetails(account: SteamId, resolveOpener: Details.Opener) {
   const player = selected?.scan.players.find((p) => p.id === account);
   const rank = selected?.report.friends.find((friend) => friend.id === account);
   const metric = selected?.report.metrics.find((m) => m.id === account);
@@ -315,7 +315,7 @@ function openProfileDetails(account: SteamId, resolveOpener?: () => Element | nu
     const term = document.createElement("dt"); term.textContent = label;
     const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
   }
-  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, id, resolveOpener);
+  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, resolveOpener, id);
 }
 function renderGraph() {
   const graph = get("graph");
@@ -323,7 +323,8 @@ function renderGraph() {
   const selection = JSON.stringify([selectedNode, inputs.networkSearch.value, edgeKind.value]);
   if (graphReport === selected.report && graphSelection === selection) return;
   Network.render(graph, get("community-legend"), get("network-matches"), get("graph-count"), selected,
-    { id: selectedNode, zoom, query: inputs.networkSearch.value, edges: edgeKind.value }, inspectNode);
+    { id: selectedNode, zoom, query: inputs.networkSearch.value, edges: edgeKind.value },
+    (id) => inspectNode(id, () => graph.querySelector<SVGGElement>(`[data-node-id="${id}"]`)));
   graphReport = selected.report; graphSelection = selection;
 }
 function toggleRuns(visible: boolean) {

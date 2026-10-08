@@ -36,6 +36,14 @@ async function checkUndatedRecords(page: Page) {
   }
 }
 async function checkIndependentDetails(page: Page) {
+  const originalButton = await page.$("#history-rows button"); assert.ok(originalButton);
+  const captured = await visibleText(page, ".details-record");
+  await fill(page, "#history-search", "Alice");
+  assert.equal(await originalButton.evaluate((button) => button.isConnected), false);
+  assert.equal(await visibleText(page, ".details-record"), captured);
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+  await page.keyboard.press("Enter");
   // A second details window keeps the first record intact and leaves the viewer interactive.
   await page.$eval("#history-rows button", (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected details button"); button.click(); });
   assert.equal((await page.$$(".details-window")).length, 2);
@@ -64,6 +72,16 @@ async function checkProfileDetails(page: Page) {
     if (!(panel instanceof HTMLElement)) throw new Error("Expected profile window"); return panel.dataset.profile;
   }));
   assert.equal(profiles.length, 2); assert.notEqual(profiles[0], profiles[1]);
+  const firstProfile = profiles[0]; assert.ok(firstProfile);
+  const oldFriendButton = await page.$("#friend-rows button"); assert.ok(oldFriendButton);
+  const firstWindow = await page.$(".details-window"); assert.ok(firstWindow);
+  await fill(page, "#friend-search", firstProfile);
+  assert.equal(await oldFriendButton.evaluate((button) => button.isConnected), false);
+  await firstWindow.focus(); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#friend-rows button")), true);
+  await page.keyboard.press("Enter");
+  await page.focus("#friend-search"); await page.keyboard.down("Control"); await page.keyboard.press("a");
+  await page.keyboard.up("Control"); await page.keyboard.press("Backspace");
   await page.$eval('[data-view="network"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected network tab"); button.click(); });
   const headings = await page.$$(".details-window h2");
   for (const [index, left] of [36, 520].entries()) {
@@ -236,8 +254,18 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("viewBox")), originalZoom);
   assert.equal(await graphNode.evaluate((node) => node.isConnected), true);
   await screenshot("network"); await checkProfileDetails(page);
-  await page.click('[data-view="ranking"]'); const requestCount = fixture.requests.length; await fill(page, "#ranking-mutual", "3");
+  await page.click('[data-view="locations"]');
+  const oldLocationButton = await page.$("#location-rows button"); assert.ok(oldLocationButton);
+  await oldLocationButton.click(); const capturedLocation = await visibleText(page, ".details-record");
+  await page.$eval('[data-view="ranking"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected ranking tab"); button.click(); });
+  const requestCount = fixture.requests.length; await fill(page, "#ranking-mutual", "3");
   await page.click("#save-ranking"); await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Saved ranking"));
+  assert.equal(await oldLocationButton.evaluate((button) => button.isConnected), false);
+  assert.equal(await visibleText(page, ".details-record"), capturedLocation);
+  await page.$eval('[data-view="locations"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected locations tab"); button.click(); });
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#location-rows button")), true);
+  await page.click('[data-view="ranking"]');
   assert.equal(fixture.requests.length, requestCount); await screenshot("ranking");
   const history = join(root, "history-current.json"); const now = Math.floor(Date.now() / 1000);
   await writeFile(history, JSON.stringify({ steamID64: seed, name: "Current fixture", lastChecked: now, historic: { friends: [{ Friend: second, FriendDate: now - 1000 }] } }));
