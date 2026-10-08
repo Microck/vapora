@@ -109,6 +109,22 @@ test("profile-date ties and current coverage use capture time independently of i
   const laterObservation = await parse({ ...profile(200), name: "Later observation" });
   assert.equal(History.view(Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...laterObservation.sources[0], capturedAt: older.capturedAt }] })).profile.name, "Later observation");
 });
+test("friendship metadata uses capture-time ties without hiding same-date conflicting periods", async () => {
+  const friend = { Friend: second, FriendDate: 10, Name: "Old friend", AvatarHash: "1".repeat(40), countryCode: "ES", cityID: 1 };
+  const event = { ID: "shared", Commenter: second, Timestamp: 20, Message: "same" };
+  const old = await parse(profile(100, [friend], [event]));
+  const newer = await parse(profile(100, [{ ...friend, Name: "Recent friend", AvatarHash: "2".repeat(40), countryCode: "FR", cityID: 2, UnfriendDate: 50 }], [event]));
+  const olderSource = { ...old.sources[0], capturedAt: "2026-10-08T10:00:00+02:00" };
+  const newerSource = { ...newer.sources[0], capturedAt: "2026-10-08T08:30:00Z" };
+  for (const sources of [[olderSource, newerSource], [newerSource, olderSource]]) {
+    const report = History.view(Schema.decodeUnknownSync(History.Bundle)({ sources }));
+    assert.equal(report.friends[0]?.name, "Recent friend"); assert.match(report.friends[0]?.avatar ?? "", /222222/);
+    assert.equal(report.friends[0]?.metadata.countryCode, "FR"); assert.equal(report.locations[0]?.country, "FR");
+    assert.equal(report.friends[0]?.status, "unknown"); assert.equal(report.friends[0]?.durationSeconds, null);
+    assert.equal(report.friends[0]?.periodSources.length, 2); assert.equal(report.sources.length, 2);
+    assert.equal(report.commenters[0]?.name, "Recent friend");
+  }
+});
 test("devalue pools resolve each reference once without chasing small scalar values and keep deferred chunks", async () => {
   const stream = JSON.stringify({ type: "data", nodes: [{ type: "data", data: [
     { profile: 1 }, { steamID64: 2, name: 3, lastUpdated: 4, historic: 5, vacBanned: 6 }, seed, "Alice", 3, ["Promise", 7], false,

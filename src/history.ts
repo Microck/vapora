@@ -221,31 +221,39 @@ export interface Filter { readonly from?: number | undefined; readonly to?: numb
 const inRange = (timestamp: number | null, range: Filter) => (range.from === undefined && range.to === undefined) ||
   (timestamp !== null && timestamp >= (range.from ?? 0) && timestamp <= (range.to ?? Infinity));
 
+interface FriendshipVersion { readonly record: Record; readonly capturedAt: number }
 function friendshipVersions(bundle: Bundle) {
-  const friends = new Map<SteamId, Map<number | null, Record[]>>();
-  for (const capture of bundle.sources) for (const snapshot of capture.snapshots) {
-    for (const row of snapshot.historic.friends ?? []) {
-      const id = sid(row.Friend); if (!id || id === snapshot.steamID64) continue;
-      const versions = friends.get(id) ?? new Map<number | null, Record[]>();
-      const rows = versions.get(snapshot.lastChecked) ?? []; rows.push(row);
-      versions.set(snapshot.lastChecked, rows); friends.set(id, versions);
+  const friends = new Map<SteamId, Map<number | null, FriendshipVersion[]>>();
+  for (const capture of bundle.sources) {
+    const capturedAt = captureTime(capture.capturedAt);
+    for (const snapshot of capture.snapshots) {
+      for (const row of snapshot.historic.friends ?? []) {
+        const id = sid(row.Friend); if (!id || id === snapshot.steamID64) continue;
+        const versions = friends.get(id) ?? new Map<number | null, FriendshipVersion[]>();
+        const rows = versions.get(snapshot.lastChecked) ?? []; rows.push({ record: row, capturedAt });
+        versions.set(snapshot.lastChecked, rows); friends.set(id, versions);
+      }
     }
   }
   return friends;
 }
-function friendshipRecords(versions: ReadonlyMap<number | null, readonly Record[]>) {
+function friendshipRecords(versions: ReadonlyMap<number | null, readonly FriendshipVersion[]>) {
   const ordered = [...versions].sort((a, b) => (b[0] ?? -1) - (a[0] ?? -1));
+  let metadata: FriendshipVersion | undefined;
+  for (const version of ordered[0]?.[1] ?? []) {
+    if (!metadata || version.capturedAt > metadata.capturedAt) metadata = version;
+  }
   const resolved = new Map<number | null, { record: Record; asOf: number | null }[]>();
   for (const [asOf, rows] of ordered) {
     const starts = new Map<number | null, { record: Record; asOf: number | null }[]>();
-    for (const record of rows) {
+    for (const { record } of rows) {
       const start = time(record.FriendDate); const periods = starts.get(start) ?? [];
       periods.push({ record, asOf }); starts.set(start, periods);
     }
     for (const [start, periods] of starts) if (!resolved.has(start)) resolved.set(start, periods);
   }
   const periodSources = [...resolved.values()].flat();
-  return { asOf: ordered[0]?.[0] ?? null, periods: periodSources.map((entry) => entry.record), periodSources };
+  return { asOf: ordered[0]?.[0] ?? null, periods: periodSources.map((entry) => entry.record), periodSources, metadata: metadata?.record ?? {} };
 }
 const openPeriod = (row: Record) => row.UnfriendDate === undefined || row.UnfriendDate === null || row.UnfriendDate === 0;
 function membership(periods: readonly Record[], asOf: number | null) {
@@ -276,7 +284,7 @@ function friends(bundle: Bundle, scan: Scan | undefined, range: Filter) {
   const seed = live?.friendsObservedAt ? live : undefined;
   const liveAsOf = seed?.friendsObservedAt ? Math.floor(Date.parse(seed.friendsObservedAt) / 1000) : null;
   const result = [...versions].map(([id, records]) => {
-    const { periods, asOf, periodSources } = friendshipRecords(records);
+    const { periods, asOf, periodSources, metadata } = friendshipRecords(records);
     // Latest source resolves closures before intervals are unioned. No OR of old open flags.
     const historicalStatus = membership(periods, asOf);
     const livePresence = seed?.friends.includes(id) ?? false;
@@ -285,7 +293,6 @@ function friends(bundle: Bundle, scan: Scan | undefined, range: Filter) {
     const contradiction = liveAuthority && liveAsOf === asOf && historicalStatus !== "unknown" && historicalStatus !== liveStatus;
     const status = contradiction ? "unknown" as const : liveAuthority ? liveStatus : historicalStatus;
     const duration = unionDuration(periodSources, range);
-    const metadata = periods[0] ?? {};
     if (historicalStatus === "unknown") duration.conflicts.push("Historical membership unresolved");
     if (contradiction) duration.conflicts.push("Same-date membership observations disagree");
     return { id, name: text(metadata.Name) ?? id, avatar: avatar(metadata), durationSeconds: duration.conflicts.length ? null : duration.seconds,
