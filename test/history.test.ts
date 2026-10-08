@@ -178,6 +178,26 @@ test("account fetching reuses current paginated captures; failure retains data a
   } finally { await app.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("an import supersedes a pending fetch failure without poisoning cached state", { timeout: 10000 }, async () => {
+  const fixture = await historyFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-history-race-"));
+  const app = await Server.start({ root, key: "", port: 0, historySession: fixture.session });
+  const post = (path: string, body: History.Record) => fetch(`${app.origin}${path}`, { method: "POST", headers: { origin: app.origin, "content-type": "application/json", "user-agent": "OpenAI File Downloader, XaiImageApiFetch/1.0" }, body: JSON.stringify(body) });
+  const path = `/id/${seed}/__data.json`;
+  try {
+    fixture.setStatus(403); const arrived = fixture.hold(path);
+    const pending = post("/api/history/account", { id: seed, refresh: true }); await arrived;
+    const imported = await post("/api/history", { contents: JSON.stringify(profile(100, [], [{ ID: "imported", Message: "saved" }])) });
+    assert.equal(imported.status, 200);
+    const duringFetch = Schema.decodeUnknownSync(History.HistoryState)(await (await post("/api/history/account", { id: seed, refresh: false })).json());
+    assert.equal(duringFetch.status, "ready"); assert.equal(duringFetch.report?.comments[0]?.message, "saved");
+    fixture.release(path);
+    const completion = Schema.decodeUnknownSync(History.HistoryState)(await (await pending).json());
+    assert.equal(completion.status, "ready"); assert.equal(completion.error, null);
+    const cached = Schema.decodeUnknownSync(History.HistoryState)(await (await post("/api/history/account", { id: seed, refresh: false })).json());
+    assert.deepEqual(cached, completion); assert.equal(fixture.requests(), 1);
+  } finally { fixture.release(path); await app.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("current history paginates all records and retains deleted comment versions and page metadata", async () => {
   const Provider = await import("../src/history-provider.js"); const fixture = await historyFixture();
   const friends = Array.from({ length: 205 }, (_, index) => ({ Friend: String(BigInt(seed) + 1000n + BigInt(index)), FriendDate: 10, Name: `Friend ${index}`, unknown: { keep: true } }));
@@ -328,6 +348,20 @@ test("importing an older captured comment never rolls back its newer version or 
   assert.equal(report.comments[0]?.versions[0]?.sourceAsOf, 200);
   assert.equal(report.comments[0]?.friendAtComment, "yes");
   assert.equal(report.commenters[0]?.status, "former");
+});
+
+test("equal observation dates select the newest captured comment independently of import order", async () => {
+  const old = await parse(profile(200, [], [{ ID: "same", Commenter: second, Message: "before", Timestamp: 100 }]));
+  const recent = await parse(profile(200, [], [{ ID: "same", Commenter: third, Message: "after", Timestamp: 150 }]));
+  assert.ok(old.sources[0]); assert.ok(recent.sources[0]);
+  const oldSource = { ...old.sources[0], capturedAt: "2026-10-08T01:00:00+02:00" };
+  const newSource = { ...recent.sources[0], capturedAt: "2026-10-07T23:30:00Z" };
+  for (const sources of [[oldSource, newSource], [newSource, oldSource]]) {
+    const report = History.view({ sources });
+    assert.equal(report.comments[0]?.message, "after"); assert.equal(report.comments[0]?.author, third);
+    assert.equal(report.comments[0]?.timestamp, 150); assert.equal(report.comments[0]?.versions.length, 2);
+    assert.equal(report.commenters[0]?.id, third);
+  }
 });
 
 test("older friendship evidence stays in the comment reference and undated live lists do not override dated history", async () => {

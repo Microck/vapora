@@ -164,6 +164,7 @@ export async function historyFixture() {
   const rows = new Map<string, readonly { [key: string]: typeof Schema.Json.Type }[]>(Object.entries(document.historic));
   rows.set("realName", [{ Name: "Alice Example", Timestamp: now - 100000 }]);
   let status = 200; let requests = 0;
+  const held = new Map<string, () => void>(); const waiters = new Map<string, () => void>();
   const paths: string[] = []; const failures = new Map<string, number>(); const replies = new Map<string, string>(); const counts = new Map<string, number>();
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -171,25 +172,30 @@ export async function historyFixture() {
     requests++; paths.push(url.pathname + url.search);
     const section = url.pathname.endsWith("/history") ? sections[Number(url.searchParams.get("type"))] ?? "" : "";
     const code = failures.get(section) ?? status;
-    response.writeHead(code, { "content-type": "application/json" });
-    if (code !== 200) { response.end("provider unavailable"); return; }
-    if (url.pathname === `/id/${seed}/__data.json`) {
-      const { historic: _historic, ...profile } = document;
-      const totalHistoricCounts = Object.fromEntries([...rows].map(([key, records]) => [key, counts.get(key) ?? records.length]));
-      response.end(historyWire({ ...profile, totalHistoricCounts })); return;
-    }
-    if (url.pathname === `/id/${seed}/history`) {
-      const override = replies.get(`${section}:${url.searchParams.get("offset")}`);
-      if (override !== undefined) { response.end(override); return; }
-      const filtered = (rows.get(section) ?? []).filter((row) => url.searchParams.get("commentFilter") !== "deleted" || row.IsDeleted === true);
-      const offset = Number(url.searchParams.get("offset")); const limit = Number(url.searchParams.get("limit"));
-      response.end(JSON.stringify({ data: filtered.slice(offset, offset + limit), total: filtered.length, customPageField: "preserved" })); return;
-    }
-    response.end("{}");
+    const reply = () => {
+      response.writeHead(code, { "content-type": "application/json" });
+      if (code !== 200) { response.end("provider unavailable"); return; }
+      if (url.pathname === `/id/${seed}/__data.json`) {
+        const { historic: _historic, ...profile } = document;
+        const totalHistoricCounts = Object.fromEntries([...rows].map(([key, records]) => [key, counts.get(key) ?? records.length]));
+        response.end(historyWire({ ...profile, totalHistoricCounts })); return;
+      }
+      if (url.pathname === `/id/${seed}/history`) {
+        const override = replies.get(`${section}:${url.searchParams.get("offset")}`);
+        if (override !== undefined) { response.end(override); return; }
+        const filtered = (rows.get(section) ?? []).filter((row) => url.searchParams.get("commentFilter") !== "deleted" || row.IsDeleted === true);
+        const offset = Number(url.searchParams.get("offset")); const limit = Number(url.searchParams.get("limit"));
+        response.end(JSON.stringify({ data: filtered.slice(offset, offset + limit), total: filtered.length, customPageField: "preserved" })); return;
+      }
+      response.end("{}");
+    };
+    if (held.has(url.pathname)) { held.set(url.pathname, reply); waiters.get(url.pathname)?.(); } else reply();
   });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   return { url: `http://127.0.0.1:${address.port}`, document, rows, paths, failures, replies, counts, session: historyHttpSession(`http://127.0.0.1:${address.port}`), requests: () => requests,
+    hold: (path: string) => { held.set(path, () => {}); return new Promise<void>((resolve) => waiters.set(path, resolve)); },
+    release: (path: string) => { held.get(path)?.(); held.delete(path); waiters.delete(path); },
     setStatus: (value: number) => { status = value; },
     close: () => new Promise<void>((resolve, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : resolve()); }),
   };

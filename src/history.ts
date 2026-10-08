@@ -284,23 +284,27 @@ function friends(bundle: Bundle, scan: Scan | undefined, range: Filter) {
     .sort((a, b) => (b.durationSeconds ?? -1) - (a.durationSeconds ?? -1) || a.id.localeCompare(b.id));
 }
 function comments(bundle: Bundle): Omit<typeof Comment.Type, "friendAtComment">[] {
-  const all = new Map<string, { author: SteamId | null; timestamp: number | null; message: string; estimated: boolean; occurrences: number; versions: { record: Record; sourceAsOf: number | null; capturedAt: string }[]; selectedDate: number; perCapture: Map<string, number> }>();
+  const all = new Map<string, { author: SteamId | null; timestamp: number | null; message: string; estimated: boolean; occurrences: number; versions: { record: Record; sourceAsOf: number | null; capturedAt: string }[]; selectedDate: number; selectedCapturedAt: number; perCapture: Map<string, number> }>();
   bundle.sources.forEach((capture, captureIndex) => {
+    const parsedCaptureDate = Date.parse(capture.capturedAt);
+    const captureDate = Number.isNaN(parsedCaptureDate) ? -Infinity : parsedCaptureDate;
     capture.snapshots.forEach((profile, snapshotIndex) => { for (const row of profile.historic.comments ?? []) {
       const author = sid(row.Commenter); const timestamp = time(row.Timestamp); const message = text(row.Message) ?? "";
       const identity = commentId(row);
       const key = JSON.stringify([capture.provider, profile.steamID64, identity ? ["id", identity] : ["anonymous", author, timestamp, message]]);
-      const previous: NonNullable<ReturnType<typeof all.get>> = all.get(key) ?? { author, timestamp, message, estimated: !identity, occurrences: 0, versions: [], selectedDate: -1, perCapture: new Map<string, number>() };
+      const previous: NonNullable<ReturnType<typeof all.get>> = all.get(key) ?? { author, timestamp, message, estimated: !identity, occurrences: 0, versions: [], selectedDate: -1, selectedCapturedAt: -Infinity, perCapture: new Map<string, number>() };
       previous.versions.push({ record: row, sourceAsOf: profile.lastChecked, capturedAt: capture.capturedAt }); previous.occurrences++; const captureKey = `${captureIndex}:${snapshotIndex}`;
       previous.perCapture.set(captureKey, (previous.perCapture.get(captureKey) ?? 0) + 1);
       // Display the newest captured version, retaining every old version for inspection.
       const sourceDate = profile.lastChecked ?? -1;
-      if (sourceDate >= previous.selectedDate) { previous.author = author; previous.timestamp = timestamp; previous.message = message; previous.selectedDate = sourceDate; }
+      if (sourceDate > previous.selectedDate || sourceDate === previous.selectedDate && captureDate >= previous.selectedCapturedAt) {
+        previous.author = author; previous.timestamp = timestamp; previous.message = message; previous.selectedDate = sourceDate; previous.selectedCapturedAt = captureDate;
+      }
       all.set(key, previous);
     } });
   });
   return [...all].flatMap(([key, record]) => {
-    const { perCapture, selectedDate: _selectedDate, ...comment } = record;
+    const { perCapture, selectedDate: _selectedDate, selectedCapturedAt: _selectedCapturedAt, ...comment } = record;
     const count = comment.estimated ? Math.max(...perCapture.values()) : 1;
     return Array.from({ length: count }, (_, index) => ({ ...comment, key: `${key}:${index}` }));
   });

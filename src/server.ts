@@ -89,27 +89,35 @@ export async function start(options: Options) {
     yield* store.saveHistory(report);
     return report;
   })));
+  const storedAccountHistory = async (id: SteamId): Promise<History.HistoryState> => {
+    const report = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
+    const error = historyErrors.get(id) ?? (report ? History.coverageError(report) : null);
+    return { id, status: historyErrors.has(id) || !report ? "unavailable" : error ? "partial" : "ready", error, report };
+  };
   const accountHistory = async (id: SteamId, refresh: boolean): Promise<History.HistoryState> => {
     const running = historyRequests.get(id); if (running) return running;
-    const operation = (async (): Promise<History.HistoryState> => {
-      const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
-      const cachedError = saved ? History.coverageError(saved) : null;
-      if (!refresh && (saved || historyErrors.has(id))) return { id, status: historyErrors.has(id) ? "unavailable" : cachedError ? "partial" : "ready", error: historyErrors.get(id) ?? cachedError, report: saved };
+    const collect = async (): Promise<History.HistoryState> => {
+      const saved = await storedAccountHistory(id);
+      if (!refresh && (saved.report || historyErrors.has(id))) return saved;
       if (closing) throw new InputError({ message: "Vapora is closing. Retry after reopening it." });
       const fiber = runtime.runFork(browserGate.withPermit(HistoryProvider.fetchAccount(id,
         options.historySession ?? HistoryBrowser.open(options.historyRuntime, options.historyBaseUrl))));
       const cancel = () => Effect.runPromise(Fiber.interrupt(fiber)); historyCancellation.add(cancel);
       const outcome = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.result)).finally(() => historyCancellation.delete(cancel));
       if (outcome._tag === "Failure") {
+        if (historyRequests.get(id) !== operation) return storedAccountHistory(id);
         historyErrors.set(id, outcome.failure.message);
-        return { id, status: "unavailable", error: outcome.failure.message, report: saved };
+        return { id, status: "unavailable", error: outcome.failure.message, report: saved.report };
       }
-      const report = await saveHistory(outcome.success); historyErrors.delete(id);
+      const report = await saveHistory(outcome.success);
+      if (historyRequests.get(id) !== operation) return storedAccountHistory(id);
+      historyErrors.delete(id);
       const error = History.coverageError(report);
       return { id, status: error ? "partial" : "ready", error, report };
-    })();
+    };
+    const operation = collect();
     historyRequests.set(id, operation);
-    try { return await operation; } finally { historyRequests.delete(id); }
+    try { return await operation; } finally { if (historyRequests.get(id) === operation) historyRequests.delete(id); }
   };
   const attachedHistory = (scan: Scan) => Effect.gen(function* () {
     const store = yield* Storage.Service;
@@ -277,7 +285,9 @@ export async function start(options: Options) {
       const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
       const account = bundle.sources[0]?.snapshots[0]?.steamID64;
       if (scan && scan.seed !== account) throw new InputError({ message: "This history belongs to another account. Import separately or open a matching run." });
-      const saved = await saveHistory(bundle); historyErrors.delete(saved.profile.steamID64);
+      const saved = await saveHistory(bundle);
+      // The import owns current state; older completions cannot replace its error or request ownership.
+      historyRequests.delete(saved.profile.steamID64); historyErrors.delete(saved.profile.steamID64);
       const report = scan ? await runtime.runPromise(attachedHistory(scan)) : saved;
       json(response, 200, report); return;
     }
