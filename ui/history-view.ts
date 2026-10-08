@@ -1,5 +1,6 @@
 import { displaySupport } from "../src/scoring.js";
 import * as History from "../src/history.js";
+import * as Details from "./details.js";
 import type { Scan } from "../src/model.js";
 
 const get = (id: string) => {
@@ -24,8 +25,7 @@ const fieldText = (value: History.Record[string] | undefined): string => value =
 const numeric = (value: number | null, digits = 1) => value === null ? "Unknown" : value.toFixed(digits);
 const rowCell = (row: HTMLTableRowElement, value: string | number) => { const cell = document.createElement("td"); cell.textContent = String(value); row.append(cell); return cell; };
 function details(record: History.Record | readonly History.Record[]) {
-  get("history-inspect").textContent = JSON.stringify(record, null, 2);
-  const dialog = get("history-details"); if (dialog instanceof HTMLDialogElement) dialog.showModal();
+  Details.record("Captured record", record);
 }
 function inspect(row: HTMLTableRowElement, record: History.Record | readonly History.Record[]) {
   const button = document.createElement("button"); button.type = "button"; button.textContent = "Details";
@@ -137,13 +137,13 @@ function download(contents: string, filename: string) {
 export function render(report: History.HistoryReport, selectedScan?: Scan) {
   current = report; scan = selectedScan; page = 0;
   get("history-result").hidden = false; get("history-name").textContent = report.profile.name;
-  get("history-asof").textContent = `SteamHistory as of ${date(report.profile.lastChecked)}`;
+  get("history-asof").textContent = `History as of ${date(report.profile.lastChecked)}`;
   get("history-asof").dataset.tooltip = report.warning;
   const sources = get("history-sources"); sources.replaceChildren();
   report.sources.forEach((source, index) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = `Original ${index + 1}`;
     button.dataset.tooltip = `Captured ${source.capturedAt}`;
-    button.addEventListener("click", () => download(source.contents, `steamhistory-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
+    button.addEventListener("click", () => download(source.contents, `history-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
   });
   get("history-warnings").textContent = report.warnings.join("\n"); get("history-warnings").hidden = !report.warnings.length;
   renderTable();
@@ -158,6 +158,5 @@ export function initialize() {
   get("history-status").addEventListener("change", () => { page = 0; renderTable(); });
   get("history-previous").addEventListener("click", () => { page--; renderTable(); });
   get("history-next").addEventListener("click", () => { page++; renderTable(); });
-  get("history-details-close").addEventListener("click", () => { const dialog = get("history-details"); if (dialog instanceof HTMLDialogElement) dialog.close(); });
   get("history-export").addEventListener("click", () => { if (current) download(JSON.stringify(current, null, 2), "history.json"); });
 }

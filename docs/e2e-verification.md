@@ -1,6 +1,6 @@
 # Current E2E verification
 
-Checked on 2026-10-06 against the current TypeScript app and shared browser/Electron UI. Each fixture workflow uses a fresh data directory and an actual local HTTP provider, not mocked modules or transports. The older archive and historical SteamHistory samples are outside this verification.
+Checked on 2026-10-06 against the current TypeScript app and shared browser/Electron UI. Each fixture workflow uses a fresh data directory and an actual local HTTP provider, not mocked modules or transports. The older archive and historical account samples are outside this verification.
 
 ## Results
 

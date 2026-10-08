@@ -8,6 +8,7 @@ import { HistoryState, coverageError } from "../src/history.js";
 import { HistoryReport } from "../src/history.js";
 import * as Network from "./network.js";
 import * as Tooltips from "./tooltips.js";
+import * as Details from "./details.js";
 
 declare global {
   interface Window {
@@ -186,7 +187,7 @@ function renderLocations() {
     const row = document.createElement("tr");
     for (const value of [location.country, location.state ?? "Not provided", location.city ?? "Not provided", location.contributors, displaySupport(location.support), location.share === null ? "Unknown" : location.share.toFixed(1), location.index === null ? "Unknown" : location.index.toFixed(1)]) cell(row, value);
     const details = document.createElement("button"); details.type = "button"; details.textContent = "Details";
-    details.addEventListener("click", () => { get("history-inspect").textContent = JSON.stringify({ source: "Steam incoming mutual counts", ...location, coverage: selected?.report.locationCoverage }, null, 2); dialog("history-details").showModal(); });
+    details.addEventListener("click", () => Details.record(`Location ${location.country}`, { source: "Steam incoming mutual counts", ...location, coverage: selected?.report.locationCoverage }));
     cell(row, "").append(details); rows.append(row);
   }
   const coverage = selected?.report.locationCoverage;
@@ -236,6 +237,9 @@ function renderReport() {
   for (const warning of report.warnings) { const p = document.createElement("p"); p.textContent = warning; warnings.append(p); }
   const exports = get("downloads"); exports.replaceChildren();
   for (const file of selected.history ? artifacts : downloads) if (scan.status === "complete" || file === "scan.json" || file === "run.log" || file === "history.json") exports.append(downloadLink(scan.id, file));
+  const obsidian = document.createElement("a"); obsidian.id = "obsidian-export";
+  obsidian.textContent = "↓ Obsidian vault (.zip)";
+  obsidian.href = `/api/obsidian?${new URLSearchParams({ id: scan.id })}`; exports.append(obsidian);
   renderFriends(); renderLocations(); renderGraph(); renderTarget(); renderOutput();
 }
 function renderCoverageNotice() {
@@ -264,7 +268,7 @@ function renderRanking() {
   buttons("rebuild-exports").disabled = buttons("save-ranking").disabled;
 }
 function inspectNode(id: SteamId) {
-  selectedNode = id; renderInspector(); renderGraph();
+  selectedNode = id; openProfileDetails(id); renderGraph();
 }
 function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
   const rank = selected?.report.friends.find((friend) => friend.id === id);
@@ -287,22 +291,26 @@ function profileFacts(player: Player, metric: Contracts.Report["metrics"][number
     ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
   ];
 }
-function renderInspector() {
-  const player = selected?.scan.players.find((p) => p.id === selectedNode);
-  const rank = selected?.report.friends.find((friend) => friend.id === selectedNode);
-  const metric = selected?.report.metrics.find((m) => m.id === selectedNode);
+function openProfileDetails(account: SteamId) {
+  const player = selected?.scan.players.find((p) => p.id === account);
+  const rank = selected?.report.friends.find((friend) => friend.id === account);
+  const metric = selected?.report.metrics.find((m) => m.id === account);
   const id = player?.id ?? rank?.id;
-  get("profile-inspector").hidden = !id;
   if (!id) return;
-  get("inspect-name").textContent = player?.name ?? rank?.name ?? id; profileImage("inspect-avatar", player?.avatar ?? null);
-  get("inspect-link").setAttribute("href", `https://steamcommunity.com/profiles/${id}/`);
-  get("inspect-link").textContent = id; get("inspect-link").dataset.tooltip = "Open Steam profile";
-  const facts = get("inspect-facts"); facts.replaceChildren();
+  const name = player?.name ?? rank?.name ?? id;
+  const contents = document.createElement("div");
+  const identity = document.createElement("div"); identity.className = "details-identity";
+  const text = document.createElement("div"); const heading = document.createElement("h3"); heading.textContent = name;
+  const link = document.createElement("a"); link.href = `https://steamcommunity.com/profiles/${id}/`;
+  link.target = "_blank"; link.rel = "noreferrer"; link.textContent = id; link.dataset.tooltip = "Open Steam profile";
+  text.append(heading, link); identity.append(avatarImage(player?.avatar ?? null), text);
+  const facts = document.createElement("dl"); facts.className = "details-facts";
   const fields = player ? profileFacts(player, metric) : [["Collection", "Outside admitted graph"]] as const;
-  const rankFacts = rankingFacts(id);
-  for (const [label, value] of [...fields, ...rankFacts]) {
-    const term = document.createElement("dt"); term.textContent = label; const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
+  for (const [label, value] of [...fields, ...rankingFacts(id)]) {
+    const term = document.createElement("dt"); term.textContent = label;
+    const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
   }
+  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, id);
 }
 function renderGraph() {
   const graph = get("graph");
@@ -352,7 +360,7 @@ function renderHistory(report: HistoryReport, runId: string | null) {
 function renderAccountHistory(state: HistoryState, runId?: string) {
   accountHistory = state; historyAccount = state.id;
   get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
-  get("target-history-status").dataset.tooltip = state.error ?? "Saved SteamHistory capture";
+  get("target-history-status").dataset.tooltip = state.error ?? "Saved history capture";
   get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
   get("history-fetch-status").textContent = state.error ?? ""; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
   if (state.report) {
@@ -384,7 +392,7 @@ async function openRun(id: string, navigation = navigationVersion) {
   selected = view;
   const typed = inputs.target.value.trim();
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
-  selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; renderInspector(); toggleRuns(false);
+  selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; toggleRuns(false);
   location.hash = id; renderReport(); renderRecent();
   if (view.historyError) notice(view.historyError);
   if (view.scan.status === "complete") void loadAccountHistory(view.scan.seed, false, view.scan.id);
@@ -657,14 +665,13 @@ buttons("rebuild-exports").addEventListener("click", () => task(async () => {
   const id = selected.scan.id; buttons("rebuild-exports").disabled = true;
   try {
     const view = await api("/api/rebuild", Contracts.RunView, { id });
-    if (selected?.scan.id === id) { selected = view; renderReport(); renderInspector(); }
+    if (selected?.scan.id === id) { selected = view; renderReport(); }
     notice("Rebuilt exports from saved observations.");
   } finally { await refresh(); }
 }));
 inputs.runSearch.addEventListener("input", renderRuns); select("run-status").addEventListener("change", renderRuns);
 inputs.networkSearch.addEventListener("input", renderGraph);
 buttons("toggle-runs").addEventListener("click", () => toggleRuns(get("run-library").hidden));
-buttons("close-inspector").addEventListener("click", () => { selectedNode = null; renderInspector(); renderGraph(); });
 buttons("open-history").addEventListener("click", () => {
   if (selected?.history) { renderHistory(selected.history, selected.scan.id); showScreen("history"); }
 });
@@ -676,7 +683,7 @@ get("ranking-form").addEventListener("submit", (event) => { event.preventDefault
   buttons("save-ranking").disabled = true;
   try {
     const view = await api("/api/analyze", Contracts.RunView, { id, ranking });
-    if (selected?.scan.id === id) { selected = view; renderReport(); renderInspector(); }
+    if (selected?.scan.id === id) { selected = view; renderReport(); }
     notice("Saved ranking. Collected observations are unchanged.");
   } finally { await refresh(); }
 }); });
@@ -687,7 +694,7 @@ function renderZoom() {
 }
 buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderZoom(); });
 buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderZoom(); });
-buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderInspector(); renderGraph(); renderZoom(); });
+buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderGraph(); renderZoom(); });
 get("history-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   const file = inputs.file.files?.[0];
   if (!file) throw new Error("Choose a normalized history file.");
@@ -706,7 +713,6 @@ window.addEventListener("focus", () => void refresh());
 buttons("open-history-import").addEventListener("click", () => dialog("history-import-dialog").showModal());
 buttons("target-history").addEventListener("click", () => {
   if (accountHistory?.report) renderHistory(accountHistory.report, null);
-  else if (!historyAccount) { notice("Verify or select an account to load its history."); return; }
   showScreen("history");
 });
 function refreshAccountHistory(id: SteamId | null) {

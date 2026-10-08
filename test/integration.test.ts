@@ -9,6 +9,7 @@ import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
+import { unzipSync, strFromU8 } from "fflate";
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
 import { defaults, SteamId, Settings } from "../src/model.js";
 import * as Steam from "../src/steam.js";
@@ -248,6 +249,33 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
     const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(attached.history?.profile.steamID64, seed);
+    const hostileName = '<img src=x> [[Bad]] | # "quoted"\nline';
+    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan,
+      players: view.scan.players.map((player) => player.id === seed ? { ...player, name: hostileName } : player) }));
+    const checkpoint = await readFile(join(root, "outputs", view.scan.id, "scan.json"));
+    const beforeExport = fixture.requests.length;
+    const download = await request(`/api/obsidian?id=${view.scan.id}`);
+    assert.equal(download.status, 200); assert.equal(download.headers.get("content-type"), "application/zip");
+    assert.match(download.headers.get("content-disposition") ?? "", /obsidian.zip/);
+    const notes = unzipSync(new Uint8Array(await download.arrayBuffer()));
+    assert.ok(notes["Vapora.md"]); assert.ok(notes["History.md"]);
+    assert.match(strFromU8(notes[`Profiles/${seed}.md`]!), /steam_id: "765611/);
+    const targetNote = strFromU8(notes[`Profiles/${seed}.md`]!);
+    assert.ok(targetNote.includes(`name: ${JSON.stringify(hostileName)}`));
+    assert.ok(!targetNote.replace(/^---\n[\s\S]*?\n---\n/, "").includes("<img"));
+    assert.ok(!notes["Bad.md"]);
+
+    const outside = view.report.friends.find((friend) => !view.scan.players.some((player) => player.id === friend.id));
+    assert.ok(outside); assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /Outside admitted graph/);
+    assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /VAC bans: Unknown/);
+    for (const bytes of Object.values(notes)) {
+      const contents = strFromU8(bytes); assert.ok(!contents.includes(key));
+      for (const link of contents.replace(/^---\n[\s\S]*?\n---\n/, "").matchAll(/\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/g)) assert.ok(notes[`${link[1]}.md`], `Broken vault link: ${link[1]}`);
+    }
+    assert.equal(fixture.requests.length, beforeExport);
+    assert.deepEqual(await readFile(join(root, "outputs", view.scan.id, "scan.json")), checkpoint);
+    assert.equal((await request("/api/obsidian?id=..%2F.env")).status, 400);
+
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("server shutdown closes browser preconnections without waiting for an HTTP request", async () => {

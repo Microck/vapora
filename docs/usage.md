@@ -100,7 +100,7 @@ Estimates sample at most five friend lists and respect the node cap. At depth 3-
 4. Compute communities, centrality, friend rankings and location signals.
 5. Save reports and exports in a unique run folder.
 
-Vapora uses public API observations and local history files. SteamHistory is fetched separately after account verification or selection; blocked requests remain visible and do not stop Steam scans. Missing observations and truncated graphs remain visible in the report.
+Vapora uses public API observations and local history files. Account history is fetched separately after account verification or selection; blocked requests remain visible and do not stop Steam scans. Missing observations and truncated graphs remain visible in the report.
 
 ## reports and exports
 
@@ -126,6 +126,10 @@ outputs/<run-id>/
 
 CSV fields are quoted when needed, and formula-like text is escaped for spreadsheet imports. Steam IDs stay strings in JSON; set spreadsheet ID columns to text.
 
+### Obsidian
+
+In **Exports**, download **Obsidian vault (.zip)**. Extract the ZIP and open that folder as a vault, or copy its notes into an existing vault. Profile notes use Steam IDs as filenames and names as aliases. Observed friendships become internal links; shared groups and dated history stay separately labelled. Missing data stays unknown. Exporting uses the saved run and makes no Steam requests. No plugin is needed.
+
 ### gephi how-to
 
 1. Create a project and import `gephi/nodes.csv` as a nodes table.
@@ -145,7 +149,7 @@ Location signals group supplied Steam country, state and city codes among admitt
 
 ![Network exploration and profile inspection](screenshots/network.png)
 
-## SteamHistory imports
+## History imports
 
 Use **Import history** or `npm start -- history FILE` with a local normalized JSON file:
 
@@ -170,9 +174,9 @@ Dates are Unix seconds. A missing or zero `UnfriendDate` means friends as of the
 
 The viewer includes friendship periods, names, URLs, avatars, comments and profile/ban metadata. Search, friendship filters and date ranges help inspect captures. Comment ranking is separate from network ranking. Its friend index uses positive-count commenters with friendship evidence anywhere in the supplied captures, including former friends. Changing the friendship filter never changes that reference. Profile and ban date filters use the source observation date.
 
-Profile NDJSON and complete SteamHistory Svelte data/chunk streams are accepted. Every capture and unknown field stays in the export, along with the original input. **Original** buttons download those inputs unchanged.
+Profile NDJSON and complete provider Svelte data/chunk streams are accepted. Every capture and unknown field stays in the export, along with the original input. **Original** buttons download those inputs unchanged.
 
-Verifying a target or selecting a recent avatar fetches its history independently. Typing never fetches it. Saved captures are reused until **Refresh**. Automatic loading opens a temporary browser session for verification, then fetches every history section with pagination, including deleted comments. It preserves raw profile/page responses in a reimportable capture. SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter). Automatic loading uses a fresh public session. Its returned comment total can differ from the profile-summary counter, which may be stale or include inaccessible records. Vapora keeps these totals separate and marks the gap partial without inventing comments. Imports preserve authenticated captures supplied by the user. Partial history names the failed section or provider count discrepancy; a blocked or failed refresh keeps the last dated capture and offers Retry. Source dates remain separate from retrieval time. Steam scanning remains available. Matching saved captures attach to run results, while current Steam facts stay separate from historical facts.
+Verifying a target or selecting a recent avatar fetches its history independently. Typing never fetches it. Saved captures are reused until **Refresh**. Automatic loading uses a windowless background browser to fetch every history section with pagination, including deleted comments. It preserves raw profile/page responses in a reimportable capture. Some deleted comments require an authenticated supporter session. Automatic loading uses a fresh public session. Its returned comment total can differ from the profile-summary counter, which may be stale or include inaccessible records. Vapora keeps these totals separate and marks the gap partial without inventing comments. Imports preserve authenticated captures supplied by the user. Partial history names the failed section or provider count discrepancy; a blocked or failed refresh keeps the last dated capture and offers Retry. Source dates remain separate from retrieval time. Steam scanning remains available. Matching saved captures attach to run results, while current Steam facts stay separate from historical facts.
 
 Attach history only to a run for the same Steam account, or import it independently. Attached history reopens with the run and adds `history.json` to its exports. Browser imports accept up to 2 MB.
 

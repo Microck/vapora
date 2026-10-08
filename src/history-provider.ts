@@ -11,22 +11,22 @@ const sections = History.Section.literals;
 const maxBytes = 2 * 1024 * 1024;
 const pageLimit = 100;
 
-const request = Effect.fn("SteamHistory.request")(function* (session: Session, path: string) {
+const request = Effect.fn("History.request")(function* (session: Session, path: string) {
   const response = yield* session.request(path);
   if (response.status !== 200) return yield* Effect.fail(new InputError({ message: response.status === 403
-    ? "SteamHistory blocked this request. Retry or import a saved capture. Steam scanning is still available."
-    : `SteamHistory returned HTTP ${response.status}. Retry or import a saved capture.` }));
+    ? "History blocked this request. Retry or import a saved capture. Steam scanning is still available."
+    : `History returned HTTP ${response.status}. Retry or import a saved capture.` }));
   return { path, contents: response.contents };
 });
-const profile = Effect.fn("SteamHistory.profile")(function* (session: Session, id: SteamId) {
+const profile = Effect.fn("History.profile")(function* (session: Session, id: SteamId) {
   const response = yield* request(session, `/id/${id}/__data.json`);
   const fields = yield* Effect.try({ try: () => History.summary(response.contents),
-    catch: () => new InputError({ message: "SteamHistory returned an unsupported profile response." }) });
-  if (fields.steamID64 !== id) return yield* Effect.fail(new InputError({ message: "SteamHistory returned another account. Nothing was saved." }));
-  if (Buffer.byteLength(response.contents) > maxBytes / 2) return yield* Effect.fail(new InputError({ message: "SteamHistory's profile exceeds the capture size limit." }));
+    catch: () => new InputError({ message: "History returned an unsupported profile response." }) });
+  if (fields.steamID64 !== id) return yield* Effect.fail(new InputError({ message: "History returned another account. Nothing was saved." }));
+  if (Buffer.byteLength(response.contents) > maxBytes / 2) return yield* Effect.fail(new InputError({ message: "History's profile exceeds the capture size limit." }));
   return { response, fields };
 });
-const readPages = Effect.fn("SteamHistory.pages")(function* (session: Session, document: History.Document, section: History.Section, filter: "all" | "deleted", deadline: number) {
+const readPages = Effect.fn("History.pages")(function* (session: Session, document: History.Document, section: History.Section, filter: "all" | "deleted", deadline: number) {
   const pages: typeof History.Page.Type[] = [];
   const seen = new Set<string>();
   let documentBytes = Buffer.byteLength(JSON.stringify(document));
@@ -42,13 +42,13 @@ const readPages = Effect.fn("SteamHistory.pages")(function* (session: Session, d
       const batch = Schema.decodeUnknownSync(Schema.fromJsonString(History.PageResponse))(outcome.success.contents);
       if (section === "comments") for (const row of batch.data) History.commentId(row);
       return batch;
-    }, catch: (cause) => cause instanceof InputError ? cause : new InputError({ message: "SteamHistory returned malformed history records." }) }).pipe(Effect.result);
+    }, catch: (cause) => cause instanceof InputError ? cause : new InputError({ message: "History returned malformed history records." }) }).pipe(Effect.result);
     if (decoded._tag === "Failure") { error = decoded.failure.message; break; }
     const batch = decoded.success;
-    if (total !== null && total !== batch.total) { error = "SteamHistory's page total changed during collection. Refresh to retry."; break; }
+    if (total !== null && total !== batch.total) { error = "History's page total changed during collection. Refresh to retry."; break; }
     total = batch.total;
     const signature = JSON.stringify(batch.data);
-    if (batch.data.length && seen.has(signature)) { error = "SteamHistory repeated a history page. Refresh to retry."; break; }
+    if (batch.data.length && seen.has(signature)) { error = "History repeated a history page. Refresh to retry."; break; }
     const page = { section, filter, response: outcome.success };
     const pageBytes = Buffer.byteLength(JSON.stringify(page)) + (document.pages.length + pages.length ? 1 : 0);
     if (documentBytes + pageBytes > maxBytes - 32768) {
@@ -56,23 +56,23 @@ const readPages = Effect.fn("SteamHistory.pages")(function* (session: Session, d
     }
     documentBytes += pageBytes;
     seen.add(signature); pages.push(page); captured += batch.data.length;
-    if (captured > total) { error = "SteamHistory returned more rows than its declared page total."; break; }
+    if (captured > total) { error = "History returned more rows than its declared page total."; break; }
     if (captured === total) break;
-    if (!batch.data.length) { error = "SteamHistory ended pagination before its declared total."; break; }
+    if (!batch.data.length) { error = "History ended pagination before its declared total."; break; }
     if (count === pageLimit - 1) error = "The section reached its 100-page limit.";
   }
   return { pages, total, captured, error };
 });
 
 function summaryMismatch(section: History.Section, expected: number, captured: number): string {
-  const message = `SteamHistory's profile summary lists ${expected} ${section} records; this session returned ${captured}.`;
+  const message = `History's profile summary lists ${expected} ${section} records; this session returned ${captured}.`;
   if (section === "comments" && expected > captured)
-    return message + " Deleted comments require SteamHistory supporter access; the summary may also be outdated.";
+    return message + " Deleted comments require authenticated supporter access; the summary may also be outdated.";
   return message;
 }
 
 /** One browser session owns profile and pagination. Partial sections never masquerade as empty data. */
-export const fetchAccount = Effect.fn("SteamHistory.fetchAccount")(function* (id: SteamId, open: OpenSession) {
+export const fetchAccount = Effect.fn("History.fetchAccount")(function* (id: SteamId, open: OpenSession) {
   const session = yield* open(id);
   const summary = yield* profile(session, id);
   let document: History.Document = { type: "SteamHistoryCapture", steamID64: id, capturedAt: new Date().toISOString(),

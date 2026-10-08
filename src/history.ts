@@ -101,11 +101,11 @@ export function commentId(record: Record): string | null {
 function unflatten(pool: readonly typeof Schema.Json.Type[], chunks: ReadonlyMap<number, readonly typeof Schema.Json.Type[]>, activeChunks = new Set<number>()): typeof Schema.Json.Type {
   const active = new Set<number>(); const resolved = new Map<number, typeof Schema.Json.Type>();
   const ref = (index: typeof Schema.Json.Type): typeof Schema.Json.Type => {
-    if (!Schema.is(Schema.Number)(index) || !Number.isInteger(index)) throw new InputError({ message: "SteamHistory contains an invalid data reference." });
+    if (!Schema.is(Schema.Number)(index) || !Number.isInteger(index)) throw new InputError({ message: "History contains an invalid data reference." });
     if (index === -1 || index === -2) return null; // devalue undefined and array hole
-    if (index < 0 || index >= pool.length) throw new InputError({ message: "SteamHistory contains an unsupported data reference." });
+    if (index < 0 || index >= pool.length) throw new InputError({ message: "History contains an unsupported data reference." });
     if (resolved.has(index)) return resolved.get(index) ?? null;
-    if (active.has(index)) throw new InputError({ message: "SteamHistory contains cyclic data. The original file was not changed." });
+    if (active.has(index)) throw new InputError({ message: "History contains cyclic data. The original file was not changed." });
     active.add(index);
     const value = pool[index]; let decoded: typeof Schema.Json.Type;
     if (Array.isArray(value)) decoded = array(value);
@@ -117,17 +117,17 @@ function unflatten(pool: readonly typeof Schema.Json.Type[], chunks: ReadonlyMap
     const tag = text(values[0]);
     if (tag === "Promise") {
       const id = values[1];
-      if (!Schema.is(Schema.Number)(id)) throw new InputError({ message: "SteamHistory contains an invalid chunk reference." });
+      if (!Schema.is(Schema.Number)(id)) throw new InputError({ message: "History contains an invalid chunk reference." });
       const chunk = chunks.get(id);
-      if (!chunk) throw new InputError({ message: "SteamHistory's stream is incomplete. Save the complete response, including its chunks." });
-      if (activeChunks.has(id)) throw new InputError({ message: "SteamHistory contains cyclic stream chunks. The original file was not changed." });
+      if (!chunk) throw new InputError({ message: "History's stream is incomplete. Save the complete response, including its chunks." });
+      if (activeChunks.has(id)) throw new InputError({ message: "History contains cyclic stream chunks. The original file was not changed." });
       activeChunks.add(id);
       const decoded = unflatten(chunk, chunks, activeChunks); activeChunks.delete(id); return decoded;
     }
     if (tag === "Date" || tag === "BigInt") return { type: tag, value: values[1] ?? null };
     if (tag === "Set") return values.slice(1).map(ref);
     if (tag === "Map") return { type: tag, entries: values.slice(1).map(ref) };
-    if (tag) throw new InputError({ message: `SteamHistory returned an unsupported data type: ${tag}. Original input remains unchanged.` });
+    if (tag) throw new InputError({ message: `History returned an unsupported data type: ${tag}. Original input remains unchanged.` });
     return values.map(ref);
   };
   return ref(0);
@@ -166,12 +166,12 @@ export function summary(contents: string): Record {
       return { ...profile, steamHistoryRoute: metadata };
     }
   }
-  throw new InputError({ message: "SteamHistory did not return a supported account profile." });
+  throw new InputError({ message: "History did not return a supported account profile." });
 }
 export const PageResponse = Schema.Struct({ data: Schema.Array(Record), total: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)) });
 function documentProfile(document: Document): Profile {
   const profile = summary(document.profile.contents);
-  if (profile.steamID64 !== document.steamID64) throw new InputError({ message: "SteamHistory returned another account. Nothing was saved." });
+  if (profile.steamID64 !== document.steamID64) throw new InputError({ message: "History returned another account. Nothing was saved." });
   const historic: { [key: string]: Record[] } = {};
   for (const page of document.pages) {
     const prefix = `/id/${document.steamID64}/history?`;
@@ -183,7 +183,7 @@ function documentProfile(document: Document): Profile {
 }
 function normalize(record: Record): Profile {
   const id = sid(record.steamID64); const historic = object(record.historic);
-  if (!id || !historic) throw new InputError({ message: "Import a SteamHistory profile with steamID64 and historic records." });
+  if (!id || !historic) throw new InputError({ message: "Import a History profile with steamID64 and historic records." });
   const history: { [key: string]: readonly Record[] } = {};
   for (const [key, value] of Object.entries(historic)) {
     if (Schema.is(Schema.Array(Record))(value)) history[key] = value;
@@ -211,11 +211,11 @@ export const parse = Effect.fn("History.parse")(function* (contents: string) {
       snapshots: [documentProfile(document)], coverage: document.coverage }] } satisfies Bundle;
     const profiles = lines.some((line) => object(line)?.type === "data") ? streamProfiles(lines)
       : lines.map((line) => { const record = object(line); if (!record) throw new InputError({ message: "History must contain profile objects." }); return record; });
-    if (!profiles.length) throw new InputError({ message: "No profile was found in this SteamHistory response." });
+    if (!profiles.length) throw new InputError({ message: "No profile was found in this History response." });
     const snapshots = profiles.map(normalize);
     if (snapshots.some((profile) => profile.steamID64 !== snapshots[0]?.steamID64)) throw new InputError({ message: "Import snapshots of one Steam account at a time." });
     return { sources: [{ provider: "SteamHistory", capturedAt: new Date().toISOString(), contents, snapshots, coverage: [] }] } satisfies Bundle;
-  }, catch: (error) => error instanceof InputError ? error : new InputError({ message: "The history file is not valid JSON or a complete SteamHistory data stream." }) });
+  }, catch: (error) => error instanceof InputError ? error : new InputError({ message: "The history file is not valid JSON or a complete History data stream." }) });
 });
 
 export interface Filter { readonly from?: number | undefined; readonly to?: number | undefined }

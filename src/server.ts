@@ -10,6 +10,7 @@ import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
 import * as Scanner from "./scanner.js";
 import * as Analysis from "./analysis.js";
+import * as Obsidian from "./obsidian.js";
 import * as History from "./history.js";
 import * as HistoryProvider from "./history-provider.js";
 import * as HistoryBrowser from "./history-browser.js";
@@ -211,6 +212,10 @@ export async function start(options: Options) {
       json(response, 200, await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).profile(profileMatch[1] ?? ""); })));
       return;
     }
+    if (url.pathname === "/api/obsidian") {
+      await downloadObsidian(url, response);
+      return;
+    }
     if (url.pathname === "/api/download") {
       const artifact = Storage.artifacts.find((name) => name === url.searchParams.get("file"));
       if (!artifact) { json(response, 404, { error: "Unknown export file." }); return; }
@@ -225,6 +230,13 @@ export async function start(options: Options) {
     if (!file) { json(response, 404, { error: "Page not found." }); return; }
     const contents = await readFile(fileURLToPath(new URL(`../ui/${file.name}`, import.meta.url)));
     response.writeHead(200, { "content-type": file.type });
+    response.end(contents);
+  }
+  async function downloadObsidian(url: URL, response: ServerResponse) {
+    const view = await runtime.runPromise(savedRun(url.searchParams.get("id") ?? ""));
+    const contents = await Obsidian.vault(view);
+    response.writeHead(200, { "content-type": "application/zip", "cache-control": "no-store",
+      "content-disposition": `attachment; filename="vapora-${view.scan.id}-obsidian.zip"` });
     response.end(contents);
   }
   async function updateKey(path: string, contents: string, response: ServerResponse) {

@@ -53,7 +53,7 @@ async function connect(id: SteamId, root: string, origin: string, sandbox: strin
     if (reply.error) waiter.reject(new InputError({ message: reply.error })); else waiter.resolve(reply);
   });
   const receive = (id: number, timeout: number) => new Promise<Reply>((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(id); reject(new InputError({ message: "SteamHistory timed out. Retry or import a saved capture." })); }, timeout);
+    const timer = setTimeout(() => { pending.delete(id); reject(new InputError({ message: "History timed out. Retry or import a saved capture." })); }, timeout);
     pending.set(id, { resolve: (reply) => { clearTimeout(timer); resolve(reply); }, reject: (error) => { clearTimeout(timer); reject(error); } });
   });
   const close = async () => {
@@ -62,34 +62,34 @@ async function connect(id: SteamId, root: string, origin: string, sandbox: strin
     const timer = setTimeout(() => {
       if (child.exitCode !== null || child.signalCode !== null) return;
       // Only this helper's process tree is owned here, including its Chromium children.
-      if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+      if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
       else if (child.pid) { try { process.kill(-child.pid, "SIGTERM"); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error; } }
     }, 3000);
     await exited; clearTimeout(timer); lines.close();
     await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   };
-  const request = Effect.fn("SteamHistory.browserRequest")((path: string) => Effect.tryPromise({
+  const request = Effect.fn("History.browserRequest")((path: string) => Effect.tryPromise({
     try: async () => {
       if (stopped || child.exitCode !== null || child.signalCode !== null) throw new InputError({ message: "The history browser is closed. Retry to open it again." });
       const id = ++sequence; const response = receive(id, 25000);
       child.stdin.write(JSON.stringify({ id, path }) + "\n");
       return Schema.decodeUnknownSync(Provider.Response)(await response);
-    }, catch: (error) => error instanceof InputError ? error : new InputError({ message: "SteamHistory's browser response could not be read. Retry the capture." }),
+    }, catch: (error) => error instanceof InputError ? error : new InputError({ message: "History's browser response could not be read. Retry the capture." }),
   }));
   const ready = receive(0, 95000);
   return { request, close, ready };
 }
 
 /** Packaged and source launches use the same frozen helper and isolated browser session. */
-export const open = (root = defaultRoot, origin = "https://steamhistory.net"): Provider.OpenSession => Effect.fn("SteamHistory.openBrowser")(function* (id: SteamId) {
+export const open = (root = defaultRoot, origin = "https://steamhistory.net"): Provider.OpenSession => Effect.fn("History.openBrowser")(function* (id: SteamId) {
   const sandbox = yield* Config.String("VAPORA_HISTORY_SANDBOX").pipe(Config.withDefault("enabled"),
     Effect.mapError(() => new InputError({ message: "Invalid history browser sandbox setting." })));
   if (sandbox !== "enabled" && sandbox !== "disabled") return yield* Effect.fail(new InputError({ message: "The history sandbox setting must be enabled or disabled." }));
   const session = yield* Effect.acquireRelease(Effect.tryPromise({ try: () => connect(id, root, origin, sandbox),
-    catch: (error) => error instanceof InputError ? error : new InputError({ message: "The history browser could not start. Check the bundled runtime and graphical display." }) }),
+    catch: (error) => error instanceof InputError ? error : new InputError({ message: "The history browser could not start. Check the bundled history runtime and retry." }) }),
   (session) => Effect.promise(session.close));
   const ready = yield* Effect.tryPromise({ try: () => session.ready,
-    catch: (error) => error instanceof InputError ? error : new InputError({ message: "SteamHistory's browser did not become ready." }) });
-  if (!ready.ready) return yield* Effect.fail(new InputError({ message: "SteamHistory's browser did not become ready." }));
+    catch: (error) => error instanceof InputError ? error : new InputError({ message: "History's browser did not become ready." }) });
+  if (!ready.ready) return yield* Effect.fail(new InputError({ message: "History's browser did not become ready." }));
   return session;
 });
