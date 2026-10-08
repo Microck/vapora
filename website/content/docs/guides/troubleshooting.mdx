@@ -11,7 +11,7 @@ description: "Recover scans, exports and history while preserving saved observat
 | Invalid checkpoint | Start a fresh run. Legacy Python files and earlier local formats are not migrated; existing files remain untouched. |
 | Slow scan | Reduce depth, node cap or optional group/game requests. |
 | Port in use | Run `npm start -- serve --port 3001`. |
-| Missing `VCRUNTIME140.dll` on Windows | Install the matching Visual C++ runtime linked above, then relaunch. |
+| Missing `VCRUNTIME140.dll` on Windows | Install the matching Visual C++ runtime from the [installation guide](/docs/getting-started/installation#browser-and-cli-from-source), then relaunch. |
 | Checkpoint save failed | Read the filesystem code in the error. Free disk space or fix permissions as directed; close apps holding the file. Vapora retries brief Windows replacement blocks. After fixing the issue, choose Resume run. The last successfully saved checkpoint remains available. |
 | Disk error while saving ranking | Fix disk space or permissions, then run `npm start -- analyze RUN_ID --root DIRECTORY` to regenerate exports from the saved checkpoint. |
 
