@@ -21,11 +21,11 @@ Public screenshots use fixture names and avatars. Captures were opened and inspe
 
 ## Captures
 
-![Compact estimates and target rail](screenshots/estimate.png)
+![Compact estimates and target rail](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/estimate.png)
 
 ![Desktop API-key setup](screenshots/key-dialog.png)
 
-![Rebuild exports](screenshots/exports.png)
+![Rebuild exports](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/exports.png)
 
 [320px estimate](screenshots/estimate-narrow.png) · [Native maximized window](screenshots/window-maximized.png)
 

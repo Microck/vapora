@@ -1,32 +1,122 @@
 ---
 title: "Scoring and populations"
-description: "Exact index formulas, graph metrics and the treatment of missing evidence."
+description: "Formulas, reference populations and missing evidence."
 ---
+
+Scores measure captured support. They are not probabilities of friendship or proof of residence.
 
 ## Count index
 
-For a count x and reference population P, use:
+For count `x`, reference population `P` and baseline `B`:
 
-`A(x) = 100 * (2 * min(1, x / max(1, 1.5 * meanTopN(P))) + 2 * min(1, x / max(1, max(P))) + min(1, x / B)) / 5`.
+```text
+A(x) = 100 * (
+    2 * min(1, x / max(1, 1.5 * meanTopN(P)))
+  + 2 * min(1, x / max(1, max(P)))
+  +     min(1, x / B)
+) / 5
+```
 
-Defaults: Top N 5 and baseline B 50. Empty P has no index. Network P contains every known direct friend, including zero observed incoming counts and accounts outside the admitted graph. Incoming mutuals count appearances in other direct friends' observed lists. Keep undirected mutuals distinct. Unknown lists provide no observed edges but are never described as measured empty lists.
+| Parameter | Default or meaning |
+| --- | --- |
+| Top N | 5 |
+| Baseline B | 50 |
+| `meanTopN(P)` | Mean of the largest Top N counts |
+| Empty P | No index |
 
-The optional combined index is `(wm*A(mutual) + 100*wf*Jfriends + 100*wg*Jgroups + 100*wa*Jgames) / sum(weights)`. Defaults are mutual 1 and other weights 0. Use bounded Jaccard for optional signals; retain raw overlap counts. Complete empty unions yield zero. Unknown comparisons contribute no observed support, with the configured denominator unchanged and availability visible. All-zero weights yield no index and sort observed incoming count. Preserve precision through sorting; round only for display. Break ties by Steam ID.
+### Network reference population
 
-Friend-comment A uses only positive-count authors with friendship evidence anywhere in the supplied captures, including former friends. Nonfriend commenters and displayed zero rows never change that reference. Membership filters do not change the reference; date ranges do. Profile and ban metadata filters use source observation dates. Do not compute a second all-commenter index.
+`P` contains every known direct friend, including zero observed incoming counts and friends outside the admitted graph.
 
-Keep network and friend-comment location evidence separate. Group only supplied country/city codes; missing-city records stay visible outside this calculation. Restore sum/product selection (default product), baseline 100. For city support s and total T, `L = 100 * (2*s/T + min(1,s/B_location)) / 3`. Product uses true zero-absorbing semantics. Use exact integer products and sums, bounded ratio conversion, and decimal-string exports. Zero total has no index or share. Expose contributor and zero-contributor counts, raw support, source population and coverage. Location fields and indices never establish real residence.
+- **Incoming mutuals:** appearances in other direct friends' observed lists.
+- **Undirected mutuals:** a separate count; do not substitute it for incoming mutuals.
+- **Unknown lists:** add no observed edges. They are not measured empty lists.
+
+## Combined index
+
+```text
+combined = (
+    wm * A(incomingMutual)
+  + 100 * wf * Jfriends
+  + 100 * wg * Jgroups
+  + 100 * wa * Jgames
+) / sum(weights)
+```
+
+| Signal | Default weight |
+| --- | --- |
+| Incoming-mutual count index | 1 |
+| Friend Jaccard | 0 |
+| Group Jaccard | 0 |
+| Game Jaccard | 0 |
+
+Optional comparisons use bounded Jaccard; raw overlap counts remain available.
+
+| Condition | Behavior |
+| --- | --- |
+| Complete, empty union | Jaccard is zero |
+| Unknown comparison | No observed support; denominator unchanged and availability visible |
+| All weights zero | No combined index; sort by observed incoming count |
+| Equal scores | Break ties by Steam ID |
+
+Sorting retains full precision. Rounding happens only for display.
+
+## Friend-comment index
+
+The same count formula uses a different reference population:
+
+- Include positive-count authors with friendship evidence anywhere in the captures, including former friends.
+- Exclude nonfriend commenters and displayed zero rows from the reference.
+- Friendship filters do not change the reference; date ranges do.
+- Profile and ban metadata filters use source observation dates.
+
+There is no second all-commenter index. Comment ranking describes captured scope, not every comment ever made.
+
+## Location support
+
+Network and friend-comment location evidence are calculated separately. Only supplied country/city codes participate; missing-city records stay visible outside the calculation.
+
+For city support `s`, total support `T` and location baseline `B_location`:
+
+```text
+L = 100 * (2 * s / T + min(1, s / B_location)) / 3
+```
+
+| Setting or condition | Behavior |
+| --- | --- |
+| Aggregation | Sum or product; default product |
+| Location baseline | Default 100 |
+| Product includes zero | Support is zero |
+| Total support is zero | No index or share |
+| Arithmetic | Exact integer sums/products; bounded ratio conversion |
+| Export | Decimal strings preserve integer precision |
+
+Results retain contributor and zero-contributor counts, raw support, source population and coverage. Self-reported location fields and these indices do not establish residence.
 
 ## Network metrics and score scaling
 
-Friendship metrics use an undirected graph of admitted profiles and observed friendship links; group links do not count. Communities use Louvain; betweenness is normalized and unweighted. Hub classification requires positive betweenness at or above the selected percentile.
+| Metric | Calculation |
+| --- | --- |
+| Friendship graph | Undirected, admitted profiles and observed friendships only |
+| Community | Louvain |
+| Betweenness | Normalized, unweighted |
+| Hub | Positive betweenness at or above the configured percentile |
+| Group links | Excluded from friendship metrics |
 
-The current implementation exports `score` and `evidence_score` as the same bounded combined index. It does not rescale the leading candidate to 100. Neither is a probability. Missing observations can lower observed support without establishing absence.
+`score` and `evidence_score` contain the same bounded combined index. The leading candidate is not rescaled to 100. Missing observations can reduce observed support without establishing absence.
 
 ## Worked count example
 
-For population `[10, 5, 0]`, Top N 5 and baseline 50: meanTopN is 5, maximum is 10. A count of 5 gives `100 × (2 × 5/7.5 + 2 × 5/10 + 5/50) / 5 ≈ 48.67`. The zero row participates in the network reference population. Friend-comment ranking uses a different reference population as described above.
+With population `[10, 5, 0]`, Top N **5** and baseline **50**:
+
+1. `meanTopN(P) = 5` and `max(P) = 10`.
+2. For count **5**, the three terms are `2 × 5/7.5`, `2 × 5/10` and `5/50`.
+3. `A(5) ≈ 48.67`.
+
+The zero row participates in the network reference. Friend-comment ranking uses the separate population described above.
 
 ## Source
 
-[`src/scoring.ts`](https://github.com/Microck/vapora/blob/main/src/scoring.ts), [`src/analysis.ts`](https://github.com/Microck/vapora/blob/main/src/analysis.ts) and the [formula contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md#formula-contract) define these calculations.
+- [`src/scoring.ts`](https://github.com/Microck/vapora/blob/main/src/scoring.ts)
+- [`src/analysis.ts`](https://github.com/Microck/vapora/blob/main/src/analysis.ts)
+- [Formula contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md#formula-contract)

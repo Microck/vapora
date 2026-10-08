@@ -3,17 +3,28 @@ title: "Rerank saved observations"
 description: "Change scoring controls offline without repeating a Steam scan."
 ---
 
-Open a completed run's **Ranking** tab, choose the weights and baseline controls, then select **Save ranking**. This updates saved ranking settings and regenerates reports and CSVs without a Steam key or provider calls.
+1. Open a completed run's **Ranking** tab.
+2. Set the weights and baseline controls.
+3. Select **Save ranking** to regenerate reports and CSVs offline.
 
 ![Ranking tab with fixture data](/screenshots/ranking.png)
 
 ## Controls
 
-The default score uses the authored incoming-mutual count index alone. Top N defaults to 5 and count baseline to 50. Optional friend, group and game weights blend bounded Jaccard comparisons. Location support defaults to product and location baseline to 100.
+| Control | Default |
+| --- | --- |
+| Incoming-mutual count weight | 1; the only enabled score component |
+| Friend, group and game Jaccard weights | 0 |
+| Top N | 5 |
+| Count baseline | 50 |
+| Location aggregation | Product |
+| Location baseline | 100 |
 
-Changing ranking does not collect missing games, groups or friendships. Availability remains visible. All-zero weights produce no combined index and sort observed incoming counts.
-
-Saved ranking changes also recompute attached history indices. Collection settings and observations remain intact. Incomplete runs and concurrent Steam/analysis operations reject reranking.
+- Reranking uses saved observations and needs no API key or provider calls.
+- Missing games, groups or friendships remain missing, with availability visible.
+- All-zero weights produce no combined index and sort observed incoming counts.
+- Attached history indices are recalculated; collection settings and observations stay intact.
+- Incomplete runs and concurrent Steam/analysis operations reject reranking.
 
 ## Recover exports
 

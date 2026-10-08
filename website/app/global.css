@@ -1,64 +1,84 @@
 @import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/lib/default-colors.css';
 @import 'fumadocs-ui/css/preset.css';
-/* Modern Steam blues frame the app's original olive palette. */
+
+/* Match the original Steam olive palette in ui/style.css. */
 :root, .dark {
   color-scheme: dark;
-  --color-fd-background: #171d25;
-  --color-fd-foreground: #e5edf3;
-  --color-fd-muted: #1b2838;
-  --color-fd-muted-foreground: #adbdcc;
-  --color-fd-popover: #1b2838;
-  --color-fd-popover-foreground: #e5edf3;
-  --color-fd-card: #1b2838;
-  --color-fd-card-foreground: #e5edf3;
-  --color-fd-border: #34475b;
-  --color-fd-primary: #66c0f4;
-  --color-fd-primary-foreground: #0e1821;
-  --color-fd-secondary: #24364b;
-  --color-fd-secondary-foreground: #e5edf3;
-  --color-fd-accent: #29435a;
-  --color-fd-accent-foreground: #e5edf3;
-  --color-fd-ring: #66c0f4;
-  --fd-layout-width: 1500px;
+  --color-fd-background: #3e4637;
+  --color-fd-foreground: #d8ded3;
+  --color-fd-muted: #4c5844;
+  --color-fd-muted-foreground: #c6d0bb;
+  --color-fd-popover: #4c5844;
+  --color-fd-popover-foreground: #d8ded3;
+  --color-fd-card: #3e4637;
+  --color-fd-card-foreground: #d8ded3;
+  --color-fd-border: #5d6a53;
+  --color-fd-primary: #d8cc75;
+  --color-fd-primary-foreground: #282e22;
+  --color-fd-secondary: #4c5844;
+  --color-fd-secondary-foreground: #d8ded3;
+  --color-fd-accent: #5a6a50;
+  --color-fd-accent-foreground: #d8ded3;
+  --color-fd-ring: #d8cc75;
+  --color-fd-info: #d8cc75;
+  --fd-layout-width: 1400px;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
 }
-body { font-family: Arial, Helvetica, sans-serif; }
-:focus-visible { outline: 2px solid #66c0f4; outline-offset: 4px; }
-::selection { background: #355775; color: #fff; }
-.wordmark { display: inline-flex; gap: 10px; align-items: center; font-size: 23px; letter-spacing: -.7px; font-weight: 700; }
-.nav-tag { font: 11px ui-monospace, monospace; color: #adbdcc; margin-left: 6px; letter-spacing: 0; }
-.edit-link { font-size: 12px; color: #adbdcc; margin-top: 2rem; display: inline-block; }
-.landing { max-width: 1440px; padding: 0 52px; margin: auto; }
-.landing-nav { height: 94px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #34475b; }
-.landing-nav nav, .landing-nav a, .hero-actions, .button, .section-label>a, .principles>a { display: flex; align-items: center; gap: 8px; }
-.landing-nav nav { gap: 28px; font-size: 13px; color: #adbdcc; }
-a:hover { color: #66c0f4; }
-.hero { display: grid; grid-template-columns: 1fr 1.08fr; align-items: center; gap: 48px; padding: 86px 0 76px; }
-.eyebrow { display: flex; align-items: center; gap: 9px; color: #66c0f4; font: 11px ui-monospace, monospace; letter-spacing: 1.3px; }
-.eyebrow>span { width: 6px; height: 6px; background: #a4c66b; border-radius: 50%; }
-.hero h1 { font-size: clamp(36px, 4vw, 58px); line-height: 1.1; letter-spacing: -2.5px; margin: 26px 0; font-weight: 600; }
-.hero h1 em { font-style: normal; color: #66c0f4; }
-.hero-description { color: #adbdcc; line-height: 1.7; font-size: 15px; max-width: 440px; }
-.hero-actions { margin-top: 30px; flex-wrap: wrap; gap: 12px; }
-.button { padding: 13px 18px; font-size: 12px; background: #24364b; border: 1px solid #40566b; }
-.button.primary { background: linear-gradient(100deg, #66c0f4, #4fa1d9); color: #0e1821; border-color: transparent; }
-.button:hover { filter: brightness(1.1); }
-.platforms { font-size: 10px; color: #adbdcc; margin-top: 20px; }
-.hero-preview { border: 1px solid #56684b; background: #3e4637; padding: 7px; box-shadow: 0 30px 75px #0005; transform: perspective(1400px) rotateY(-5deg); }
-.preview-bar { display: flex; justify-content: space-between; color: #d8ded3; font: 9px ui-monospace, monospace; padding: 6px 5px 12px; gap: 12px; }
-.hero-preview img { display: block; width: 100%; height: auto; }
-.hero-preview figcaption { color: #d8ded3; font-size: 10px; padding: 10px 5px 4px; }
-.entry-section { padding: 38px 0 46px; border-top: 1px solid #34475b; }
-.section-label { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; margin-bottom: 27px; }
-.section-label>span { font: 10px ui-monospace, monospace; color: #66c0f4; letter-spacing: 1px; }
-.section-label h2 { font-size: 21px; letter-spacing: -.6px; }
-.section-label>a { margin-left: auto; font-size: 12px; color: #adbdcc; }
-.entry-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.entry-card { padding: 24px; background: linear-gradient(140deg, #1b2838, #192430); border: 1px solid #34475b; position: relative; }
-.entry-card>svg { color: #66c0f4; }.entry-card h3 { font-size: 16px; margin: 25px 0 12px; }.entry-card p { font-size: 12px; color: #adbdcc; line-height: 1.7; padding-bottom: 22px; }
-.entry-card .card-arrow { position: absolute; right: 20px; bottom: 20px; }.entry-card:hover { border-color: #66c0f4; }
-.principles { display: flex; gap: 20px; align-items: center; padding: 28px; border: 1px solid #56684b; background: #3e4637; margin-bottom: 48px; }.principles p { color: #d8cc75; font-size: 14px; white-space: nowrap; }.principles span { color: #d8ded3; font-size: 12px; line-height: 1.6; }.principles>a { font-size: 11px; color: #d8cc75; flex-shrink: 0; margin-left: auto; }
-.landing-footer { display: flex; justify-content: space-between; border-top: 1px solid #34475b; padding: 27px 0; color: #adbdcc; font: 10px ui-monospace, monospace; }.landing-footer>span:last-child { display: flex; gap: 22px; }
-@media(max-width: 1050px) { .landing { padding: 0 28px; }.hero { gap: 28px; }.entry-grid { grid-template-columns: repeat(2, 1fr); }.principles { flex-wrap: wrap; }.principles>a { margin-left: 0; } }
-@media(max-width: 700px) { .landing { padding: 0 20px; }.landing-nav { height: 72px; }.landing-nav nav { gap: 16px; font-size: 11px; }.hero { grid-template-columns: 1fr; padding: 48px 0; }.hero h1 { font-size: 42px; letter-spacing: -1.6px; }.hero-preview { transform: none; }.entry-grid { grid-template-columns: 1fr; }.section-label>a { margin-left: 0; }.landing-footer { flex-direction: column; gap: 18px; }.nav-tag { display: none; } }
-@media(prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+body { font-family: Tahoma, Arial, sans-serif; }
+:focus-visible { outline: 2px solid var(--color-fd-ring); outline-offset: 2px; }
+::selection { background: #746b30; color: #fff; }
+a:hover { color: var(--color-fd-primary); }
+.wordmark { display: inline-flex; gap: 8px; align-items: center; font-size: 19px; font-weight: 700; }
+.wordmark img { width: 20px; height: 20px; }
+.edit-link { display: inline-block; margin-top: 2rem; font-size: 12px; color: var(--color-fd-muted-foreground); }
+
+.dark #nd-sidebar, #nd-subnav { background: var(--color-fd-muted); }
+#nd-sidebar a[data-active='true'] { background: var(--color-fd-background); color: var(--color-fd-primary); }
+#nd-sidebar button, [role='dialog'] { border-radius: 0; }
+.prose { font-size: 15px; line-height: 1.65; }
+.prose h2 { font-size: 21px; line-height: 1.35; }
+.prose h3 { font-size: 17px; line-height: 1.4; }
+.prose :not(pre) > code { border-radius: 0; }
+.prose th { background: var(--color-fd-muted); }
+.prose th, .prose td { padding: 10px 12px; }
+.prose img { border: 1px solid; border-color: #808080 #282e22 #282e22 #808080; border-radius: 0; }
+.shiki { background: #282e22; border-color: #282e22 #808080 #808080 #282e22; box-shadow: none; }
+/* A terminal-style monochrome block keeps code inside the Steam palette. */
+.dark .shiki:not(.not-fumadocs-codeblock *) code span { color: var(--color-fd-foreground); }
+
+/* Tabs share the application's attached, square-edged control shape. */
+.prose [role='tablist'] { gap: 3px; padding: 6px 6px 0; border-bottom: 1px solid #808080; }
+.prose [role='tab'] {
+  padding: 6px 12px;
+  border: 1px solid;
+  border-color: #808080 #282e22 transparent #808080;
+  background: var(--color-fd-muted);
+  transition: none;
+}
+.prose [role='tab'][data-state='active'] { background: var(--color-fd-background); color: var(--color-fd-primary); }
+.prose [role='tabpanel'] { border-radius: 0; }
+
+/* Fumadocs hides zoom controls by default; keep them keyboard accessible. */
+.dark [data-rmiz-btn-zoom], .dark [data-rmiz-btn-unzoom] {
+  display: block;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  cursor: pointer;
+  padding: 6px;
+  color: var(--color-fd-foreground);
+  background: var(--color-fd-muted);
+  border: 1px solid var(--color-fd-border);
+}
+[data-rmiz-btn-zoom-icon], [data-rmiz-btn-unzoom-icon] { width: 16px; height: 16px; }
+[data-rmiz-btn-zoom]:not(:focus-visible) { opacity: 0; }
+
+@media(prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

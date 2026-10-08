@@ -1,6 +1,6 @@
 ---
 title: "Maintain and publish the docs"
-description: "Content structure, research sources, static search and hosting instructions."
+description: "Edit, verify and publish the documentation."
 ---
 
 ## Local workflow
@@ -13,23 +13,51 @@ npm ci
 npm run dev
 ```
 
-Edit MDX in `content/docs/` and navigation order in each folder's `meta.json`. Public screenshots are copied from tracked `docs/screenshots/` by the predev/prebuild asset script. The Vapora icon comes from `assets/vapora.svg`.
+| Change | File or directory |
+| --- | --- |
+| Page content | `content/docs/` |
+| Navigation order | Each folder's `meta.json` |
+| Theme | `app/global.css` |
+| Screenshots | Repository `docs/screenshots/`, copied before dev/build |
+| Logo | Repository `assets/vapora.svg`, copied before dev/build |
 
 ```sh
 npm run verify
 ```
 
-This checks TypeScript, renders every page, validates internal links and fragment targets, and exercises the exported search index with the real static search client. The lockfile pins the tested dependency graph. CI also builds and checks the site on documentation PRs.
+Verification checks types, renders every page, validates links and anchors, and tests the exported search index with the real client. CI runs the same checks on documentation PRs.
+
+Screenshots open at full size when selected. Platform and shell tabs keep each set of commands together; code blocks support copying.
 
 ## Writing conventions
 
-The README stays a practical entry point, following kagi-cli's lowercase sections, centered mark, flat-square badges and runnable examples. The site separates learning, task guides, factual reference and explanation, following [Diátaxis](https://diataxis.fr/start-here/).
+Keep the README as a practical entry point with runnable examples. The site follows [Diátaxis](https://diataxis.fr/start-here/): tutorials, task guides, reference and explanation.
 
-Keep defaults and flags aligned with `src/model.ts` and `src/cli.ts`. Verify exports against `src/analysis.ts` and formulas against `src/scoring.ts`. Document source dates, coverage and missing data next to the affected feature. Use illustrative IDs rather than claiming sample accounts are real. Label fixture screenshots. Keep existing release and verification reports as historical records rather than rewriting them into current claims.
+| Information | Check against |
+| --- | --- |
+| Defaults and ranges | `src/model.ts` |
+| CLI commands and flags | `src/cli.ts` |
+| Exports | `src/analysis.ts` |
+| Formulas | `src/scoring.ts` |
+
+- Keep paragraphs short; use steps for tasks and tables for comparisons.
+- Put source dates, coverage and missing-data rules beside the affected feature.
+- Label illustrative IDs and fixture screenshots.
+- Preserve release and verification reports as dated evidence.
 
 ## Design
 
-The shell uses Steam-inspired navy `#171d25`, blue `#1b2838` and cyan `#66c0f4`. Olive accents use Vapora's actual app variables: `#4c5844`, `#3e4637`, `#d8ded3` and maize `#d8cc75` from `ui/style.css`. The site uses a forced dark theme, visible keyboard focus, responsive navigation and reduced-motion support. No Steam fonts or new remote assets are required.
+The docs use the original Steam olive palette from `ui/style.css`.
+
+| Role | Color |
+| --- | --- |
+| Page background | `#3e4637` |
+| Navigation and controls | `#4c5844` |
+| Hover | `#5a6a50` |
+| Text | `#d8ded3` |
+| Active links and focus | `#d8cc75` |
+
+Controls have square edges. Navigation works on desktop and mobile, with visible keyboard focus and reduced-motion support. No remote fonts or assets are required.
 
 ## Build and host
 
@@ -38,11 +66,30 @@ npm ci
 npm run verify
 ```
 
-The public site is [vapora.micr.dev](https://vapora.micr.dev/), hosted on GitHub Pages. The documentation workflow verifies changes on pull requests and deploys the checked `website/out/` artifact from `main`. It can also be run manually through GitHub Actions. Deployment uses the `github-pages` environment and waits for the build to pass.
+The site is hosted on [vapora.micr.dev](https://vapora.micr.dev/) through GitHub Pages. It documents the local app; the Steam scanner runs locally.
 
-The export includes HTML, assets, a local search index and a 404 page. No Steam key, Python, Electron or Node server is needed by the deployed docs. Pages serves clean paths with trailing slashes, so `/docs/reference/cli/` resolves to its `index.html`. `/api/search` is an exported JSON file; searches run in the browser.
+1. The documentation workflow verifies PR changes.
+2. On `main`, it uploads the checked `website/out/` artifact.
+3. The `github-pages` environment deploys after a successful build. Manual runs are also available through Actions.
 
-The custom domain uses the default domain-root configuration, without a Next.js `basePath`. GitHub Pages uses Actions as its publishing source and `vapora.micr.dev` as its custom domain. The DNS CNAME for `vapora` points to `microck.github.io`. HTTPS is enforced once GitHub has issued the domain certificate. The deployed site documents the local app; it does not host the Steam scanner.
+The static export needs no Steam key or application server.
+
+| Route | Content |
+| --- | --- |
+| `/` | Opens the docs overview |
+| `/docs/reference/cli/` | CLI reference, served from `index.html` |
+| `/api/search` | Static search index, read in the browser |
+| [`/llms.txt`](/llms.txt) | Documentation index for text clients |
+| [`/llms-full.txt`](/llms-full.txt) | Full documentation, including all command tabs |
+| `/404.html` | Missing-page response |
+
+| Hosting setting | Value |
+| --- | --- |
+| Pages publishing source | GitHub Actions |
+| Custom domain | `vapora.micr.dev` |
+| DNS CNAME | `vapora` → `microck.github.io` |
+| Next.js `basePath` | None; deployed at the domain root |
+| HTTPS | Enforce after GitHub issues the certificate |
 
 ## Implementation references
 

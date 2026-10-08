@@ -16,21 +16,34 @@ Download the matching asset from the [latest release](https://github.com/Microck
 
 Downloads are unsigned and not notarized. Compare the downloaded file's SHA-256 with the release's `SHA256SUMS.txt` before approving an OS warning.
 
-```powershell
+<Tabs items={['Windows', 'Linux', 'macOS']}>
+<Tab value="Windows">
+
+```powershell title="PowerShell"
 Get-FileHash .\vapora-2.2.0-win-x64.exe -Algorithm SHA256
 ```
 
-```sh
-# Linux
+</Tab>
+<Tab value="Linux">
+
+```sh title="Terminal"
 sha256sum vapora-2.2.0-linux-x86_64.AppImage
 chmod +x vapora-2.2.0-linux-x86_64.AppImage
 ./vapora-2.2.0-linux-x86_64.AppImage
 # Without FUSE
 ./vapora-2.2.0-linux-x86_64.AppImage --appimage-extract-and-run
 
-# macOS
+```
+
+</Tab>
+<Tab value="macOS">
+
+```sh title="Terminal"
 shasum -a 256 vapora-2.2.0-mac-arm64.dmg
 ```
+
+</Tab>
+</Tabs>
 
 Asset names above describe 2.2.0; use the filenames from your selected release.
 

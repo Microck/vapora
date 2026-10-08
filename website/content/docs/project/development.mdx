@@ -1,25 +1,61 @@
 ---
 title: "Development"
-description: "Build, verify and package the shared application."
+description: "Build, test and package the app or documentation."
 ---
+
+## App checks
+
+From the repository root:
 
 ```sh
 npm ci
 npm run verify
-VAPORA_BROWSER=/path/to/chrome npm run test:e2e
-npm run package
-npm run dev
 ```
 
-`verify` checks types, Oxlint, build and the domain/integration suite. The browser E2E suite needs installed Chrome/Chromium and checks real HTTP fixtures, persistence and downloads. These tests do not use a Steam key. CI runs core checks on Linux, Windows and macOS, plus browser E2E on Linux.
+| Command | What it checks |
+| --- | --- |
+| `npm run verify` | TypeScript, Oxlint, build and domain/integration tests |
+| `VAPORA_BROWSER=/path/to/chrome npm run test:e2e` | Real HTTP fixtures, saved data and downloads |
+| `npm run dev` | Builds and starts the local browser app |
 
-`package` builds the native desktop download into `release/` without publishing it. `VAPORA_DESKTOP=/path/to/packaged/executable VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar npm run test:desktop` checks its bundled files, launches it with fresh storage, completes a fixture scan, downloads its exports and closes its native window. Windows CI also launches the actual portable EXE, moves it with its data, reopens the saved run and downloads its exports again. Linux CI runs that command under Xvfb. Desktop builds exclude local keys, data and development dependencies.
+Browser E2E needs installed Chrome/Chromium. Fixture tests use no Steam key. CI runs core checks on Linux, Windows and macOS, and browser E2E on Linux.
 
-The app shares its scanner, analysis and storage across CLI, browser and desktop. See the [product contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md), [E2E report](https://github.com/Microck/vapora/blob/main/docs/e2e-verification.md) and [release runbook](https://github.com/Microck/vapora/blob/main/docs/release-runbook.md). Live Steam verification is currently bounded to five accounts; it does not establish large-network behavior.
+## Desktop packages
+
+```sh
+npm run package
+```
+
+This creates a native package in `release/` without publishing it. Packages exclude local keys, saved data and development dependencies.
+
+Test the packaged app:
+
+```sh
+VAPORA_DESKTOP=/path/to/executable \
+VAPORA_DESKTOP_ASAR=/path/to/resources/app.asar \
+npm run test:desktop
+```
+
+The desktop test checks bundled files, launches with fresh storage, completes a fixture scan, downloads exports and closes the native window.
+
+| CI platform | Additional check |
+| --- | --- |
+| Windows | Launches the portable EXE, moves it with its data, reopens the run and downloads exports again |
+| Linux | Runs desktop tests under Xvfb |
+
+## Contracts and verification
+
+CLI, browser and desktop share the scanner, analysis and storage.
+
+- [Product contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md)
+- [E2E report](https://github.com/Microck/vapora/blob/main/docs/e2e-verification.md)
+- [Release runbook](https://github.com/Microck/vapora/blob/main/docs/release-runbook.md)
+
+Recorded live Steam verification covers five accounts. It does not establish large-network behavior.
 
 ## Documentation site
 
-The Fumadocs site lives in `website/`, with its own package and lockfile. It is not bundled into the desktop app.
+The website has its own package and lockfile in `website/`. It is not bundled into the desktop app.
 
 ```sh
 cd website
@@ -28,4 +64,4 @@ npm run dev
 npm run verify
 ```
 
-`verify` checks TypeScript, builds the complete static site and validates internal page/asset links. See [documentation maintenance](/docs/project/documentation).
+Website verification checks types, renders every page, validates links and anchors, and tests static search. See [documentation maintenance](/docs/project/documentation).

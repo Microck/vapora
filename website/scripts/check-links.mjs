@@ -1,12 +1,13 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
+import assert from 'node:assert/strict';
 const root = resolve('out');
-async function walk(dir) {
+async function walk(dir, extension = '.html') {
   const files = [];
   for (const item of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, item.name);
-    if (item.isDirectory()) files.push(...await walk(path));
-    else if (item.name.endsWith('.html')) files.push(path);
+    if (item.isDirectory()) files.push(...await walk(path, extension));
+    else if (item.name.endsWith(extension)) files.push(path);
   }
   return files;
 }
@@ -42,3 +43,24 @@ for (const file of pages) {
 }
 if (failures.length) { console.error([...new Set(failures)].join('\n')); process.exitCode = 1; }
 else console.log(`Validated ${checked} internal page, asset and anchor links across ${pages.length} HTML files.`);
+
+const contentRoot = resolve('content/docs');
+const documents = await walk(contentRoot, '.mdx');
+const expectedUrls = documents.map((file) => '/docs' + file.slice(contentRoot.length).split(sep).join('/').replace(/\.mdx$/, '').replace(/\/index$/, '')).sort();
+const index = await readFile(join(root, 'llms.txt'), 'utf8');
+const indexedUrls = [...index.matchAll(/\]\((\/docs[^)]*)\)/g)].map((match) => match[1]).sort();
+assert.deepEqual(indexedUrls, expectedUrls, 'The text index must list every docs page exactly once.');
+const full = await readFile(join(root, 'llms-full.txt'), 'utf8');
+for (const url of expectedUrls) assert(full.includes(`(${url})`), `Full text export is missing ${url}.`);
+for (const command of ['Get-FileHash', 'sha256sum', 'shasum', 'export STEAM_API_KEY', '$env:STEAM_API_KEY']) {
+  assert(full.includes(command), `Full text export lost a command tab: ${command}`);
+}
+for (const name of ['network', 'estimate', 'ranking', 'history', 'exports', 'inspector']) {
+  const original = await readFile(`../docs/screenshots/${name}.png`);
+  assert(original.equals(await readFile(join(root, 'screenshots', `${name}.png`))), `Exported screenshot is stale: ${name}`);
+}
+for (const [original, exported] of [['vapora.svg', 'vapora.svg'], ['vapora.ico', 'favicon.ico']]) {
+  const asset = await readFile(`../assets/${original}`);
+  assert(asset.equals(await readFile(join(root, exported))), `Exported branding is stale: ${exported}`);
+}
+console.log(`Text exports cover ${documents.length} docs pages and all command tabs; screenshots and branding match their sources.`);
