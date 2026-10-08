@@ -203,6 +203,9 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "4");
   assert.equal(runRequests.length, railRequests);
   assert.equal(fixture.requests.filter((request) => !request.path.startsWith("/avatars/")).length, steamRequests);
+  await page.mouse.move(600, 300);
+  await page.waitForSelector('#app-tooltip:popover-open', { hidden: true });
+  assert.equal(await page.$eval("#app-tooltip", (tooltip) => tooltip.matches(":popover-open")), false);
   await screenshot("scan");
   await page.click("#estimate-button"); await page.waitForSelector(".estimate-facts");
   assert.equal(await page.$eval(".estimate-facts", (facts) => facts.children.length), 6);
