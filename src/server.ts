@@ -144,12 +144,16 @@ export async function start(options: Options) {
     const scan = yield* (yield* Storage.Service).read(id);
     return yield* projectAttachedHistory(scan);
   }));
-  const savedRun = (id: string) => historyGate.withPermit(Effect.gen(function* () {
+  const savedObservations = (id: string) => historyGate.withPermit(Effect.gen(function* () {
     const scan = yield* (yield* Storage.Service).read(id);
     const history = yield* projectAttachedHistory(scan).pipe(Effect.result);
-    return { scan, report: Analysis.analyze(scan), history: history._tag === "Success" ? history.success : null,
-      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies RunView;
+    return { scan, history: history._tag === "Success" ? history.success : null,
+      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies Obsidian.Observations;
   }));
+  const savedRun = (id: string) => Effect.gen(function* () {
+    const saved = yield* savedObservations(id);
+    return { scan: saved.scan, report: Analysis.analyze(saved.scan), history: saved.history, historyError: saved.historyError } satisfies RunView;
+  });
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
     if (busy()) throw new InputError({ message: "A Steam operation is already running. Wait or cancel it first." });
@@ -233,7 +237,7 @@ export async function start(options: Options) {
     response.end(contents);
   }
   async function downloadObsidian(url: URL, response: ServerResponse) {
-    const view = await runtime.runPromise(savedRun(url.searchParams.get("id") ?? ""));
+    const view = await runtime.runPromise(savedObservations(url.searchParams.get("id") ?? ""));
     const contents = await Obsidian.vault(view);
     response.writeHead(200, { "content-type": "application/zip", "cache-control": "no-store",
       "content-disposition": `attachment; filename="vapora-${view.scan.id}-obsidian.zip"` });

@@ -2,6 +2,9 @@ import { Worker, isMainThread, parentPort, workerData } from "node:worker_thread
 import { strToU8, zipSync } from "fflate";
 import type { RunView } from "./contracts.js";
 import type { SteamId } from "./model.js";
+import * as Analysis from "./analysis.js";
+
+export type Observations = Omit<RunView, "report">;
 
 // Provider text is content, never Markdown structure, HTML or a note filename.
 const text = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -42,6 +45,8 @@ function properties(run: string, id: SteamId, name: string, player: RunView["sca
     `run_id: ${JSON.stringify(run)}`, `admitted: ${Boolean(player)}`,
     `profile: ${JSON.stringify(player?.visibility ?? "unknown")}`,
     `friend_list: ${JSON.stringify(player?.friendsStatus ?? "unknown")}`,
+    `groups_status: ${JSON.stringify(player?.groupsStatus ?? "unknown")}`,
+    `games_status: ${JSON.stringify(player?.gamesStatus ?? "unknown")}`,
     `vac_bans: ${player?.bans?.vacCount ?? "null"}`, "---", "",
   ];
 }
@@ -101,7 +106,7 @@ function buildVault(view: RunView): Uint8Array {
     `- Public friend lists: ${report.coverage.publicLists}`, `- Private friend lists: ${report.coverage.privateLists}`,
     `- Unavailable friend lists: ${report.coverage.unavailableLists}`, `- Skipped friend lists: ${report.coverage.skippedLists}`,
     `- Pending friend lists: ${report.coverage.pendingLists}`, "", "## Limits", "", ...warnings.map((warning) => `- ${text(warning)}`), "",
-    "Links describe observed Steam friendships or shared groups. Missing data does not establish absence, and scores are not friendship probabilities.", "",
+    "Profile-to-profile links describe observed Steam friendships or shared groups. Index and history notes provide navigation. Missing data does not establish absence, and scores are not friendship probabilities.", "",
     ...(history ? ["Dated observations: [[History]]", ""] : []),
     "## Profiles", "", ...[...names.keys()].sort().map((id) => `- ${link(id)}`),
   ]);
@@ -122,7 +127,7 @@ function buildVault(view: RunView): Uint8Array {
 }
 
 // Building and compressing an uncapped vault must not block scan cancellation or state polling.
-export function vault(view: RunView): Promise<Uint8Array> {
+export function vault(view: Observations): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./obsidian.js", import.meta.url), { workerData: view });
     worker.once("message", resolve); worker.once("error", reject);
@@ -131,6 +136,7 @@ export function vault(view: RunView): Promise<Uint8Array> {
 }
 
 if (!isMainThread && parentPort) {
-  const archive = Uint8Array.from(buildVault(workerData));
+  const saved: Observations = workerData;
+  const archive = Uint8Array.from(buildVault({ ...saved, report: Analysis.analyze(saved.scan) }));
   parentPort.postMessage(archive, [archive.buffer]);
 }

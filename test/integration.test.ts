@@ -249,9 +249,12 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
     const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(attached.history?.profile.steamID64, seed);
+    const disabledArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+    assert.match(strFromU8(disabledArchive[`Profiles/${seed}.md`]!), /groups_status: "disabled"/);
+    assert.match(strFromU8(disabledArchive[`Profiles/${seed}.md`]!), /games_status: "disabled"/);
     const hostileName = '<img src=x> [[Bad]] | # "quoted"\nline';
-    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan,
-      players: view.scan.players.map((player) => player.id === seed ? { ...player, name: hostileName } : player) }));
+    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan, settings: { ...view.scan.settings, includeGroups: true, includeGames: true },
+      players: view.scan.players.map((player) => player.id === seed ? { ...player, name: hostileName, groupsStatus: "unavailable", gamesStatus: "private" } : { ...player, groupsStatus: "public", gamesStatus: "public" }) }));
     const checkpoint = await readFile(join(root, "outputs", view.scan.id, "scan.json"));
     const beforeExport = fixture.requests.length;
     const download = await request(`/api/obsidian?id=${view.scan.id}`);
@@ -262,6 +265,8 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.match(strFromU8(notes[`Profiles/${seed}.md`]!), /steam_id: "765611/);
     const targetNote = strFromU8(notes[`Profiles/${seed}.md`]!);
     assert.ok(targetNote.includes(`name: ${JSON.stringify(hostileName)}`));
+    assert.match(targetNote, /groups_status: "unavailable"/); assert.match(targetNote, /games_status: "private"/);
+
     assert.ok(!targetNote.replace(/^---\n[\s\S]*?\n---\n/, "").includes("<img"));
     assert.ok(!notes["Bad.md"]);
 
