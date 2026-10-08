@@ -69,6 +69,7 @@ Section
   File /r "${APP_DIRECTORY}\*.*"
   ${If} ${Errors}
     MessageBox MB_OK|MB_ICONSTOP "Vapora could not extract its files. Check free space and folder permissions, then reopen it."
+    Call CleanupRuntime
     SetErrorLevel 1
     Quit
   ${EndIf}
