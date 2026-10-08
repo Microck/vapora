@@ -9,7 +9,7 @@ function position(window: HTMLElement, left: number, top: number) {
 }
 
 /** Each click owns its content, position and close lifecycle; other details stay open. */
-export function open(title: string, contents: HTMLElement, identity?: string) {
+export function open(title: string, contents: HTMLElement, identity?: string, resolveOpener?: () => Element | null) {
   const opener = document.activeElement;
   const window = document.createElement("section");
   window.className = "details-window"; window.tabIndex = -1;
@@ -30,7 +30,8 @@ export function open(title: string, contents: HTMLElement, identity?: string) {
   const raise = () => { window.style.zIndex = String(++layer); };
   const dismiss = () => {
     windows.delete(window); window.remove();
-    if ((opener instanceof HTMLElement || opener instanceof SVGElement) && opener.isConnected && opener.getClientRects().length) opener.focus({ preventScroll: true });
+    const target = resolveOpener ? resolveOpener() : opener;
+    if ((target instanceof HTMLElement || target instanceof SVGElement) && target.isConnected && target.getClientRects().length) target.focus({ preventScroll: true });
   };
   close.addEventListener("click", dismiss);
   window.addEventListener("pointerdown", raise); window.addEventListener("focusin", raise);

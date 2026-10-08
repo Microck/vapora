@@ -270,9 +270,10 @@ function renderRanking() {
 function inspectNode(id: SteamId) {
   const graphOpener = document.activeElement?.closest("#graph, #network-matches");
   selectedNode = id; renderGraph();
-  // Selection redraws nodes and search matches; capture a live focus target for closing Details.
-  if (graphOpener) document.querySelector<SVGGElement>(`#graph [data-node-id="${id}"]`)?.focus({ preventScroll: true });
-  openProfileDetails(id);
+  // Other Details windows can redraw the graph; resolve the opener by its account ID.
+  const resolveGraphNode = () => document.querySelector<SVGGElement>(`#graph [data-node-id="${id}"]`);
+  if (graphOpener) resolveGraphNode()?.focus({ preventScroll: true });
+  openProfileDetails(id, graphOpener ? resolveGraphNode : undefined);
 }
 function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
   const rank = selected?.report.friends.find((friend) => friend.id === id);
@@ -295,7 +296,7 @@ function profileFacts(player: Player, metric: Contracts.Report["metrics"][number
     ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
   ];
 }
-function openProfileDetails(account: SteamId) {
+function openProfileDetails(account: SteamId, resolveOpener?: () => Element | null) {
   const player = selected?.scan.players.find((p) => p.id === account);
   const rank = selected?.report.friends.find((friend) => friend.id === account);
   const metric = selected?.report.metrics.find((m) => m.id === account);
@@ -314,7 +315,7 @@ function openProfileDetails(account: SteamId) {
     const term = document.createElement("dt"); term.textContent = label;
     const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
   }
-  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, id);
+  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, id, resolveOpener);
 }
 function renderGraph() {
   const graph = get("graph");

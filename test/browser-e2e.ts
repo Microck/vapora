@@ -81,9 +81,17 @@ async function checkProfileDetails(page: Page) {
   await page.$eval(graphNode, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
   await page.keyboard.press("Enter");
   assert.equal((await page.$$(".details-window")).length, 1);
+  const firstDetails = await page.$(".details-window"); assert.ok(firstDetails);
+  await page.$eval(`#graph [data-node-id="${second}"]`, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
+  await page.keyboard.press("Enter");
+  assert.equal((await page.$$(".details-window")).length, 2);
+  await firstDetails.focus();
   await page.keyboard.press("Escape");
-  assert.equal((await page.$$(".details-window")).length, 0);
+  assert.equal((await page.$$(".details-window")).length, 1);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), seed);
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal((await page.$$(".details-window")).length, 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), second);
 }
 async function keyForm(page: Page, value: string) {
   await page.click('#open-key'); await fill(page, "#key", value); await page.click('#key-form button[type="submit"]');

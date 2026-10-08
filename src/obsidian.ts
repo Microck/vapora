@@ -12,13 +12,23 @@ const text = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "
 const date = (seconds: number | null) => seconds === null ? "Unknown" : new Date(seconds * 1000).toISOString();
 const value = (number: number | null | undefined) => number === null || number === undefined ? "Unknown" : String(number);
 
-function collect({ scan, report, history }: RunView) {
-  const names = new Map(scan.players.map((player) => [player.id, player.name]));
-  if (!names.has(scan.seed)) names.set(scan.seed, scan.seed);
+function profileNames({ scan, report, history }: RunView) {
+  // Pending or unavailable profiles may only have an unobserved ID placeholder.
+  const names = new Map(scan.players.filter((player) => player.name !== player.id || player.visibility === "public" || player.visibility === "private")
+    .map((player) => [player.id, player.name]));
+  if (!names.has(scan.seed) && history?.profile.name) names.set(scan.seed, history.profile.name);
   for (const friend of history?.friends ?? []) if (!names.has(friend.id)) names.set(friend.id, friend.name);
   for (const author of history?.commenters ?? []) if (author.id && !names.has(author.id)) names.set(author.id, author.name);
+  for (const player of scan.players) if (!names.has(player.id)) names.set(player.id, player.name);
+  if (!names.has(scan.seed)) names.set(scan.seed, scan.seed);
   // Outside-cap report names are ID placeholders; retained history can supply a known alias.
   for (const friend of report.friends) if (!names.has(friend.id)) names.set(friend.id, friend.name);
+  return names;
+}
+
+function collect(view: RunView) {
+  const { scan, report } = view;
+  const names = profileNames(view);
   const link = (id: SteamId) => {
     const name = names.get(id) ?? id;
     // Wiki-link delimiters cannot be escaped inside an alias with Markdown backslashes.

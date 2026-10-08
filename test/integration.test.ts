@@ -11,7 +11,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { unzipSync, strFromU8 } from "fflate";
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
-import { defaults, SteamId, Settings } from "../src/model.js";
+import { defaults, SteamId, Settings, newPlayer } from "../src/model.js";
 import * as Steam from "../src/steam.js";
 import * as Storage from "../src/storage.js";
 import * as Scanner from "../src/scanner.js";
@@ -284,6 +284,20 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal(fixture.requests.length, beforeExport);
     assert.deepEqual(await readFile(join(root, "outputs", view.scan.id, "scan.json")), checkpoint);
     assert.equal((await request("/api/obsidian?id=..%2F.env")).status, 400);
+    for (const visibility of ["pending", "unavailable"] as const) {
+      const partial = { ...view.scan, status: "cancelled", queue: [second],
+        players: view.scan.players.map((player) => player.id === second ? { ...newPlayer(second, player.level, view.scan.settings), visibility } : player) };
+      await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify(partial));
+      const partialArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+      assert.match(strFromU8(partialArchive[`Profiles/${second}.md`]!), /name: "Older Bob"/);
+      assert.ok(strFromU8(partialArchive[`Profiles/${second}.md`]!).includes(`profile: "${visibility}"`));
+    }
+    // An observed persona can legitimately equal its Steam ID; history must not replace it.
+    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan,
+      players: view.scan.players.map((player) => player.id === second ? { ...player, name: second } : player) }));
+    const numericArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+    assert.ok(strFromU8(numericArchive[`Profiles/${second}.md`]!).includes(`name: "${second}"`));
+    assert.equal(fixture.requests.length, beforeExport);
 
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
