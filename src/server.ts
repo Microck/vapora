@@ -237,11 +237,16 @@ export async function start(options: Options) {
     response.end(contents);
   }
   async function downloadObsidian(url: URL, response: ServerResponse) {
-    const view = await runtime.runPromise(savedObservations(url.searchParams.get("id") ?? ""));
-    const contents = await Obsidian.vault(view);
-    response.writeHead(200, { "content-type": "application/zip", "cache-control": "no-store",
-      "content-disposition": `attachment; filename="vapora-${view.scan.id}-obsidian.zip"` });
-    response.end(contents);
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    response.once("close", cancel);
+    try {
+      const view = await runtime.runPromise(savedObservations(url.searchParams.get("id") ?? ""));
+      const contents = await Obsidian.vault(view, controller.signal);
+      response.writeHead(200, { "content-type": "application/zip", "cache-control": "no-store",
+        "content-disposition": `attachment; filename="vapora-${view.scan.id}-obsidian.zip"` });
+      response.end(contents);
+    } finally { response.off("close", cancel); }
   }
   async function updateKey(path: string, contents: string, response: ServerResponse) {
     if (path === "/api/key") {

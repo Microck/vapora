@@ -128,11 +128,19 @@ function buildVault(view: RunView): Uint8Array {
 }
 
 // Building and compressing an uncapped vault must not block scan cancellation or state polling.
-export function vault(view: Observations): Promise<Uint8Array> {
+export function vault(view: Observations, signal: AbortSignal): Promise<Uint8Array> {
+  if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL("./obsidian.js", import.meta.url), { workerData: view });
-    worker.once("message", resolve); worker.once("error", reject);
-    worker.once("exit", (code) => reject(new Error(`Vault export worker exited before returning a download (${code}).`)));
+    const abort = () => { void worker.terminate(); };
+    signal.addEventListener("abort", abort, { once: true });
+    worker.once("message", (archive: Uint8Array) => { if (!signal.aborted) resolve(archive); });
+    worker.once("error", reject);
+    // Cancellation settles after termination, so a rejected download owns no running worker.
+    worker.once("exit", (code) => {
+      signal.removeEventListener("abort", abort);
+      reject(signal.aborted ? signal.reason : new Error(`Vault export worker exited before returning a download (${code}).`));
+    });
   });
 }
 
