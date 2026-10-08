@@ -1,0 +1,12 @@
+{
+  "title": "Guides",
+  "pages": [
+    "scanning",
+    "network",
+    "ranking",
+    "history",
+    "gephi",
+    "saved-runs",
+    "troubleshooting"
+  ]
+}

@@ -1,0 +1,54 @@
+---
+title: "Maintain and publish the docs"
+description: "Content structure, research sources, static search and hosting instructions."
+---
+
+## Local workflow
+
+From the repository root:
+
+```sh
+cd website
+npm ci
+npm run dev
+```
+
+Edit MDX in `content/docs/` and navigation order in each folder's `meta.json`. Public screenshots are copied from tracked `docs/screenshots/` by the predev/prebuild asset script. The Vapora icon comes from `assets/vapora.svg`.
+
+```sh
+npm run verify
+```
+
+This checks TypeScript, renders every page, validates internal links and fragment targets, and exercises the exported search index with the real static search client. The lockfile pins the tested dependency graph. CI also builds and checks the site on documentation PRs.
+
+## Writing conventions
+
+The README stays a practical entry point, following kagi-cli's lowercase sections, centered mark, flat-square badges and runnable examples. The site separates learning, task guides, factual reference and explanation, following [Diátaxis](https://diataxis.fr/start-here/).
+
+Keep defaults and flags aligned with `src/model.ts` and `src/cli.ts`. Verify exports against `src/analysis.ts` and formulas against `src/scoring.ts`. Document source dates, coverage and missing data next to the affected feature. Use illustrative IDs rather than claiming sample accounts are real. Label fixture screenshots. Keep existing release and verification reports as historical records rather than rewriting them into current claims.
+
+## Design
+
+The shell uses Steam-inspired navy `#171d25`, blue `#1b2838` and cyan `#66c0f4`. Olive accents use Vapora's actual app variables: `#4c5844`, `#3e4637`, `#d8ded3` and maize `#d8cc75` from `ui/style.css`. The site uses a forced dark theme, visible keyboard focus, responsive navigation and reduced-motion support. No Steam fonts or new remote assets are required.
+
+## Build and host
+
+```sh
+npm ci
+npm run verify
+```
+
+Publish the generated `website/out/` directory on a static host. It includes HTML, assets, an exported local search index and a 404 page. No Steam key, Python, Electron or Node server is needed by the deployed docs. Serve clean paths with trailing slashes, so `/docs/reference/cli/` resolves to its `index.html`. Keep `/api/search` accessible as the exported JSON file.
+
+For a domain root, use the default configuration. For subpath hosting, configure Next.js `basePath` and update absolute asset/search URLs before building; this repository does not assume a public docs domain or GitHub Pages subpath. No production deployment or custom-domain claim is included in this PR.
+
+## Implementation references
+
+- [Fumadocs Next.js installation](https://www.fumadocs.dev/docs/manual-installation/next)
+- [Fumadocs MDX integration](https://www.fumadocs.dev/docs/mdx/next)
+- [Fumadocs static export](https://www.fumadocs.dev/docs/deploying/static)
+- [Built-in static search](https://www.fumadocs.dev/docs/headless/search/orama)
+- [Fumadocs theme variables](https://www.fumadocs.dev/docs/ui/theme)
+- [Diátaxis documentation framework](https://diataxis.fr/start-here/)
+- [Steam application context](https://store.steampowered.com/about/)
+- [kagi-cli README](https://github.com/Microck/kagi-cli/blob/main/README.md)

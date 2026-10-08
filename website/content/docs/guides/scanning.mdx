@@ -1,0 +1,42 @@
+---
+title: "Plan and control a scan"
+description: "Depth, caps, estimates, optional observations and resuming."
+---
+
+## Choose your collection scope
+
+Default collection uses depth 2, 500 admitted accounts and 120 requests/min. Depth ranges from 1 to 5. A node cap includes the target and limits admitted accounts; ranking can still include known direct friends outside that graph.
+
+Select **Skip private profiles** to retain known private accounts and incoming links while skipping their own observations. An unknown visibility state is not proof of privacy. A public profile may have a private friend list and still provide other enabled observations.
+
+Enable **Shared groups** or **Shared games** only when you need those comparisons. They add requests and require public availability. Group access can be denied; Vapora marks it unavailable and stops further group requests in that operation.
+
+## Estimate before expanding
+
+Estimates sample at most five friend lists. At depths 3–5, the estimate describes the first two levels rather than predicting the full network. Sampling respects the node cap. Boundary profiles provide ranking observations without expansion beyond the chosen depth or cap.
+
+## Save your settings
+
+**Apply** saves default settings. The save/load icons manage named configuration profiles. Output filters **All / Report / Gephi** select visible files, not scan presets.
+
+```sh
+npm start -- profile-save small --depth 1 --max-nodes 100
+npm start -- scan 'https://steamcommunity.com/id/example' --profile small
+```
+
+CLI precedence is defaults → preset → saved profile → explicit flags. A profile replaces preset settings before flags are applied.
+
+## Cancel and resume
+
+Cancel an active scan to preserve the last checkpoint. Closing desktop or stopping the local server also cancels collection. Open the saved run and choose Resume, or:
+
+```sh
+npm start -- recent
+npm start -- resume RUN_ID --root ./research
+```
+
+Replace `RUN_ID` with the exact ID printed by `recent`. Resume uses the run's saved collection settings. A run still marked running after a server restart can also resume. A completed run is already complete.
+
+## Unlimited options
+
+`--max-nodes 0` removes the account cap; `--rpm 0` removes pacing. Retry backoff still applies. These settings can produce a large network; depth still stays within 1–5. [Settings reference](/docs/reference/settings) contains all ranges.

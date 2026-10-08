@@ -1,0 +1,33 @@
+---
+title: "How Vapora works"
+description: "One local engine shared by desktop, browser and CLI."
+---
+
+1. Resolve the target and collect profiles through the Steam Web API.
+2. Walk friendships breadth first, saving checkpoints after completed scan units.
+3. Build an undirected friendship graph with separate optional group edges.
+4. Compute communities, centrality, friend rankings and location signals.
+5. Save reports and exports in a unique run folder.
+
+Vapora uses public API observations and local history files. SteamHistory is fetched separately after account verification or selection; blocked requests remain visible and do not stop Steam scans. Missing observations and truncated graphs remain visible in the report.
+
+## Shared engine
+
+| Layer | Main source |
+| --- | --- |
+| CLI argument parsing and dispatch | `src/cli.ts` |
+| Target parsing | `src/ids.ts` |
+| Steam observations, pacing and retries | `src/steam.ts` |
+| Breadth-first collection and checkpoint frontier | `src/scanner.ts` |
+| Graph construction, ranking and exports | `src/analysis.ts`, `src/scoring.ts` |
+| Validated local persistence | `src/storage.ts`, `src/model.ts` |
+| Loopback HTTP server | `src/server.ts` |
+| History collection and normalization | `src/history-browser.ts`, `src/history-provider.ts`, `src/history.ts` |
+| Browser renderer | `ui/` |
+| Electron host and fixed preload bridge | `scripts/desktop.mjs`, `scripts/desktop-preload.cjs` |
+
+The TypeScript + Effect application shares collection, analysis and storage across all three launch modes. The desktop renderer is isolated from Node and uses a fixed IPC surface. The history collector uses an independent temporary Chromium session; it does not receive the Steam API key or renderer bridge.
+
+## Why saved observations matter
+
+A checkpoint stores settings, profiles and the pending frontier. Analysis and CSV files are derived from that local record. This enables resume, offline reranking and export rebuilding, while retaining coverage and observation dates. A history refresh is separate from a Steam scan and never blocks it.

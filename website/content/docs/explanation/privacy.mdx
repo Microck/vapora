@@ -1,0 +1,37 @@
+---
+title: "Privacy, coverage and limits"
+description: "Separate observed evidence from absence, identity and real-world claims."
+---
+
+## Public access only
+
+Vapora uses the Steam Web API and public observations. It does not bypass profile privacy. Profile visibility and friend-list visibility differ; a private friend list is not an empty public list. Unknown visibility is not proof of privacy.
+
+| Display state | Meaning |
+| --- | --- |
+| Off | Optional collection disabled |
+| Private | Privacy prevents observation |
+| Skipped | Collection skipped by the selected policy |
+| Not scanned | Observation has not been collected |
+| Unavailable | A request or provider could not supply the observation |
+| Not provided | A public location field was absent |
+
+## Collection boundaries
+
+The node cap includes the target. Depth bounds expansion. Ranking may use known direct friends outside the admitted graph, while metrics use only admitted accounts. Truncated graphs and failed observations remain visible. Estimates at depths 3–5 cover the first two levels only.
+
+## Heuristics
+
+Communities and centrality describe the captured graph. Ranking indices measure supplied support, not the probability of friendship. Steam country/state/city fields are self-reported codes, not verified residence. Network and captured friend-comment location evidence remain separate.
+
+## Dated sources
+
+SteamHistory is an independent source. Its observation time differs from retrieval time and current Steam facts. Partial histories cannot prove absence. Provider comment totals can be stale or include records inaccessible to a fresh public session.
+
+## Local credentials and data
+
+The browser server binds to loopback, validates Host and mutation origins, and restricts downloads to known run artifacts. Desktop keys can use OS-backed encryption; browser keys are session-only. Keys never appear in reports. Saved runs and history can contain profile observations and comments: inspect their contents before sharing.
+
+## Project scope
+
+Vapora is independent and unofficial, with no affiliation or endorsement from Valve, Steam or SteamHistory. The original Python implementation and old local formats are separate from the current app. There is no automatic migration.

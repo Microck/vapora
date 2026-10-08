@@ -1,0 +1,42 @@
+---
+title: "Saved runs and local data"
+description: "Reopen, resume, back up and move your local work."
+---
+
+## Data roots
+
+| Launch mode | Default root | Override |
+| --- | --- | --- |
+| Browser / CLI | Current working directory | `--root DIRECTORY` |
+| Installed desktop | OS app-data directory under `Vapora` | `VAPORA_ROOT` |
+| Windows portable | `Vapora-data` beside the EXE | `VAPORA_ROOT` |
+
+Use the same root to share runs between launches, with one process operating on a saved run at a time.
+
+| Path under the root | Contents |
+| --- | --- |
+| `outputs/<run-id>/` | Scan checkpoint, analysis, CSV exports, log and optional attached history |
+| `profiles/<name>.json` | Named settings profiles |
+| `history/<steamid>.json` | Cached account history captures |
+| `steam-key.enc` in desktop data | Optional OS-encrypted remembered key |
+
+## Reopen a run
+
+Use the **Results** run list. The recent-avatar rail only preselects a scan target; it does not open a saved report or change settings. Selecting an account can load its history independently.
+
+```sh
+npm start -- recent --root ./research
+npm start -- resume RUN_ID --root ./research
+```
+
+## Back up or move
+
+Close Vapora before copying the data root to preserve a consistent set of files. For Windows portable, move the EXE and `Vapora-data` together. A remembered key is bound to its original OS account and machine; enter it again on the destination.
+
+Current checkpoints require the restored settings and observation fields. Earlier local formats and legacy Python files are not migrated automatically; they remain untouched and are reported invalid. Start a fresh scan or explicitly save a new settings profile.
+
+Damaged optional history does not prevent a valid scan report opening. Vapora shows the history error and preserves the damaged file. History-dependent mutations still reject invalid data.
+
+## Rebuild reports
+
+Completed runs can rebuild exports from saved observations without contacting Steam. See [reranking](/docs/guides/ranking) and [exports](/docs/reference/exports).

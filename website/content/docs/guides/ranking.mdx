@@ -1,0 +1,28 @@
+---
+title: "Rerank saved observations"
+description: "Change scoring controls offline without repeating a Steam scan."
+---
+
+Open a completed run's **Ranking** tab, choose the weights and baseline controls, then select **Save ranking**. This updates saved ranking settings and regenerates reports and CSVs without a Steam key or provider calls.
+
+![Ranking tab with fixture data](/screenshots/ranking.png)
+
+## Controls
+
+The default score uses the authored incoming-mutual count index alone. Top N defaults to 5 and count baseline to 50. Optional friend, group and game weights blend bounded Jaccard comparisons. Location support defaults to product and location baseline to 100.
+
+Changing ranking does not collect missing games, groups or friendships. Availability remains visible. All-zero weights produce no combined index and sort observed incoming counts.
+
+Saved ranking changes also recompute attached history indices. Collection settings and observations remain intact. Incomplete runs and concurrent Steam/analysis operations reject reranking.
+
+## Recover exports
+
+Use **Exports → Rebuild exports** on a completed run when you need to regenerate files from current saved observations. It preserves checkpoint bytes and attached history.
+
+```sh
+npm start -- analyze RUN_ID --root ./research
+```
+
+The CLI rebuilds reports; it does not provide a command to change a saved run's ranking weights. Use **Save ranking** in the UI for that.
+
+Read [scoring reference](/docs/reference/scoring) for formulas and [settings](/docs/reference/settings) for allowed values.

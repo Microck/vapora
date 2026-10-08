@@ -1,0 +1,61 @@
+---
+title: "Installation"
+description: "Desktop downloads, browser setup and the local CLI."
+---
+
+## Desktop
+
+Download the matching asset from the [latest release](https://github.com/Microck/vapora/releases/latest). Desktop packages need no Node.js, Python or separately installed browser.
+
+| Platform | Asset | Launch |
+| --- | --- | --- |
+| Windows x64 | Installer EXE | Run the installer, then open Vapora |
+| Windows x64 | Portable EXE | Run from a writable folder; keep `Vapora-data` beside it |
+| Linux x64 | AppImage | Make executable, then launch in a graphical desktop |
+| macOS Apple Silicon | DMG | Drag Vapora into Applications |
+
+Downloads are unsigned and not notarized. Compare the downloaded file's SHA-256 with the release's `SHA256SUMS.txt` before approving an OS warning.
+
+```powershell
+Get-FileHash .\vapora-2.2.0-win-x64.exe -Algorithm SHA256
+```
+
+```sh
+# Linux
+sha256sum vapora-2.2.0-linux-x86_64.AppImage
+chmod +x vapora-2.2.0-linux-x86_64.AppImage
+./vapora-2.2.0-linux-x86_64.AppImage
+# Without FUSE
+./vapora-2.2.0-linux-x86_64.AppImage --appimage-extract-and-run
+
+# macOS
+shasum -a 256 vapora-2.2.0-mac-arm64.dmg
+```
+
+Asset names above describe 2.2.0; use the filenames from your selected release.
+
+## Browser and CLI from source
+
+Install Node.js 24+ and Python 3.10+ for the one-time history runtime build.
+
+```sh
+git clone https://github.com/Microck/vapora.git
+cd vapora
+npm ci
+npm run build
+npm run build:history
+```
+
+
+
+```sh
+npm start -- serve
+```
+
+Open the printed loopback address, normally `http://127.0.0.1:3000`. Run `npm run desktop` for an Electron window from the same checkout. Run `npm start -- --help` for the CLI.
+
+`npm ci` downloads Electron. `npm run build:history` builds the frozen Pydoll helper and downloads its pinned Chromium. Linux requires a graphical desktop and GTK/NSS libraries. Windows source installs need the matching Microsoft Visual C++ runtime: [x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [ARM64](https://aka.ms/vs/17/release/vc_redist.arm64.exe).
+
+## Next
+
+[Set up your API key](/docs/getting-started/api-key), then [make a first scan](/docs/getting-started/first-scan). See [saved runs](/docs/guides/saved-runs) for data locations and portable moves.

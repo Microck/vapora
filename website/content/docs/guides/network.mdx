@@ -1,0 +1,31 @@
+---
+title: "Explore the network"
+description: "Communities, profile search, hubs and profile inspection."
+---
+
+Open a saved run in **Results**, then select **Network**. The graph is built when opened, and preserves search, selected profile and zoom when you switch tabs.
+
+![Network explorer with fixture profiles](/screenshots/network.png)
+
+## Find and inspect an account
+
+Search profiles, select a graph node or open an entry from ranked friends. The inspector shows its Steam link, avatar, collection depth, visibility, ban observations, signal availability, degree, betweenness, community and hub status. Missing ban data is different from confirmed ban records.
+
+![Profile inspector with fixture data](/screenshots/inspector.png)
+
+## Read the graph
+
+| Metric | Meaning in the collected friendship graph |
+| --- | --- |
+| Degree | Number of connected friendship edges |
+| Betweenness | Normalized shortest-path centrality |
+| Community | Louvain grouping of admitted friendship links |
+| Hub | Positive betweenness at or above the configured percentile |
+
+Community colors describe detected clusters; they do not identify real-world groups. When betweenness is zero across the graph, there are no hubs. Optional group links are separate from friendship metrics.
+
+Use the community legend, zoom and reset controls to explore. Selecting a profile highlights its friendships without removing the rest of the profile list. Nodes are keyboard-focusable.
+
+## Compare coverage first
+
+Graph metrics use admitted accounts and observed friendship edges. Ranking can include direct friends outside the admitted graph. A node cap or unavailable list changes the measured graph; compare runs only with that context. See [privacy and coverage](/docs/explanation/privacy).

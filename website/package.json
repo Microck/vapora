@@ -1,0 +1,37 @@
+{
+  "name": "vapora-docs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "check": "fumadocs-mdx && tsc --noEmit",
+    "check:links": "node scripts/check-links.mjs",
+    "verify": "npm run check && npm run build && npm run check:links && npm run check:search",
+    "postinstall": "fumadocs-mdx",
+    "predev": "node scripts/assets.mjs",
+    "prebuild": "node scripts/assets.mjs",
+    "check:search": "node scripts/check-search.mjs"
+  },
+  "dependencies": {
+    "fumadocs-core": "^16.16.2",
+    "fumadocs-ui": "^16.16.2",
+    "fumadocs-mdx": "^14.0.0",
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.9.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/mdx": "^2.0.13"
+  }
+}

@@ -1,0 +1,50 @@
+---
+title: "SteamHistory captures"
+description: "Fetch, import and inspect dated history without mixing it with current Steam facts."
+---
+
+
+## Import a local capture
+
+Use **Import history** or `npm start -- history FILE` with a local normalized JSON file:
+
+```json
+{
+  "steamID64": "76561198000000000",
+  "name": "Example",
+  "lastChecked": 1750000000,
+  "historic": {
+    "friends": [
+      { "Friend": "76561198000000001", "FriendDate": 1700000000, "UnfriendDate": 0, "Name": "Friend" }
+    ],
+    "persona": [],
+    "url": [],
+    "pfp": [],
+    "comments": []
+  }
+}
+```
+
+## Interpret dates
+
+Dates are Unix seconds. A missing or zero `UnfriendDate` means friends as of the source date, not necessarily today. `lastUpdated` is also accepted as the provider observation date. A newer closure supersedes an older open record. Overlapping intervals count once; invalid or contradictory periods remain inspectable and show an unknown duration.
+
+## Inspect the viewer
+
+![History viewer with local fixture profiles](/screenshots/history.png)
+
+The viewer includes friendship periods, names, URLs, avatars, comments and profile/ban metadata. Search, friendship filters and date ranges help inspect captures. Comment ranking is separate from network ranking. Its friend index uses positive-count commenters with friendship evidence anywhere in the supplied captures, including former friends. Changing the friendship filter never changes that reference. Profile and ban date filters use the source observation date.
+
+Profile NDJSON and complete SteamHistory Svelte data/chunk streams are accepted. Every capture and unknown field stays in the export, along with the original input. **Original** buttons download those inputs unchanged.
+
+## Load and refresh automatically
+
+Verifying a target or selecting a recent avatar fetches its history independently. Typing never fetches it. Saved captures are reused until **Refresh**. Automatic loading opens a temporary browser session for verification, then fetches every history section with pagination, including deleted comments. It preserves raw profile/page responses in a reimportable capture. SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter). Automatic loading uses a fresh public session. Its returned comment total can differ from the profile-summary counter, which may be stale or include inaccessible records. Vapora keeps these totals separate and marks the gap partial without inventing comments. Imports preserve authenticated captures supplied by the user. Partial history names the failed section or provider count discrepancy; a blocked or failed refresh keeps the last dated capture and offers Retry. Source dates remain separate from retrieval time. Steam scanning remains available. Matching saved captures attach to run results, while current Steam facts stay separate from historical facts.
+
+## Attach to a saved run
+
+Attach history only to a run for the same Steam account, or import it independently. Attached history reopens with the run and adds `history.json` to its exports. Browser imports accept up to 2 MB.
+
+## Related references
+
+[History formats and date rules](/docs/reference/history-format) · [Scoring](/docs/reference/scoring) · [Privacy and coverage](/docs/explanation/privacy)

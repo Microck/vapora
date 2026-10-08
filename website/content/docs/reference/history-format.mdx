@@ -1,0 +1,46 @@
+---
+title: "History formats and dates"
+description: "Accepted inputs, capture identity, membership and coverage semantics."
+---
+
+## Accepted inputs
+
+Vapora accepts normalized SteamHistory JSON, profile NDJSON and the provider's flattened Svelte data/chunk stream. A capture must identify one account. Mixed accounts, mismatched attachments and malformed recognized sections fail explicitly. Browser imports are limited to 2 MB.
+
+```json
+{
+  "steamID64": "76561198000000000",
+  "name": "Example",
+  "lastChecked": 1750000000,
+  "historic": {
+    "friends": [
+      { "Friend": "76561198000000001", "FriendDate": 1700000000, "UnfriendDate": 0, "Name": "Friend" }
+    ],
+    "persona": [], "url": [], "pfp": [], "comments": []
+  }
+}
+```
+
+## Dates
+
+Supplied profile observation dates (`lastChecked`, `lastUpdated`) must be integer Unix seconds from 0 through 4102444800. Missing or null dates remain unknown. Record dates that are missing, null or malformed display as Undated and stay outside date-range filters. Capture/retrieval time is distinct from provider observation time.
+
+A zero or missing `UnfriendDate` means open as of the source date. Open ends stop at the source date for duration calculation. Overlaps count once; contradictory intervals remain inspectable and have no unqualified duration.
+
+## Membership
+
+The newest authoritative observation determines current presence/absence. A complete live list establishes either; a partial list establishes presence only. Same-date contradictions stay unknown. Former requires friendship evidence and authoritative absence; Other means no captured friendship evidence. A newer closure supersedes a provisional open interval.
+
+## Comment identity
+
+Provider, target and supplied comment ID identify a comment. Numeric IDs must be safe integers; fractional or rounded IDs fail. Exact string IDs preserve precision. Numeric/string representations of one ID refer to the same event. Versions are retained; display chooses the newest observation date, then capture time.
+
+Anonymous author/date/message tuples use the largest multiplicity in a single capture across captures, labeled estimated. Identified and anonymous events remain separate. Comment ranking describes captured scope, not all comments ever made.
+
+## Preservation and coverage
+
+Every distinct original UTF-8 input, capture, provider field and comment version remains exportable. Byte-identical reimports are idempotent; distinct captures are not automatically pruned. Original-input downloads preserve their bytes.
+
+Automatic fetching records profile and page responses and their URLs. Malformed or repeated pages, empty pages before declared totals, inconsistent totals, request failures and bounded limits produce partial coverage. Profile-summary totals remain separate from accessible endpoint totals. Provider-restricted records are not inferred from a discrepancy.
+
+See [SteamHistory workflow](/docs/guides/history) and the [product contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md#history-restoration-and-analysis).

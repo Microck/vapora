@@ -1,0 +1,29 @@
+---
+title: "Troubleshooting"
+description: "Recover scans, exports and history while preserving saved observations."
+---
+
+| Problem | What to do |
+| --- | --- |
+| Access denied | Check the API key. Group access may require publisher permissions. |
+| Private or unavailable observations | Check the coverage report. Vapora cannot bypass profile privacy. |
+| Failed or cancelled scan | Fix the reported issue, open the saved run and Resume. After a server restart, a run still marked running can also be resumed. |
+| Invalid checkpoint | Start a fresh run. Legacy Python files and earlier local formats are not migrated; existing files remain untouched. |
+| Slow scan | Reduce depth, node cap or optional group/game requests. |
+| Port in use | Run `npm start -- serve --port 3001`. |
+| Missing `VCRUNTIME140.dll` on Windows | Install the matching Visual C++ runtime from the [installation guide](/docs/getting-started/installation#browser-and-cli-from-source), then relaunch. |
+| Checkpoint save failed | Read the filesystem code in the error. Free disk space or fix permissions as directed; close apps holding the file. Vapora retries brief Windows replacement blocks. After fixing the issue, choose Resume run. The last successfully saved checkpoint remains available. |
+| Disk error while saving ranking | Fix disk space or permissions, then run `npm start -- analyze RUN_ID --root DIRECTORY` to regenerate exports from the saved checkpoint. |
+
+| History issue | Recovery |
+| --- | --- |
+| Provider blocked or verification window closed | Retry or refresh the selected account; keep the last dated capture |
+| History runtime missing from a source checkout | Run `npm run build:history` with Python 3.10+ |
+| Missing display or browser | Use a graphical desktop and a built history runtime |
+| Comment totals differ | Inspect section coverage and provider totals; inaccessible records are not invented |
+| History belongs to another account | Import only captures for the selected run's SteamID64 |
+| Invalid optional cache or attachment | Inspect the original file; valid scan reports still open with an explicit history error |
+
+## Report a reproducible issue
+
+Include Vapora version, OS, launch mode, steps, the visible error and relevant redacted `run.log` entries. Describe scan settings and whether the issue reproduces with a small run. Do not include API keys or `.env` files. Open an issue on [GitHub](https://github.com/Microck/vapora/issues).
