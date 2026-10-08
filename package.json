@@ -1,6 +1,6 @@
 {
   "name": "vapora",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "private": true,
   "description": "Explore public Steam friend networks",
   "type": "module",
@@ -60,8 +60,7 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ],
       "icon": "assets/vapora.ico"
     },
@@ -82,10 +81,7 @@
       "identity": "-",
       "hardenedRuntime": false
     },
-    "portable": {
-      "artifactName": "vapora-${version}-win-${arch}-portable.${ext}",
-      "unpackDirName": false
-    },
+    "afterAllArtifactBuild": "./scripts/build-portable.mjs",
     "extraResources": [
       {
         "from": ".history-runtime",
