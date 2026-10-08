@@ -84,28 +84,7 @@ jobs:
           $env:VAPORA_DESKTOP = $portable.FullName
           $env:VAPORA_DESKTOP_ASAR = Join-Path $env:GITHUB_WORKSPACE 'release/win-unpacked/resources/app.asar'
           $env:VAPORA_TEST_PORTABLE = '1'
-          # A real 64 MB TEMP volume reproduces low system-drive space without filling the runner.
-          $disk = Join-Path $env:RUNNER_TEMP 'vapora-small-temp.vhd'
-          $mount = Join-Path $env:RUNNER_TEMP 'vapora-small-temp'
-          New-Item -ItemType Directory $mount | Out-Null
-          $diskScript = Join-Path $env:RUNNER_TEMP 'vapora-small-temp.txt'
-          @("create vdisk file=`"$disk`" maximum=64 type=expandable", "select vdisk file=`"$disk`"", 'attach vdisk', 'create partition primary', 'format fs=ntfs quick', "assign mount=`"$mount`"") | Set-Content $diskScript
-          diskpart /s $diskScript
-          $volume = Get-Volume -FilePath "$mount\"
-          if ($volume.Size -gt 64MB -or $volume.Size -eq 0) { throw 'Small TEMP volume was not mounted' }
-          $env:VAPORA_PORTABLE_TEST_TEMP = Join-Path $mount 'Temp'
-          New-Item -ItemType Directory $env:VAPORA_PORTABLE_TEST_TEMP | Out-Null
           npm run test:desktop
-      - name: Detach the Windows TEMP test disk
-        if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $disk = Join-Path $env:RUNNER_TEMP 'vapora-small-temp.vhd'
-          if (Test-Path $disk) {
-            $diskScript = Join-Path $env:RUNNER_TEMP 'vapora-small-temp-detach.txt'
-            @("select vdisk file=`"$disk`"", 'detach vdisk') | Set-Content $diskScript
-            diskpart /s $diskScript
-          }
       - name: Unmount the macOS download
         if: always() && runner.os == 'macOS'
         run: hdiutil detach "$RUNNER_TEMP/vapora-dmg"
