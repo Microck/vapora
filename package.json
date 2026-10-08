@@ -20,8 +20,9 @@
     "verify": "npm run check && npm run lint && npm test",
     "desktop": "npm run build && electron scripts/desktop.mjs",
     "test:e2e": "npm run build && node --test dist/test/browser-e2e.js",
-    "package": "npm run build && electron-builder --publish never",
-    "test:desktop": "node --test --test-reporter=tap dist/test/desktop-e2e.js"
+    "package": "npm run build && npm run build:history && electron-builder --publish never",
+    "test:desktop": "node --test --test-reporter=tap dist/test/desktop-e2e.js",
+    "build:history": "node scripts/build-history.mjs"
   },
   "dependencies": {
     "effect": "4.0.1",
@@ -38,7 +39,8 @@
     "esbuild": "0.25.11",
     "oxlint": "1.87.0",
     "puppeteer-core": "25.10.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@electron-internal/extract-zip": "1.0.5"
   },
   "build": {
     "appId": "dev.micr.vapora",
@@ -83,6 +85,17 @@
     "portable": {
       "artifactName": "vapora-${version}-win-${arch}-portable.${ext}",
       "unpackDirName": false
-    }
+    },
+    "extraResources": [
+      {
+        "from": ".history-runtime",
+        "to": "history-runtime",
+        "filter": [
+          "browser/**",
+          "helper/**",
+          "runtime.json"
+        ]
+      }
+    ]
   }
 }

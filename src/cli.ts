@@ -22,12 +22,14 @@ const help = `Vapora 2 | Public Steam friend networks
   vapora recent                         List saved runs
   vapora profiles                       List saved configuration profiles
   vapora profile-save NAME              Save current options as a profile
-  vapora history FILE [--run RUN_ID]     Analyze normalized SteamHistory JSON/NDJSON
+  vapora history FILE [--run RUN_ID]     Import SteamHistory JSON / data stream
 
 Options:
   --preset inner|community   --profile NAME   --depth 1..5   --max-nodes 0..1000
   --rpm 0..120               --groups         --games       --hub-percentile 0.5..1
   --mutual-weight N          --jaccard-weight N             --group-weight N
+  --top-n N                  --count-baseline N            --location-baseline N
+  --location-support sum|product
   --game-weight N            --skip-private   --root DIRECTORY --port PORT   --help
 
 Set STEAM_API_KEY in your environment or .env. The browser can also use a session-only key.
@@ -42,6 +44,7 @@ export async function main(args = process.argv.slice(2)) {
     depth: { type: "string" }, "max-nodes": { type: "string" }, rpm: { type: "string" },
     groups: { type: "boolean" }, games: { type: "boolean" }, "hub-percentile": { type: "string" },
     "skip-private": { type: "boolean" },
+    "top-n": { type: "string" }, "count-baseline": { type: "string" }, "location-baseline": { type: "string" }, "location-support": { type: "string" },
     "mutual-weight": { type: "string" }, "jaccard-weight": { type: "string" }, "group-weight": { type: "string" }, "game-weight": { type: "string" },
     root: { type: "string" }, port: { type: "string" }, run: { type: "string" },
   } });
@@ -87,6 +90,10 @@ export async function main(args = process.argv.slice(2)) {
       requestsPerMinute: values.rpm === undefined ? settings.requestsPerMinute : Number(values.rpm),
       includeGroups: values.groups ?? settings.includeGroups, includeGames: values.games ?? settings.includeGames,
       skipPrivate: values["skip-private"] ?? settings.skipPrivate,
+      topN: values["top-n"] === undefined ? settings.topN : Number(values["top-n"]),
+      countBaseline: values["count-baseline"] === undefined ? settings.countBaseline : Number(values["count-baseline"]),
+      locationBaseline: values["location-baseline"] === undefined ? settings.locationBaseline : Number(values["location-baseline"]),
+      locationAggregation: values["location-support"] ?? settings.locationAggregation,
       hubPercentile: values["hub-percentile"] === undefined ? settings.hubPercentile : Number(values["hub-percentile"]),
       weights: {
         mutual: values["mutual-weight"] === undefined ? settings.weights.mutual : Number(values["mutual-weight"]),
@@ -96,6 +103,23 @@ export async function main(args = process.argv.slice(2)) {
       },
     }).pipe(Effect.mapError(() => new InputError({ message: "Invalid settings. Run --help for accepted ranges." })));
     return settings;
+  });
+  const importHistory = Effect.fn("Cli.importHistory")(function* (argument: string) {
+    const store = yield* Storage.Service;
+      const contents = yield* Effect.tryPromise({ try: () => readFile(argument, "utf8"), catch: () => new InputError({ message: "Could not read the history file." }) });
+      const bundle = yield* History.parse(contents);
+      const id = bundle.sources[0]?.snapshots[0]?.steamID64;
+      if (!id) return yield* Effect.fail(new InputError({ message: "History has no account." }));
+      const scan = parsed.values.run ? yield* store.read(parsed.values.run) : undefined;
+      if (scan && scan.seed !== id) return yield* Effect.fail(new InputError({ message: "History belongs to another account." }));
+      const attachment = scan ? yield* store.history(scan.id) : null;
+      if (attachment && attachment.profile.steamID64 !== id) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
+      const saved = yield* store.accountHistory(id);
+      const merged = History.merge(attachment ?? { sources: [] }, saved ?? { sources: [] }, bundle);
+      const report = History.view(merged, scan);
+      yield* store.saveHistory(History.view(merged));
+      if (scan) yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
+    return report;
   });
   const program = Effect.gen(function* () {
     const store = yield* Storage.Service;
@@ -114,13 +138,7 @@ export async function main(args = process.argv.slice(2)) {
       stdout.write(`${report.coverage.nodes} nodes analyzed. Exports: ${root}/outputs/${scan.id}\n`); return;
     }
     if (command === "history") {
-      const contents = yield* Effect.tryPromise({ try: () => readFile(argument, "utf8"), catch: () => new InputError({ message: "Could not read the history file." }) });
-      const report = yield* History.parse(contents).pipe(Effect.flatMap(History.analyze));
-      if (parsed.values.run) {
-        const scan = yield* store.read(parsed.values.run);
-        if (scan.seed !== report.profile.steamID64) return yield* Effect.fail(new InputError({ message: "History belongs to another account." }));
-        yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
-      }
+      const report = yield* importHistory(argument);
       stdout.write(`${JSON.stringify(report, null, 2)}\n`); return;
     }
     const settings = yield* settingsFor();

@@ -18,19 +18,24 @@ export const Settings = Schema.Struct({
   skipPrivate: Schema.Boolean,
   hubPercentile: Schema.Number.check(Schema.isBetween({ minimum: 0.5, maximum: 1 })),
   weights: Schema.Struct({ mutual: weight, jaccard: weight, groups: weight, games: weight }),
+  topN: integer(1, 1000), countBaseline: integer(1, 1000000),
+  locationAggregation: Schema.Literals(["sum", "product"]), locationBaseline: integer(1, 1000000),
 });
 export interface Settings extends Schema.Schema.Type<typeof Settings> {}
-export const Ranking = Schema.Struct({ hubPercentile: Settings.fields.hubPercentile, weights: Settings.fields.weights });
+export const Ranking = Schema.Struct({ hubPercentile: Settings.fields.hubPercentile, weights: Settings.fields.weights,
+  topN: Settings.fields.topN, countBaseline: Settings.fields.countBaseline,
+  locationAggregation: Settings.fields.locationAggregation, locationBaseline: Settings.fields.locationBaseline });
 export interface Ranking extends Schema.Schema.Type<typeof Ranking> {}
 export const defaults: Settings = {
   depth: 2, maxNodes: 500, requestsPerMinute: 120, includeGroups: false, includeGames: false, skipPrivate: false,
-  hubPercentile: 0.99, weights: { mutual: 1, jaccard: 1, groups: 0.5, games: 0.5 },
+  hubPercentile: 0.99, weights: { mutual: 1, jaccard: 0, groups: 0, games: 0 },
+  topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100,
 };
 export const presets = { inner: { ...defaults, depth: 1, maxNodes: 300 }, community: defaults } satisfies Record<string, Settings>;
 
 export const Availability = Schema.Literals(["pending", "public", "private", "unavailable", "disabled", "skipped"]);
 export type Availability = typeof Availability.Type;
-export const Bans = Schema.Struct({ vac: Schema.Boolean, game: integer(0, 10000), community: Schema.Boolean });
+export const Bans = Schema.Struct({ vac: Schema.Boolean, vacCount: integer(0, 10000), game: integer(0, 10000), community: Schema.Boolean });
 export const AppId = integer(0, 4294967295);
 /** Steam avatar URLs are image sources, never executable or inline URLs. */
 export const AvatarUrl = Schema.String.check(Schema.isPattern(/^https?:\/\/[^/\s]+(?:\/[^\s]*)?$/));
@@ -41,6 +46,7 @@ export const Player = Schema.Struct({
   avatar: Schema.NullOr(AvatarUrl),
   visibility: Schema.Literals(["pending", "public", "private", "unavailable"]),
   bans: Schema.NullOr(Bans),
+  friendsObservedAt: Schema.NullOr(Schema.String), bansObservedAt: Schema.NullOr(Schema.String),
   bansStatus: Schema.Literals(["pending", "public", "unavailable", "skipped"]),
   country: Schema.NullOr(Schema.String),
   state: Schema.NullOr(Schema.String),
@@ -82,7 +88,7 @@ export function failureMessage<E extends { readonly message: string }>(cause: Ca
 
 export function newPlayer(id: SteamId, level: number, settings: Settings): Player {
   return {
-    id, level, name: id, avatar: null, visibility: "pending", bans: null, bansStatus: "pending", country: null, state: null, city: null,
+    id, level, name: id, avatar: null, visibility: "pending", bans: null, bansStatus: "pending", friendsObservedAt: null, bansObservedAt: null, country: null, state: null, city: null,
     friendsStatus: "pending", friends: [], groupsStatus: settings.includeGroups ? "pending" : "disabled",
     groups: [], gamesStatus: settings.includeGames ? "pending" : "disabled", games: [],
   };

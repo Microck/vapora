@@ -89,7 +89,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
         continue;
       }
       const friends = yield* steam.friends(player.id);
-      const players = scan.players.map((p) => p.id === player.id ? { ...p, friends: friends.values, friendsStatus: friends.status } : p);
+      const players = scan.players.map((p) => p.id === player.id ? { ...p, friends: friends.values, friendsStatus: friends.status, friendsObservedAt: new Date().toISOString() } : p);
       const known = new Set(players.map((p) => p.id));
       const queue = scan.queue.slice(1);
       let truncated = scan.truncated;
@@ -114,8 +114,8 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
         if (!batch.includes(player.id)) return player;
         const ban = bans.find((b) => b.SteamId === player.id);
         return { ...player,
-          bans: ban ? { vac: ban.VACBanned, game: ban.NumberOfGameBans, community: ban.CommunityBanned } : null,
-          bansStatus: ban ? "public" : "unavailable",
+          bans: ban ? { vac: ban.VACBanned, vacCount: ban.NumberOfVACBans, game: ban.NumberOfGameBans, community: ban.CommunityBanned } : null,
+          bansStatus: ban ? "public" : "unavailable", bansObservedAt: new Date().toISOString(),
         };
       }) };
       yield* checkpoint("Enriching profiles");

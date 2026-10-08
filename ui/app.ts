@@ -2,6 +2,9 @@ import { Effect, Schema } from "effect";
 import { artifacts, defaults, Player, Ranking, Settings } from "../src/model.js";
 import type { Availability, SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
+import { displaySupport } from "../src/scoring.js";
+import * as HistoryUI from "./history-view.js";
+import { HistoryState, coverageError } from "../src/history.js";
 import { HistoryReport } from "../src/history.js";
 import * as Network from "./network.js";
 import * as Tooltips from "./tooltips.js";
@@ -99,6 +102,8 @@ const readSettings = () => Schema.decodeUnknownSync(Settings)({
   depth: Number(inputs.depth.value), maxNodes: inputs.nodes.valueAsNumber, requestsPerMinute: inputs.rpm.valueAsNumber,
   includeGroups: inputs.groups.checked, includeGames: inputs.games.checked, hubPercentile: inputs.hub.valueAsNumber,
   skipPrivate: inputs.skipPrivate.checked,
+  topN: control("topN").valueAsNumber, countBaseline: control("countBaseline").valueAsNumber,
+  locationAggregation: select("locationAggregation").value, locationBaseline: control("locationBaseline").valueAsNumber,
   weights: { mutual: inputs.mutual.valueAsNumber, jaccard: inputs.jaccard.valueAsNumber, groups: inputs.groupWeight.valueAsNumber, games: inputs.gameWeight.valueAsNumber },
 });
 function applySettings(settings: Settings) {
@@ -108,6 +113,8 @@ function applySettings(settings: Settings) {
   inputs.skipPrivate.checked = settings.skipPrivate;
   inputs.mutual.value = String(settings.weights.mutual); inputs.jaccard.value = String(settings.weights.jaccard);
   inputs.groupWeight.value = String(settings.weights.groups); inputs.gameWeight.value = String(settings.weights.games);
+  for (const name of ["topN", "countBaseline", "locationBaseline"] as const) control(name).value = String(settings[name]);
+  select("locationAggregation").value = settings.locationAggregation;
   renderDepth();
 }
 function renderDepth() {
@@ -153,6 +160,7 @@ const availabilityLabels = {
 } satisfies Record<Availability, string>;
 const observation = (value: number | null, statuses: readonly Availability[], digits = 0) => value !== null
   ? value.toFixed(digits) : availabilityLabels[statuses.find((status) => status !== "public") ?? "unavailable"];
+const playerStatus = (player: Player | undefined, field: "groupsStatus" | "gamesStatus") => player?.[field] ?? "unavailable";
 function renderFriends() {
   const rows = get("friend-rows"); rows.replaceChildren();
   const query = inputs.search.value.toLowerCase().trim();
@@ -164,11 +172,11 @@ function renderFriends() {
     const inspect = document.createElement("button"); inspect.type = "button"; inspect.className = "inspect-button"; inspect.textContent = "Details";
     inspect.setAttribute("aria-label", `Details for ${friend.name}`); inspect.addEventListener("click", () => inspectNode(friend.id)); profile.append(inspect);
     const player = players.get(friend.id);
-    cell(row, friend.evidenceScore.toFixed(1)); cell(row, friend.mutual);
+    cell(row, friend.evidenceScore === null ? "Off" : friend.evidenceScore.toFixed(1)); cell(row, friend.incomingMutual);
     cell(row, observation(friend.jaccard, [seed?.friendsStatus ?? "unavailable", friend.friendsStatus], 3));
-    cell(row, observation(friend.sharedGroups, [seed?.groupsStatus ?? "unavailable", player?.groupsStatus ?? "unavailable"]));
-    cell(row, observation(friend.sharedGames, [seed?.gamesStatus ?? "unavailable", player?.gamesStatus ?? "unavailable"]));
-    cell(row, availabilityLabels[friend.friendsStatus]); rows.append(row);
+    cell(row, observation(friend.sharedGroups, [playerStatus(seed, "groupsStatus"), playerStatus(player, "groupsStatus")]));
+    cell(row, observation(friend.sharedGames, [playerStatus(seed, "gamesStatus"), playerStatus(player, "gamesStatus")]));
+    cell(row, friend.admitted ? availabilityLabels[friend.friendsStatus] : "Outside graph"); cell(row, player?.bans?.vacCount ?? "Unknown"); rows.append(row);
   }
   get("friend-empty").hidden = friends.length > 0;
 }
@@ -176,9 +184,13 @@ function renderLocations() {
   const rows = get("location-rows"); rows.replaceChildren();
   for (const location of selected?.report.locations ?? []) {
     const row = document.createElement("tr");
-    for (const value of [location.country, location.state ?? "Not provided", location.city ?? "Not provided", location.contributors, `${location.share.toFixed(1)}%`]) cell(row, value);
-    rows.append(row);
+    for (const value of [location.country, location.state ?? "Not provided", location.city ?? "Not provided", location.contributors, displaySupport(location.support), location.share === null ? "Unknown" : location.share.toFixed(1), location.index === null ? "Unknown" : location.index.toFixed(1)]) cell(row, value);
+    const details = document.createElement("button"); details.type = "button"; details.textContent = "Details";
+    details.addEventListener("click", () => { get("history-inspect").textContent = JSON.stringify({ source: "Steam incoming mutual counts", ...location, coverage: selected?.report.locationCoverage }, null, 2); dialog("history-details").showModal(); });
+    cell(row, "").append(details); rows.append(row);
   }
+  const coverage = selected?.report.locationCoverage;
+  get("location-coverage").textContent = coverage ? `${coverage.located}/${coverage.referenceSize} friends supply country and city` : "";
   get("location-empty").hidden = Boolean(selected?.report.locations.length);
 }
 const downloads = artifacts.filter((file) => file !== "history.json");
@@ -244,6 +256,8 @@ function renderRanking() {
   if (!selected) return;
   const { scan } = selected;
   const ranking = scan.settings;
+  for (const name of ["topN", "countBaseline", "locationBaseline"] as const) control(`ranking-${name}`).value = String(ranking[name]);
+  select("ranking-locationAggregation").value = ranking.locationAggregation;
   control("ranking-hub").value = String(ranking.hubPercentile);
   for (const name of ["mutual", "jaccard", "groups", "games"] as const) control(`ranking-${name}`).value = String(ranking.weights[name]);
   buttons("save-ranking").disabled = scan.status !== "complete" || currentState?.job.status === "running";
@@ -252,26 +266,41 @@ function renderRanking() {
 function inspectNode(id: SteamId) {
   selectedNode = id; renderInspector(); renderGraph();
 }
-function renderInspector() {
-  const player = selected?.scan.players.find((p) => p.id === selectedNode);
-  const metric = selected?.report.metrics.find((m) => m.id === selectedNode);
-  get("profile-inspector").hidden = !player;
-  if (!player) return;
-  get("inspect-name").textContent = player.name; profileImage("inspect-avatar", player.avatar);
-  get("inspect-link").setAttribute("href", `https://steamcommunity.com/profiles/${player.id}/`);
-  get("inspect-link").textContent = player.id; get("inspect-link").dataset.tooltip = "Open Steam profile";
-  const facts = get("inspect-facts"); facts.replaceChildren();
+function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
+  const rank = selected?.report.friends.find((friend) => friend.id === id);
+  return rank ? [
+    ["Incoming mutuals", rank.incomingMutual], ["Undirected mutuals", rank.mutual],
+    ["Count index / 100", rank.countIndex?.toFixed(2) ?? "Unknown"], ["Reference friends", selected?.report.coverage.directFriends ?? 0],
+    ["Game Jaccard", rank.gameJaccard?.toFixed(4) ?? "Unknown"], ["Group Jaccard", rank.groupJaccard?.toFixed(4) ?? "Unknown"],
+  ] : [];
+}
+function profileFacts(player: Player, metric: Contracts.Report["metrics"][number] | undefined): readonly (readonly [string, string | number])[] {
   const bans = player.bans;
-  const fields: readonly (readonly [string, string | number])[] = [
+  return [
+    ["Friend list as of", player.friendsObservedAt ?? "Not observed"], ["Bans as of", player.bansObservedAt ?? "Not observed"],
     ["Depth", player.level], ["Profile", availabilityLabels[player.visibility]], ["Friend list", availabilityLabels[player.friendsStatus]],
     ["Groups", player.groupsStatus === "public" ? player.groups.length : availabilityLabels[player.groupsStatus]],
     ["Games", player.gamesStatus === "public" ? player.games.length : availabilityLabels[player.gamesStatus]],
-    ["VAC ban", bans ? bans.vac ? "yes" : "no" : availabilityLabels[player.bansStatus]],
+    ["VAC bans", bans ? bans.vacCount : availabilityLabels[player.bansStatus]],
     ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "yes" : "no" : availabilityLabels[player.bansStatus]],
     ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
     ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
   ];
-  for (const [label, value] of fields) {
+}
+function renderInspector() {
+  const player = selected?.scan.players.find((p) => p.id === selectedNode);
+  const rank = selected?.report.friends.find((friend) => friend.id === selectedNode);
+  const metric = selected?.report.metrics.find((m) => m.id === selectedNode);
+  const id = player?.id ?? rank?.id;
+  get("profile-inspector").hidden = !id;
+  if (!id) return;
+  get("inspect-name").textContent = player?.name ?? rank?.name ?? id; profileImage("inspect-avatar", player?.avatar ?? null);
+  get("inspect-link").setAttribute("href", `https://steamcommunity.com/profiles/${id}/`);
+  get("inspect-link").textContent = id; get("inspect-link").dataset.tooltip = "Open Steam profile";
+  const facts = get("inspect-facts"); facts.replaceChildren();
+  const fields = player ? profileFacts(player, metric) : [["Collection", "Outside admitted graph"]] as const;
+  const rankFacts = rankingFacts(id);
+  for (const [label, value] of [...fields, ...rankFacts]) {
     const term = document.createElement("dt"); term.textContent = label; const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
   }
 }
@@ -311,15 +340,41 @@ function renderRuns() {
     const warning = document.createElement("p"); warning.textContent = `${issue.id}: ${issue.message}`; issues.append(warning);
   }
 }
+let accountHistory: HistoryState | null = null;
+let historyRequest = 0;
+let historyAccount: SteamId | null = null;
 function renderHistory(report: HistoryReport, runId: string | null) {
-  get("history-result").hidden = false; get("history-name").textContent = report.profile.name ?? report.profile.steamID64;
-  get("history-name").dataset.tooltip = report.warning;
-  const link = get("history-download"); link.hidden = !runId; if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
-  const rows = get("history-rows"); rows.replaceChildren();
-  const players = new Map(selected?.scan.players.map((player) => [player.id, player]));
-  for (const friend of report.friends) {
-    const row = document.createElement("tr"); playerCell(row, friend.id, friend.name, players.get(friend.id)?.avatar ?? null);
-    cell(row, `${Math.floor(friend.durationSeconds / 86400)} days`); cell(row, `${friend.relativeDuration.toFixed(1)}%`); cell(row, friend.currentlyFriends ? "yes" : "no"); rows.append(row);
+  const matching = runId && selected?.scan.seed === report.profile.steamID64 ? selected.scan : undefined;
+  HistoryUI.render(report, matching); historyAccount = report.profile.steamID64;
+  const link = get("history-download"); link.hidden = !runId;
+  if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
+}
+function renderAccountHistory(state: HistoryState, runId?: string) {
+  accountHistory = state; historyAccount = state.id;
+  get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
+  get("target-history-status").dataset.tooltip = state.error ?? "Saved SteamHistory capture";
+  get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
+  get("history-fetch-status").textContent = state.error ?? ""; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
+  if (state.report) {
+    renderHistory(state.report, runId ?? null);
+    if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
+  }
+}
+async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) {
+  const request = ++historyRequest;
+  if (historyAccount !== id) { accountHistory = null; get("history-result").hidden = true; }
+  historyAccount = id;
+  get("history-fetch-status").hidden = true; get("history-retry").hidden = true;
+  get("target-history-status").textContent = "Loading history";
+  try {
+    const state = await api("/api/history/account", HistoryState, { id, refresh, runId });
+    if (request !== historyRequest) return;
+    renderAccountHistory(state, runId);
+  } catch (error) {
+    if (request !== historyRequest) return;
+    get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false; get("history-retry").hidden = false;
+    const message = error instanceof Error ? error.message : "History could not be loaded.";
+    get("target-history-status").dataset.tooltip = message; get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = false;
   }
 }
 async function openRun(id: string, navigation = navigationVersion) {
@@ -331,6 +386,8 @@ async function openRun(id: string, navigation = navigationVersion) {
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
   selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; renderInspector(); toggleRuns(false);
   location.hash = id; renderReport(); renderRecent();
+  if (view.historyError) notice(view.historyError);
+  if (view.scan.status === "complete") void loadAccountHistory(view.scan.seed, false, view.scan.id);
   // A report response must not override a navigation choice made while it loaded.
   if (navigation === navigationVersion) {
     showScreen("results");
@@ -344,6 +401,7 @@ function preselectTarget(run: typeof Contracts.RunSummary.Type) {
   preview = { id: run.seed, name: run.name, avatar: run.avatar }; previewTarget = run.seed;
   get("estimate-result").replaceChildren();
   showScreen("scan"); renderTarget(); renderRecent();
+  void loadAccountHistory(run.seed);
 }
 function renderRecent() {
   const signature = JSON.stringify([currentState?.runs, currentState?.runIssues, inputs.target.value.trim()]);
@@ -497,7 +555,7 @@ get("output-mode").addEventListener("change", (event) => {
   outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
 for (const form of ["scan-form", "scan-ranking-form"]) get(form).addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
-inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
+inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; historyRequest++; accountHistory = null; historyAccount = null; get("target-history-status").textContent = ""; get("target-history-retry").hidden = true; get("history-result").hidden = true; get("history-fetch-status").hidden = true; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
   settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
 });
@@ -505,7 +563,7 @@ buttons("lookup-target").addEventListener("click", () => { if (!inputs.target.re
   const target = inputs.target.value.trim(); buttons("lookup-target").disabled = true;
   try {
     const player = await api("/api/target", Player, { target, settings: readSettings() });
-    if (inputs.target.value.trim() === target) { preview = player; previewTarget = target; renderTarget(); }
+    if (inputs.target.value.trim() === target) { preview = player; previewTarget = target; renderTarget(); void loadAccountHistory(player.id); }
   } finally { await refresh(); }
 }); });
 buttons("apply-settings").addEventListener("click", () => task(async () => {
@@ -613,7 +671,7 @@ buttons("open-history").addEventListener("click", () => {
 get("ranking-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   if (!selected) return;
   const id = selected.scan.id;
-  const ranking = Schema.decodeUnknownSync(Ranking)({ hubPercentile: control("ranking-hub").valueAsNumber,
+  const ranking = Schema.decodeUnknownSync(Ranking)({ topN: control("ranking-topN").valueAsNumber, countBaseline: control("ranking-countBaseline").valueAsNumber, locationBaseline: control("ranking-locationBaseline").valueAsNumber, locationAggregation: select("ranking-locationAggregation").value, hubPercentile: control("ranking-hub").valueAsNumber,
     weights: { mutual: control("ranking-mutual").valueAsNumber, jaccard: control("ranking-jaccard").valueAsNumber, groups: control("ranking-groups").valueAsNumber, games: control("ranking-games").valueAsNumber } });
   buttons("save-ranking").disabled = true;
   try {
@@ -636,12 +694,27 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   if (file.size > 2 * 1024 * 1024) throw new Error("The file exceeds the 2 MB import limit.");
   if (inputs.attach.checked && !selected) throw new Error("Open a matching run before attaching history.");
   const runId = inputs.attach.checked ? selected?.scan.id : undefined;
-  const report = await api("/api/history", HistoryReport, { contents: await file.text(), runId });
-  renderHistory(report, runId ?? null);
-  if (runId && selected?.scan.id === runId) { selected = { ...selected, history: report }; renderReport(); }
+  const report = await api("/api/history", HistoryReport, { contents: new TextDecoder("utf-8", { ignoreBOM: true, fatal: true }).decode(await file.arrayBuffer()), runId });
+  // An import supersedes any automatic history response still in flight.
+  historyRequest++;
+  const error = coverageError(report);
+  renderAccountHistory({ id: report.profile.steamID64, status: error ? "partial" : "ready", error, report }, runId);
+  dialog("history-import-dialog").close();
 
 }); });
 window.addEventListener("focus", () => void refresh());
+buttons("open-history-import").addEventListener("click", () => dialog("history-import-dialog").showModal());
+buttons("target-history").addEventListener("click", () => {
+  if (accountHistory?.report) renderHistory(accountHistory.report, null);
+  else if (!historyAccount) { notice("Verify or select an account to load its history."); return; }
+  showScreen("history");
+});
+function refreshAccountHistory(id: SteamId | null) {
+  if (id) void loadAccountHistory(id, true, selected?.scan.seed === id ? selected.scan.id : undefined);
+}
+buttons("target-history-retry").addEventListener("click", () => refreshAccountHistory(preview?.id ?? historyAccount));
+for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => refreshAccountHistory(historyAccount));
+HistoryUI.initialize();
 applySettings(defaults);
 Tooltips.install(get("app-tooltip"));
 renderTarget(); renderOutput(); renderRecent();

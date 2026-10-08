@@ -24,6 +24,17 @@ jobs:
       - run: npm run verify
       - name: Browser E2E
         if: runner.os == 'Linux'
-        run: npm run test:e2e
+        run: |
+          mkdir -p "$RUNNER_TEMP/vapora-screenshots"
+          npm run test:e2e
         env:
           VAPORA_BROWSER: /usr/bin/google-chrome
+          VAPORA_BROWSER_SCREENSHOTS: ${{ runner.temp }}/vapora-screenshots
+      - name: Save browser screenshots
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vapora-browser-screenshots
+          path: ${{ runner.temp }}/vapora-screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,6 +1,9 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import type { OpenSession } from "../src/history-provider.js";
+import { InputError } from "../src/model.js";
 import { SteamId, newPlayer, defaults } from "../src/model.js";
 import type { Player, Scan, Settings } from "../src/model.js";
 import type * as Steam from "../src/steam.js";
@@ -15,7 +18,7 @@ export const key = "a".repeat(32);
 export const userAgent = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 export function player(id: SteamId, friends: readonly SteamId[], extra: Partial<Player> = {}): Player {
   return { ...newPlayer(id, id === seed ? 0 : 1, defaults), name: `Player ${id.slice(-2)}`, visibility: "public", friendsStatus: "public", friends,
-    bans: { vac: false, game: 0, community: false }, bansStatus: "public", ...extra };
+    bans: { vac: false, vacCount: 0, game: 0, community: false }, bansStatus: "public", friendsObservedAt: new Date().toISOString(), bansObservedAt: new Date().toISOString(), ...extra };
 }
 export function scan(players: readonly Player[], settings: Settings = defaults): Scan {
   return { version: 2, id: Storage.runId(), seed, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -42,6 +45,7 @@ export async function steamFixture() {
   const requests: { path: string; id: string; ids: string; time: number; agent: string }[] = [];
   const failures = new Map<string, { status: number; remaining: number; retryAfter?: string }>();
   const malformed = new Map<string, string>();
+  const vacCounts = new Map<SteamId, number>();
   const omittedBans = new Set<SteamId>();
   const omittedAvatars = new Set<string>();
   const privateProfiles = new Set<string>();
@@ -91,7 +95,7 @@ export async function steamFixture() {
       }
       if (url.pathname.includes("GetPlayerBans")) {
         const ids = (url.searchParams.get("steamids") ?? "").split(",").map((id) => Schema.decodeUnknownSync(SteamId)(id));
-        response.end(JSON.stringify({ players: ids.filter((id) => !omittedBans.has(id)).map((SteamId) => ({ SteamId, VACBanned: false, NumberOfGameBans: 0, CommunityBanned: false })) })); return;
+        response.end(JSON.stringify({ players: ids.filter((id) => !omittedBans.has(id)).map((SteamId) => ({ SteamId, VACBanned: (vacCounts.get(SteamId) ?? 0) > 0, NumberOfVACBans: vacCounts.get(SteamId) ?? 0, NumberOfGameBans: 0, CommunityBanned: false })) })); return;
       }
       if (url.pathname.includes("GetUserGroupList")) { response.writeHead(403); response.end("{}"); return; }
       if (url.pathname.includes("GetOwnedGames")) { response.end(JSON.stringify({ response: { game_count: 2, games: [{ appid: 10 }, { appid: 20 }] } })); return; }
@@ -103,12 +107,96 @@ export async function steamFixture() {
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   return {
-    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, omittedBans, omittedAvatars, privateProfiles, names, omittedVisibility, omittedSummaries, interruptedBodies, friends,
+    url: `http://127.0.0.1:${address.port}`, requests, failures, malformed, vacCounts, omittedBans, omittedAvatars, privateProfiles, names, omittedVisibility, omittedSummaries, interruptedBodies, friends,
     hold: (path: string, id: string) => {
       held.set(path + id, () => {});
       return new Promise<void>((resolve) => waiters.set(path + id, resolve));
     },
     release: (path: string, id: string) => { held.get(path + id)?.(); held.delete(path + id); waiters.delete(path + id); },
+    close: () => new Promise<void>((resolve, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : resolve()); }),
+  };
+}
+
+/** Exercise the real HTTP fixture without a browser dependency in domain tests. */
+export const historyHttpSession = (baseUrl: string): OpenSession => () => Effect.succeed({
+  request: Effect.fn("HistoryFixture.request")((path: string) => Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    const response = yield* client.execute(HttpClientRequest.get(new URL(path, baseUrl).href).pipe(HttpClientRequest.setHeader("user-agent", userAgent)));
+    return { status: response.status, contents: yield* response.text };
+  }).pipe(Effect.provide(FetchHttpClient.layer), Effect.mapError(() => new InputError({ message: "History fixture request failed." })))),
+});
+/** Flatten the current Svelte wire format, including numeric scalars as pool values. */
+export function historyWire(profile: { [key: string]: typeof Schema.Json.Type }): string {
+  const pool: typeof Schema.Json.Type[] = [];
+  const add = (value: typeof Schema.Json.Type): number => {
+    const index = pool.length; pool.push(null);
+    pool[index] = Array.isArray(value) ? value.map(add) : Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
+      ? Object.fromEntries(Object.entries(value).map(([key, value]) => [key, add(value)])) : value;
+    return index;
+  };
+  add({ userdata: profile, user: null, needsVerification: false, unknownRouteField: "preserved" });
+  return JSON.stringify({ type: "data", nodes: [null, null, { type: "data", data: pool }] });
+}
+
+/** A separate real provider keeps history requests out of Steam's request accounting. */
+export async function historyFixture() {
+  const now = 1791360000;
+  const document = {
+    steamID64: seed, name: "Alice", lastChecked: now, creationDate: 1400000000,
+    vacBanned: true, gameBans: 2, economyBanned: "none", customField: { preserved: "original" },
+    historic: {
+      friends: [
+        { Friend: second, Name: "Bob", FriendDate: now - 400000, AvatarHash: "1".repeat(40), countryCode: "ES", stateCode: "56", cityID: 1 },
+        { Friend: third, Name: "Carol", FriendDate: now - 200000, UnfriendDate: now - 100000, countryCode: "ES", stateCode: "56", cityID: 1 },
+      ],
+      persona: [{ Name: "Old Alice", Timestamp: now - 100000 }, { Name: "Alice", Timestamp: now }],
+      url: [{ URL: "alice-old", Timestamp: now - 100000 }],
+      pfp: [{ AvatarHash: "2".repeat(40), Timestamp: now - 100000 }],
+      comments: [
+        { ID: "c1", Commenter: second, Message: "A captured comment", Timestamp: now - 100 },
+        { ID: "c2", Commenter: third, Message: "Former friend comment", Timestamp: now - 10000 },
+        { Commenter: fifth, Message: "Other commenter", Timestamp: now - 50 },
+        { Message: "Undated unknown author" },
+      ],
+    },
+  };
+  const sections = ["persona", "realName", "url", "pfp", "comments", "friends"];
+  const rows = new Map<string, readonly { [key: string]: typeof Schema.Json.Type }[]>(Object.entries(document.historic));
+  rows.set("realName", [{ Name: "Alice Example", Timestamp: now - 100000 }]);
+  let status = 200; let requests = 0;
+  const held = new Map<string, () => void>(); const waiters = new Map<string, () => void>();
+  const paths: string[] = []; const failures = new Map<string, number>(); const replies = new Map<string, string>(); const counts = new Map<string, number>();
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (url.pathname === `/id/${seed}`) { response.setHeader("content-type", "text/html"); response.end("<!doctype html><title>Alice | SteamHistory.net</title><p>Fixture profile</p>"); return; }
+    requests++; paths.push(url.pathname + url.search);
+    const section = url.pathname.endsWith("/history") ? sections[Number(url.searchParams.get("type"))] ?? "" : "";
+    const code = failures.get(section) ?? status;
+    const reply = () => {
+      response.writeHead(code, { "content-type": "application/json" });
+      if (code !== 200) { response.end("provider unavailable"); return; }
+      if (url.pathname === `/id/${seed}/__data.json`) {
+        const { historic: _historic, ...profile } = document;
+        const totalHistoricCounts = Object.fromEntries([...rows].map(([key, records]) => [key, counts.get(key) ?? records.length]));
+        response.end(historyWire({ ...profile, totalHistoricCounts })); return;
+      }
+      if (url.pathname === `/id/${seed}/history`) {
+        const override = replies.get(`${section}:${url.searchParams.get("offset")}`);
+        if (override !== undefined) { response.end(override); return; }
+        const filtered = (rows.get(section) ?? []).filter((row) => url.searchParams.get("commentFilter") !== "deleted" || row.IsDeleted === true);
+        const offset = Number(url.searchParams.get("offset")); const limit = Number(url.searchParams.get("limit"));
+        response.end(JSON.stringify({ data: filtered.slice(offset, offset + limit), total: filtered.length, customPageField: "preserved" })); return;
+      }
+      response.end("{}");
+    };
+    if (held.has(url.pathname)) { held.set(url.pathname, reply); waiters.get(url.pathname)?.(); } else reply();
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
+  return { url: `http://127.0.0.1:${address.port}`, document, rows, paths, failures, replies, counts, session: historyHttpSession(`http://127.0.0.1:${address.port}`), requests: () => requests,
+    hold: (path: string) => { held.set(path, () => {}); return new Promise<void>((resolve) => waiters.set(path, resolve)); },
+    release: (path: string) => { held.get(path)?.(); held.delete(path); waiters.delete(path); },
+    setStatus: (value: number) => { status = value; },
     close: () => new Promise<void>((resolve, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : resolve()); }),
   };
 }

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile, appendFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { Context, Effect, Layer, Schedule, Schema } from "effect";
-import { InputError, Scan, Settings, StorageError, RunId } from "./model.js";
+import { InputError, Scan, Settings, StorageError, RunId, SteamId } from "./model.js";
 
 import type { Artifact } from "./model.js";
 import { HistoryReport } from "./history.js";
@@ -37,6 +37,8 @@ export interface Interface {
   readonly writeArtifact: (id: string, artifact: Artifact, contents: string) => Effect.Effect<void, StorageError | InputError>;
   readonly readArtifact: (id: string, artifact: Artifact) => Effect.Effect<string, StorageError | InputError>;
   readonly history: (id: string) => Effect.Effect<typeof HistoryReport.Type | null, StorageError | InputError>;
+  readonly accountHistory: (id: SteamId) => Effect.Effect<typeof HistoryReport.Type | null, StorageError>;
+  readonly saveHistory: (report: typeof HistoryReport.Type) => Effect.Effect<void, StorageError>;
   readonly log: (id: string, message: string) => Effect.Effect<void, StorageError | InputError>;
   readonly saveProfile: (name: string, settings: Settings) => Effect.Effect<void, StorageError | InputError>;
   readonly profile: (name: string) => Effect.Effect<Settings, StorageError | InputError>;
@@ -70,9 +72,11 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
   const root = resolve(directory);
   const output = join(root, "outputs");
   const profileDir = join(root, "profiles");
+  const historyDir = join(root, "history");
   yield* io("Could not create Vapora's output and profile directories.", async () => {
     await mkdir(output, { recursive: true, mode: 0o700 });
     await mkdir(profileDir, { recursive: true, mode: 0o700 });
+    await mkdir(historyDir, { recursive: true, mode: 0o700 });
   });
   const runPath = (id: string) => Schema.decodeUnknownEffect(RunId)(id).pipe(
     Effect.map((validated) => join(output, validated)),
@@ -97,6 +101,19 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
   });
   return Service.of({
     root, save, read,
+    saveHistory: Effect.fn("Storage.saveHistory")((report: typeof HistoryReport.Type) => atomic(join(historyDir, `${report.profile.steamID64}.json`), JSON.stringify(report))),
+    accountHistory: Effect.fn("Storage.accountHistory")(function* (id: SteamId) {
+      const contents = yield* io("Could not read saved account history.", () => readFile(join(historyDir, `${id}.json`), "utf8").catch((error) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      }));
+      if (contents === null) return null;
+      const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryReport))(contents).pipe(
+        Effect.mapError(() => new StorageError({ message: "Saved account history is invalid. Import a valid capture explicitly." })),
+      );
+      if (report.profile.steamID64 !== id) return yield* Effect.fail(new StorageError({ message: "Cached history belongs to another Steam account. Inspect its original captures before replacing it." }));
+      return report;
+    }),
     create: Effect.fn("Storage.create")(function* (scan: Scan) {
       yield* io("Could not create a unique output directory.", () => mkdir(join(output, scan.id), { mode: 0o700 }));
       yield* save(scan);

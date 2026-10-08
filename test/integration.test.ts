@@ -15,6 +15,7 @@ import * as Scanner from "../src/scanner.js";
 import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
+import * as History from "../src/history.js";
 import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, player, scan } from "./fixtures.js";
 
 const friendPath = "/ISteamUser/GetFriendList/v1/";
@@ -225,7 +226,7 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 202);
     await arrived;
     assert.equal((await request("/api/scan", JSON.stringify({ target: seed, settings }))).status, 400);
-    assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { hubPercentile: .99, weights: defaults.weights } }))).status, 400);
+    assert.equal((await request("/api/analyze", JSON.stringify({ id: "20261006T120000Z-123456789abc", ranking: { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .99, weights: defaults.weights } }))).status, 400);
     assert.equal((await request("/api/rebuild", JSON.stringify({ id: "20261006T120000Z-123456789abc" }))).status, 400);
     assert.equal((await request("/api/cancel", "{}")).status, 200);
     fixture.release(friendPath, seed);
@@ -260,16 +261,32 @@ test("saved rankings change without Steam authority or collection and attached h
   const post = (path: string, payload: string) => fetch(`${server.origin}${path}`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: payload });
   const get = (path: string) => fetch(`${server.origin}${path}`, { headers: { "user-agent": userAgent } });
   try {
-    const ranking = { hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
+    const ranking = { topN: 5, countBaseline: 25, locationAggregation: "sum", locationBaseline: 200, hubPercentile: .5, weights: { mutual: 0, jaccard: 0, groups: 4, games: 0 } };
     assert.equal((await get(`/api/runs/${observations.id}`)).status, 200);
-    const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: { friends: [{ Friend: third, Name: "Third", FriendDate: 100 }] } };
-    assert.equal((await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }))).status, 200);
+    const history = { steamID64: seed, name: "Saved history", lastChecked: 1000, historic: {
+      friends: [{ Friend: third, Name: "Third", FriendDate: 100, countryCode: "ES", cityID: 1 }],
+      comments: [{ ID: "friend-comment", Commenter: third, Timestamp: 500, Message: "hello" }],
+    } };
+    const imported = await post("/api/history", JSON.stringify({ runId: observations.id, contents: JSON.stringify(history) }));
+    assert.equal(imported.status, 200);
+    const beforeRanking = Schema.decodeUnknownSync(History.HistoryReport)(await imported.json());
+    const cacheOnly = { ...history, historic: { ...history.historic, comments: [...history.historic.comments,
+      { ID: "cache-only-1", Commenter: third, Timestamp: 600, Message: "Cache-only capture" },
+      { ID: "cache-only-2", Commenter: third, Timestamp: 700, Message: "Second cache-only comment" },
+    ] } };
+    assert.equal((await post("/api/history", JSON.stringify({ contents: JSON.stringify(cacheOnly) }))).status, 200);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), beforeRanking);
     const result = await post("/api/analyze", JSON.stringify({ id: observations.id, ranking })); assert.equal(result.status, 200);
     const view = Schema.decodeUnknownSync(Contracts.RunView)(await result.json());
     assert.equal(view.report.friends[0]?.id, third);
     assert.deepEqual(view.scan.players, observations.players);
     assert.deepEqual(view.scan.settings, { ...observations.settings, ...ranking });
     assert.equal(view.history?.friends[0]?.durationSeconds, 900);
+    assert.equal(view.history?.sources.length, 2);
+    assert.ok(view.history?.comments.some((comment) => comment.message === "Cache-only capture"));
+    assert.notEqual(view.history?.commenters[0]?.index, beforeRanking.commenters[0]?.index);
+    assert.notEqual(view.history?.locations[0]?.index, beforeRanking.locations[0]?.index);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), view.history);
     const persisted = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
     assert.deepEqual(persisted.settings, view.scan.settings);
     const exported = Schema.decodeUnknownSync(Schema.fromJsonString(Contracts.Report))(await readFile(join(root, "outputs", observations.id, "analysis.json"), "utf8"));
@@ -294,16 +311,78 @@ test("saved rankings change without Steam authority or collection and attached h
     assert.deepEqual(await readFile(checkpointPath), checkpoint);
     await rm(analysisPath, { recursive: true });
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { ...ranking, hubPercentile: 0 } }))).status, 400);
+    const otherAccount = History.view(await Effect.runPromise(History.parse(JSON.stringify({ ...history, steamID64: second }))));
+    const mismatchedContents = JSON.stringify(otherAccount);
+    await writeFile(join(root, "outputs", observations.id, "history.json"), mismatchedContents);
+    const cacheBeforeMismatch = await readFile(join(root, "history", `${seed}.json`), "utf8");
+    const mismatchedAttachment = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
+    assert.equal(mismatchedAttachment.history, null); assert.match(mismatchedAttachment.historyError ?? "", /another Steam account/);
+    assert.deepEqual(mismatchedAttachment.scan, persisted);
+    assert.equal(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8"), mismatchedContents);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), cacheBeforeMismatch);
     await writeFile(join(root, "outputs", observations.id, "history.json"), "invalid history");
-    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { hubPercentile: .9, weights: defaults.weights } }))).status, 400);
+    const damagedAttachment = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
+    assert.deepEqual(damagedAttachment.scan.settings, persisted.settings);
+    assert.equal(damagedAttachment.history, null); assert.match(damagedAttachment.historyError ?? "", /invalid/);
+    assert.equal(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8"), "invalid history");
+    assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { topN: 5, countBaseline: 50, locationAggregation: "product", locationBaseline: 100, hubPercentile: .9, weights: defaults.weights } }))).status, 400);
     const afterFailure = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
     assert.deepEqual(afterFailure.settings, persisted.settings);
     await writeFile(join(root, "outputs", observations.id, "history.json"), JSON.stringify(view.history));
+    const cachePath = join(root, "history", `${seed}.json`);
+    await writeFile(cachePath, "invalid account history");
+    const damagedCache = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
+    assert.equal(damagedCache.history, null); assert.match(damagedCache.historyError ?? "", /invalid/);
+    assert.deepEqual(damagedCache.scan.players, observations.players);
+    assert.equal(await readFile(cachePath, "utf8"), "invalid account history");
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), view.history);
     await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).save({ ...persisted, status: "cancelled" }); }));
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking }))).status, 400);
     assert.equal((await post("/api/rebuild", JSON.stringify({ id: observations.id }))).status, 400);
     assert.deepEqual(fixture.requests, []);
   } finally { await server.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("recreated account cache preserves run-only original captures and comment versions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-history-merge-"));
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [])]);
+  const oldContents = JSON.stringify({ steamID64: seed, lastChecked: 1000, customField: "keep", historic: { comments: [{ ID: "shared", Message: "before" }] } });
+  const old = History.view(await Effect.runPromise(History.parse(oldContents)));
+  await runtime.runPromise(Effect.gen(function* () {
+    const store = yield* Storage.Service; yield* store.create(observations);
+    yield* store.writeArtifact(observations.id, "history.json", JSON.stringify(old));
+  }));
+  const server = await Server.start({ root, key: "", port: 0 });
+  const get = () => fetch(`${server.origin}/api/runs/${observations.id}`, { headers: { "user-agent": userAgent } });
+  try {
+    const withoutCache = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(withoutCache.history?.sources[0]?.contents, oldContents);
+    const recentContents = JSON.stringify({ steamID64: seed, lastChecked: 2000, historic: { comments: [{ ID: "shared", Message: "after" }] } });
+    const imported = await fetch(`${server.origin}/api/history`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: JSON.stringify({ contents: recentContents }) });
+    assert.equal(imported.status, 200);
+    const merged = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(merged.historyError, null);
+    assert.deepEqual(merged.history?.sources.map((source) => source.contents), [oldContents, recentContents]);
+    assert.equal(merged.history?.comments.length, 1); assert.equal(merged.history?.comments[0]?.message, "after");
+    assert.equal(merged.history?.comments[0]?.versions.length, 2);
+    assert.equal(merged.history?.sources[0]?.snapshots[0]?.fields.customField, "keep");
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
+    assert.deepEqual(Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json()).history, merged.history);
+    const wrongCache = JSON.stringify(History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, lastChecked: 3000, historic: {} })))));
+    await writeFile(join(root, "history", `${seed}.json`), wrongCache);
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(seed); })), /Cached history belongs to another Steam account/);
+    const mismatched = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(mismatched.history, null); assert.match(mismatched.historyError ?? "", /Cached history belongs to another Steam account/);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), wrongCache);
+    const foreign = History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, historic: {} }))));
+    const mixed = JSON.stringify({ ...merged.history, sources: [...merged.history?.sources ?? [], ...foreign.sources] });
+    await writeFile(join(root, "history", `${seed}.json`), mixed);
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(seed); })), /invalid/);
+    const hiddenAccount = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(hiddenAccount.history, null); assert.match(hiddenAccount.historyError ?? "", /invalid/);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), mixed);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
+  } finally { await server.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 test("desktop key storage exposes capabilities, retains authority on save failure and forgets without Steam calls", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-key-storage-")); const fixture = await steamFixture();
@@ -427,6 +506,43 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
     await assert.rejects(execute(process.execPath, [cli, "profile-save", "bad", "--root", root, "--depth", "20"]), /Invalid settings/);
     await assert.rejects(execute(process.execPath, [cli, "unknown", "--root", root]), /Unknown command/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+test("CLI history imports preserve run-only captures and reject invalid saved history before either write", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-cli-history-")); const execute = promisify(execFile);
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [])]);
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url)); const inputPath = join(root, "import.json");
+  const attachmentPath = join(root, "outputs", observations.id, "history.json"); const cachePath = join(root, "history", `${seed}.json`);
+  const oldContents = JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { comments: [{ ID: "shared", Message: "before" }] } });
+  const recentContents = JSON.stringify({ steamID64: seed, lastChecked: 2000, historic: { comments: [{ ID: "shared", Message: "after" }] } });
+  const old = History.view(await Effect.runPromise(History.parse(oldContents)));
+  try {
+    await runtime.runPromise(Effect.gen(function* () {
+      const store = yield* Storage.Service; yield* store.create(observations);
+      yield* store.writeArtifact(observations.id, "history.json", JSON.stringify(old));
+    }));
+    await writeFile(inputPath, recentContents);
+    const importHistory = () => execute(process.execPath, [cli, "history", inputPath, "--run", observations.id, "--root", root]);
+    await importHistory();
+    const merged = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(attachmentPath, "utf8"));
+    assert.deepEqual(merged.sources.map((source) => source.contents), [oldContents, recentContents]);
+    assert.equal(merged.comments[0]?.message, "after"); assert.equal(merged.comments[0]?.versions.length, 2);
+    assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(cachePath, "utf8")).sources, merged.sources);
+    await importHistory();
+    assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(attachmentPath, "utf8")), merged);
+    const validAttachment = await readFile(attachmentPath, "utf8"); const validCache = await readFile(cachePath, "utf8");
+    const wrongAccount = JSON.stringify(History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, historic: {} })))));
+    await writeFile(cachePath, wrongAccount);
+    await assert.rejects(importHistory(), /Cached history belongs to another Steam account/);
+    assert.equal(await readFile(cachePath, "utf8"), wrongAccount); assert.equal(await readFile(attachmentPath, "utf8"), validAttachment);
+    await writeFile(cachePath, validCache);
+    const foreign = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(wrongAccount);
+    const mixed = JSON.stringify({ ...merged, sources: [...merged.sources, ...foreign.sources] });
+    for (const { invalidAttachment, error } of [{ invalidAttachment: wrongAccount, error: /Attached history belongs to another Steam account/ }, { invalidAttachment: "invalid JSON", error: /invalid/ }, { invalidAttachment: mixed, error: /invalid/ }]) {
+      await writeFile(attachmentPath, invalidAttachment);
+      await assert.rejects(importHistory(), error);
+      assert.equal(await readFile(attachmentPath, "utf8"), invalidAttachment); assert.equal(await readFile(cachePath, "utf8"), validCache);
+    }
+  } finally { await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 test("assertion lint accepts justified exports and rejects undocumented assertions", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-lint-")); const execute = promisify(execFile);

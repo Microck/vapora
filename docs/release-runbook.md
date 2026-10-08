@@ -52,11 +52,12 @@ Extract it into a fresh directory and run:
 ```sh
 npm ci
 npm run verify
+npm run build:history
 VAPORA_BROWSER=/path/to/chrome npm run test:e2e
 npm start -- --help
 ```
 
-An installed Chrome/Chromium executable is required for browser E2E. Do not weaken or skip failed checks. Confirm the archive contains no API key or local `.env` file.
+Python 3.10+ is required for the one-time history runtime build. Desktop packaging freezes the helper and bundles Chromium outside ASAR; installed and portable downloads require neither Python nor a separately installed browser. An installed Chrome/Chromium executable is required for browser E2E. Do not weaken or skip failed checks. Confirm the archive contains no API key or local `.env` file.
 
 ## verify user workflows
 
@@ -66,7 +67,7 @@ An installed Chrome/Chromium executable is required for browser E2E. Do not weak
 - If desktop behavior or dependencies changed, check native launch, active-scan close/checkpoint/restart/resume, window controls and output folders on each supported platform. Core CI is not proof of native desktop behavior.
 - Check screenshots against the current app, and update captures when visible behavior changes. Use fixture identities for public screenshots.
 
-Earlier source-launch evidence is in [e2e-verification.md](e2e-verification.md). Desktop CI must test each actual download, separately from source-launch checks. It silently installs the Windows installer EXE, launches the portable EXE directly, extracts the Linux AppImage and mounts the macOS DMG, then runs `npm run test:desktop` against their packaged executable and `app.asar`. This checks bundled dependencies/assets, isolated fresh storage, a fixture scan, exports, native window operations and shutdown. Never attach a platform download whose native job failed. The portable check moves the EXE and `Vapora-data` together, then reopens the saved run and downloads all its exports without repeating Steam requests. Record live Steam evidence separately from fixture checks.
+Earlier source-launch evidence is in [e2e-verification.md](e2e-verification.md). Desktop CI must test each actual download, separately from source-launch checks. It silently installs the Windows installer EXE, launches the portable EXE directly, extracts the Linux AppImage and mounts the macOS DMG, then runs `npm run test:desktop` against their packaged executable and `app.asar`. This checks bundled dependencies/assets, the native history helper and browser outside ASAR, automatic history loading from current paginated HTTP fixtures, isolated fresh storage, a fixture scan, exports, native window operations and shutdown. Never attach a platform download whose native job failed. The portable check moves the EXE and `Vapora-data` together, then reopens the saved run and downloads all its exports without repeating Steam requests. Record live Steam evidence separately from fixture checks.
 
 Do not present generated source archives as installers. Publisher signing and notarization are not configured; retain that notice in README and release notes. Do not disable OS security settings as an installation step.
 

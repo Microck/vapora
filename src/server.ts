@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Cause, Effect, Fiber, ManagedRuntime, Schema } from "effect";
+import { Cause, Effect, Fiber, ManagedRuntime, Schema, Semaphore } from "effect";
 import { InputError, Settings, Ranking, SteamId, failureMessage } from "./model.js";
 import type { Scan, StorageError } from "./model.js";
 import * as Steam from "./steam.js";
@@ -11,10 +11,15 @@ import * as Storage from "./storage.js";
 import * as Scanner from "./scanner.js";
 import * as Analysis from "./analysis.js";
 import * as History from "./history.js";
+import * as HistoryProvider from "./history-provider.js";
+import * as HistoryBrowser from "./history-browser.js";
 import type { Job, State, RunView } from "./contracts.js";
 
 export interface Options {
   readonly root: string; readonly key: string; readonly port?: number; readonly steamBaseUrl?: string; readonly retryBaseMs?: number;
+  readonly historyBaseUrl?: string;
+  readonly historyRuntime?: string;
+  readonly historySession?: HistoryProvider.OpenSession;
   readonly keyStorage?: { readonly available: boolean; readonly remembered: boolean; readonly save: (key: string | null) => Promise<void> };
 }
 
@@ -23,6 +28,7 @@ const ResumeRequest = Schema.Struct({ id: Schema.NonEmptyString });
 const KeyRequest = Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-fA-F0-9]{32}$/)), remember: Schema.Boolean });
 const ProfileRequest = Schema.Struct({ name: Schema.NonEmptyString, settings: Settings });
 const HistoryRequest = Schema.Struct({ contents: Schema.String, runId: Schema.optionalKey(Schema.String) });
+const AccountHistoryRequest = Schema.Struct({ id: SteamId, refresh: Schema.Boolean, runId: Schema.optionalKey(Schema.String) });
 const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranking });
 // Only bundled UI assets are public. Never resolve request paths against the filesystem.
 const files = new Map([
@@ -68,6 +74,81 @@ export async function start(options: Options) {
   let cancelJob: (() => Promise<void>) | null = null;
   let estimating = false;
   let origin = "";
+  const historyRequests = new Map<SteamId, Promise<History.HistoryState>>();
+  const historyErrors = new Map<SteamId, string>();
+  const historyGate = await Effect.runPromise(Semaphore.make(1));
+  const browserGate = await Effect.runPromise(Semaphore.make(1));
+  const historyCancellation = new Set<() => Promise<void>>();
+  let closing = false;
+  const saveHistory = (bundle: History.Bundle) => runtime.runPromise(historyGate.withPermit(Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const id = bundle.sources[0]?.snapshots[0]?.steamID64;
+    if (!id) return yield* Effect.fail(new InputError({ message: "No account found in history." }));
+    const previous = yield* store.accountHistory(id);
+    const report = History.view(History.merge(previous ?? { sources: [] }, bundle));
+    yield* store.saveHistory(report);
+    return report;
+  })));
+  const savedHistoryState = (id: SteamId, report: History.HistoryReport | null): History.HistoryState => {
+    const error = historyErrors.get(id) ?? (report ? History.coverageError(report) : null);
+    return { id, status: historyErrors.has(id) || !report ? "unavailable" : error ? "partial" : "ready", error, report };
+  };
+  const storedAccountHistory = async (id: SteamId): Promise<History.HistoryState> => {
+    const report = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
+    return savedHistoryState(id, report);
+  };
+  const accountHistory = async (id: SteamId, refresh: boolean): Promise<History.HistoryState> => {
+    const running = historyRequests.get(id); if (running) return running;
+    const collect = async (): Promise<History.HistoryState> => {
+      const saved = await storedAccountHistory(id);
+      if (!refresh && (saved.report || historyErrors.has(id))) return saved;
+      if (closing) throw new InputError({ message: "Vapora is closing. Retry after reopening it." });
+      const fiber = runtime.runFork(browserGate.withPermit(HistoryProvider.fetchAccount(id,
+        options.historySession ?? HistoryBrowser.open(options.historyRuntime, options.historyBaseUrl))));
+      const cancel = () => Effect.runPromise(Fiber.interrupt(fiber)); historyCancellation.add(cancel);
+      const outcome = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.result)).finally(() => historyCancellation.delete(cancel));
+      if (outcome._tag === "Failure") {
+        if (historyRequests.get(id) !== operation) return storedAccountHistory(id);
+        historyErrors.set(id, outcome.failure.message);
+        return { id, status: "unavailable", error: outcome.failure.message, report: saved.report };
+      }
+      const report = await saveHistory(outcome.success);
+      if (historyRequests.get(id) !== operation) return storedAccountHistory(id);
+      historyErrors.delete(id);
+      const error = History.coverageError(report);
+      return { id, status: error ? "partial" : "ready", error, report };
+    };
+    const operation = collect();
+    historyRequests.set(id, operation);
+    try { return await operation; } finally { if (historyRequests.get(id) === operation) historyRequests.delete(id); }
+  };
+  // Call under historyGate so attachment and cache reads cannot split a persistence operation.
+  const attachedSources = (scan: Scan) => Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const attachment = yield* store.history(scan.id);
+    if (attachment && attachment.profile.steamID64 !== scan.seed) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
+    const cached = yield* store.accountHistory(scan.seed);
+    return attachment && cached ? History.merge(attachment, cached) : cached ?? attachment;
+  });
+  const projectAttachedHistory = (scan: Scan) => Effect.gen(function* () {
+    const store = yield* Storage.Service;
+    const source = yield* attachedSources(scan);
+    if (!source) return null;
+    const report = yield* Effect.try({ try: () => History.view(source, scan),
+      catch: () => new InputError({ message: "Saved history could not be analyzed. Inspect its original captures before replacing it." }) });
+    yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
+    return report;
+  });
+  const attachedHistory = (id: string) => historyGate.withPermit(Effect.gen(function* () {
+    const scan = yield* (yield* Storage.Service).read(id);
+    return yield* projectAttachedHistory(scan);
+  }));
+  const savedRun = (id: string) => historyGate.withPermit(Effect.gen(function* () {
+    const scan = yield* (yield* Storage.Service).read(id);
+    const history = yield* projectAttachedHistory(scan).pipe(Effect.result);
+    return { scan, report: Analysis.analyze(scan), history: history._tag === "Success" ? history.success : null,
+      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies RunView;
+  }));
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
     if (busy()) throw new InputError({ message: "A Steam operation is already running. Wait or cancel it first." });
@@ -122,9 +203,7 @@ export async function start(options: Options) {
     }
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
-      const scan = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(runMatch[1] ?? ""); }));
-      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(scan.id); }));
-      json(response, 200, { scan, report: Analysis.analyze(scan), history } satisfies RunView);
+      json(response, 200, await runtime.runPromise(savedRun(runMatch[1])));
       return;
     }
     const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -183,12 +262,49 @@ export async function start(options: Options) {
     if (busy()) throw new InputError({ message: "Wait for the active operation before updating exports or ranking." });
     estimating = true;
     try {
-      // Read attached data before saving so a corrupt attachment cannot hide a successful mutation.
-      const history = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).history(payload.id); }));
-      const view = await runtime.runPromise(payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
-      json(response, 200, { ...view, history } satisfies RunView);
+      const view = await runtime.runPromise(historyGate.withPermit(Effect.gen(function* () {
+        const store = yield* Storage.Service;
+        const scan = yield* store.read(payload.id);
+        const bundle = yield* attachedSources(scan);
+        // Validate both sources before changing ranking settings or exports.
+        const source = bundle ? History.view(bundle, scan) : null;
+        const analyzed = yield* (payload.ranking ? Analysis.reanalyze(payload.id, payload.ranking) : Analysis.rebuild(payload.id));
+        const history = source ? History.view(source, analyzed.scan) : null;
+        if (history) yield* store.writeArtifact(payload.id, "history.json", JSON.stringify(history, null, 2));
+        return { ...analyzed, history, historyError: null } satisfies RunView;
+      })));
+      json(response, 200, view);
     } finally { estimating = false; }
     return;
+  }
+  async function updateHistory(path: string, contents: string, response: ServerResponse) {
+    if (path === "/api/history/account") {
+      const payload = await Effect.runPromise(decode(AccountHistoryRequest, contents));
+      // Check the target before requesting or modifying any attachment.
+      const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
+      if (scan && scan.seed !== payload.id) throw new InputError({ message: "Select the matching account before attaching its history." });
+      const savedReport = scan && !payload.refresh ? await runtime.runPromise(attachedHistory(scan.id)) : null;
+      if (savedReport) {
+        json(response, 200, savedHistoryState(payload.id, savedReport));
+        return;
+      }
+      const state = await accountHistory(payload.id, payload.refresh);
+      const report = scan && state.report ? await runtime.runPromise(attachedHistory(scan.id)) : state.report;
+      json(response, 200, { ...state, report }); return;
+    }
+    if (path === "/api/history") {
+      const payload = await Effect.runPromise(decode(HistoryRequest, contents));
+      if (Buffer.byteLength(payload.contents, "utf8") > 2 * 1024 * 1024) throw new InputError({ message: "The history file exceeds 2 MB." });
+      const bundle = await Effect.runPromise(History.parse(payload.contents));
+      const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
+      const account = bundle.sources[0]?.snapshots[0]?.steamID64;
+      if (scan && scan.seed !== account) throw new InputError({ message: "This history belongs to another account. Import separately or open a matching run." });
+      const saved = await saveHistory(bundle);
+      // The import owns current state; older completions cannot replace its error or request ownership.
+      historyRequests.delete(saved.profile.steamID64); historyErrors.delete(saved.profile.steamID64);
+      const report = scan ? await runtime.runPromise(attachedHistory(scan.id)) : saved;
+      json(response, 200, report); return;
+    }
   }
   async function mutate(path: string, request: IncomingMessage, response: ServerResponse) {
     const contents = await body(request);
@@ -234,20 +350,7 @@ export async function start(options: Options) {
       json(response, 200, { ok: true }); return;
     }
     if (path === "/api/analyze" || path === "/api/rebuild") { await updateAnalysis(path, contents, response); return; }
-    if (path === "/api/history") {
-      const payload = await Effect.runPromise(decode(HistoryRequest, contents));
-      if (Buffer.byteLength(payload.contents, "utf8") > 2 * 1024 * 1024) throw new InputError({ message: "The history file exceeds 2 MB." });
-      const report = await Effect.runPromise(History.parse(payload.contents).pipe(Effect.flatMap(History.analyze)));
-      if (payload.runId) {
-        await runtime.runPromise(Effect.gen(function* () {
-          const store = yield* Storage.Service;
-          const scan = yield* store.read(payload.runId ?? "");
-          if (scan.seed !== report.profile.steamID64) return yield* Effect.fail(new InputError({ message: "This history belongs to another account. Open a matching run or import it separately." }));
-          yield* store.writeArtifact(scan.id, "history.json", JSON.stringify(report, null, 2));
-        }));
-      }
-      json(response, 200, report); return;
-    }
+    if (path === "/api/history/account" || path === "/api/history") { await updateHistory(path, contents, response); return; }
     json(response, 404, { error: "Unknown action." });
   }
   await runtime.runPromise(Effect.gen(function* () { yield* Storage.Service; }));
@@ -255,6 +358,9 @@ export async function start(options: Options) {
   const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
   origin = `http://127.0.0.1:${address.port}`;
   return { origin, close: async () => {
+    closing = true;
+    await Promise.all([...historyCancellation].map((cancel) => cancel()));
+    await Promise.allSettled(historyRequests.values());
     if (cancelJob) await cancelJob();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await runtime.dispose();
