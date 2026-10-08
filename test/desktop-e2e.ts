@@ -136,7 +136,12 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     return input.value;
   }), seed, "Keyboard entry did not reach the target field");
   await page.click("#lookup-target");
-  await page.waitForFunction(() => ["History ready", "History partial", "History unavailable"].includes(document.querySelector("#target-history-status")?.textContent ?? ""), { timeout: 110000 });
+  await page.waitForFunction(() => ["History ready", "History partial", "History unavailable"].includes(document.querySelector("#target-history-status")?.textContent ?? ""), { timeout: 110000 }).catch(async (error: Error) => {
+    const lookup = await page.evaluate(() => ({ name: document.querySelector("#target-name")?.textContent,
+      notice: document.querySelector("#notice")?.textContent, history: document.querySelector("#target-history-status")?.textContent,
+      status: document.querySelector("#history-fetch-status")?.textContent, focused: document.hasFocus() }));
+    throw new Error(`History lookup timed out: ${JSON.stringify({ lookup, requests: fixture.requests, historyRequests: history.requests(), errors })}`, { cause: error });
+  });
   const historyState = await page.evaluate(() => ({ status: document.querySelector("#target-history-status")?.textContent,
     error: document.querySelector("#history-fetch-status")?.textContent }));
   assert.equal(historyState.status, "History ready", `Bundled history failed: ${JSON.stringify({ historyState, requests: history.requests() })}`);
