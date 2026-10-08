@@ -258,6 +258,8 @@ test("server shutdown closes browser preconnections without waiting for an HTTP 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await once(socket, "connect");
+    // Closing a TCP preconnection can report a reset instead of a clean EOF.
+    socket.once("error", (error: NodeJS.ErrnoException) => assert.equal(error.code, "ECONNRESET"));
     closing = server.close();
     await Promise.race([closing, new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error("An unused browser connection blocked shutdown.")), 1000);
