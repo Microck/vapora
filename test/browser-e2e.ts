@@ -325,6 +325,10 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await fill(page, "#history-search", "History name 200");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
   assert.equal(await page.$eval("#history-next", (button) => button instanceof HTMLButtonElement && button.disabled), true);
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.match(await visibleText(page, "#history-rows") ?? "", /History name 200/);
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  assert.match(await visibleText(page, "#history-count") ?? "", /of 1/);
   // A recovered refresh must update the open run, its attachment and its download without reopening it.
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   await page.click("#history-refresh");

@@ -4,7 +4,7 @@ import type { Availability, SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
 import { displaySupport } from "../src/scoring.js";
 import * as HistoryUI from "./history-view.js";
-import { HistoryState } from "../src/history.js";
+import { HistoryState, coverageError } from "../src/history.js";
 import { HistoryReport } from "../src/history.js";
 import * as Network from "./network.js";
 import * as Tooltips from "./tooltips.js";
@@ -349,6 +349,17 @@ function renderHistory(report: HistoryReport, runId: string | null) {
   const link = get("history-download"); link.hidden = !runId;
   if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
 }
+function renderAccountHistory(state: HistoryState, runId?: string) {
+  accountHistory = state; historyAccount = state.id;
+  get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
+  get("target-history-status").dataset.tooltip = state.error ?? "Saved SteamHistory capture";
+  get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
+  get("history-fetch-status").textContent = state.error ?? ""; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
+  if (state.report) {
+    renderHistory(state.report, runId ?? null);
+    if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
+  }
+}
 async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) {
   const request = ++historyRequest;
   if (historyAccount !== id) { accountHistory = null; get("history-result").hidden = true; }
@@ -358,15 +369,7 @@ async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) 
   try {
     const state = await api("/api/history/account", HistoryState, { id, refresh, runId });
     if (request !== historyRequest) return;
-    accountHistory = state; historyAccount = id;
-    get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
-    get("target-history-status").dataset.tooltip = state.error ?? "Saved SteamHistory capture";
-    get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
-    get("history-fetch-status").textContent = state.error ?? ""; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
-    if (state.report) {
-      renderHistory(state.report, runId ?? null);
-      if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
-    }
+    renderAccountHistory(state, runId);
   } catch (error) {
     if (request !== historyRequest) return;
     get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false; get("history-retry").hidden = false;
@@ -692,8 +695,11 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   if (inputs.attach.checked && !selected) throw new Error("Open a matching run before attaching history.");
   const runId = inputs.attach.checked ? selected?.scan.id : undefined;
   const report = await api("/api/history", HistoryReport, { contents: new TextDecoder("utf-8", { ignoreBOM: true, fatal: true }).decode(await file.arrayBuffer()), runId });
-  renderHistory(report, runId ?? null); dialog("history-import-dialog").close();
-  if (runId && selected?.scan.id === runId) { selected = { ...selected, history: report }; renderReport(); }
+  // An import supersedes any automatic history response still in flight.
+  historyRequest++;
+  const error = coverageError(report);
+  renderAccountHistory({ id: report.profile.steamID64, status: error ? "partial" : "ready", error, report }, runId);
+  dialog("history-import-dialog").close();
 
 }); });
 window.addEventListener("focus", () => void refresh());

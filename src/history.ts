@@ -174,7 +174,7 @@ function normalize(record: Record): Profile {
   const history: { [key: string]: readonly Record[] } = {};
   for (const [key, value] of Object.entries(historic)) {
     if (Schema.is(Schema.Array(Record))(value)) history[key] = value;
-    else if (["friends", "comments", "persona", "url", "pfp"].includes(key)) throw new InputError({ message: `History section ${key} must contain records. The original file was not changed.` });
+    else if (Schema.is(Section)(key)) throw new InputError({ message: `History section ${key} must contain records. The original file was not changed.` });
     // Unknown metadata remains in fields and the original bytes, outside the interpreted record lists.
   }
   return { steamID64: id, name: text(record.name) ?? id, lastChecked: time(record.lastChecked) ?? time(record.lastUpdated), fields: record, historic: history };

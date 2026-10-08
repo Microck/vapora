@@ -59,6 +59,14 @@ test("all captures, unknown fields and original UTF-8 formatting survive the rep
   assert.deepEqual(reopened.profile.fields.unknown, { keep: ["é", null] });
   assert.equal(reopened.profile.fields.vacBanned, true);
 });
+test("recognized real-name history rejects malformed records rather than hiding them", async () => {
+  for (const invalid of [null, "not records", { Name: "Alice" }, [null]]) {
+    await assert.rejects(parse({ ...profile(100), historic: { realName: invalid } }), /History section realName must contain records/);
+  }
+  const report = History.view(await parse({ ...profile(100), historic: { realName: [{ Name: "Alice Example" }], providerMetadata: "preserved" } }));
+  assert.equal(report.profile.historic.realName?.[0]?.Name, "Alice Example");
+  assert.deepEqual(report.profile.fields.historic, { realName: [{ Name: "Alice Example" }], providerMetadata: "preserved" });
+});
 test("byte-identical reimports reuse one source while distinct original captures remain retained", async () => {
   const first = await parse(profile(100));
   const repeated = await parse(profile(100));
