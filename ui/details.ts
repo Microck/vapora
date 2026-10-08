@@ -30,7 +30,7 @@ export function open(title: string, contents: HTMLElement, identity?: string) {
   const raise = () => { window.style.zIndex = String(++layer); };
   const dismiss = () => {
     windows.delete(window); window.remove();
-    if (opener instanceof HTMLElement && opener.isConnected && opener.getClientRects().length) opener.focus({ preventScroll: true });
+    if ((opener instanceof HTMLElement || opener instanceof SVGElement) && opener.isConnected && opener.getClientRects().length) opener.focus({ preventScroll: true });
   };
   close.addEventListener("click", dismiss);
   window.addEventListener("pointerdown", raise); window.addEventListener("focusin", raise);

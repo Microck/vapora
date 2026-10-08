@@ -77,6 +77,13 @@ async function checkProfileDetails(page: Page) {
   }
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "profile-details.png") });
   await page.$$eval(".details-close", (buttons) => { for (const button of buttons) if (button instanceof HTMLButtonElement) button.click(); });
+  const graphNode = `#graph [data-node-id="${seed}"]`;
+  await page.$eval(graphNode, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
+  await page.keyboard.press("Enter");
+  assert.equal((await page.$$(".details-window")).length, 1);
+  await page.keyboard.press("Escape");
+  assert.equal((await page.$$(".details-window")).length, 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), seed);
 }
 async function keyForm(page: Page, value: string) {
   await page.click('#open-key'); await fill(page, "#key", value); await page.click('#key-form button[type="submit"]');

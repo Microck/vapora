@@ -268,7 +268,11 @@ function renderRanking() {
   buttons("rebuild-exports").disabled = buttons("save-ranking").disabled;
 }
 function inspectNode(id: SteamId) {
-  selectedNode = id; openProfileDetails(id); renderGraph();
+  const graphOpener = document.activeElement?.closest("#graph, #network-matches");
+  selectedNode = id; renderGraph();
+  // Selection redraws nodes and search matches; capture a live focus target for closing Details.
+  if (graphOpener) document.querySelector<SVGGElement>(`#graph [data-node-id="${id}"]`)?.focus({ preventScroll: true });
+  openProfileDetails(id);
 }
 function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
   const rank = selected?.report.friends.find((friend) => friend.id === id);
