@@ -38,9 +38,11 @@ npm ci
 npm run verify
 ```
 
-Publish the generated `website/out/` directory on a static host. It includes HTML, assets, an exported local search index and a 404 page. No Steam key, Python, Electron or Node server is needed by the deployed docs. Serve clean paths with trailing slashes, so `/docs/reference/cli/` resolves to its `index.html`. Keep `/api/search` accessible as the exported JSON file.
+The public site is [vapora.micr.dev](https://vapora.micr.dev/), hosted on GitHub Pages. The documentation workflow verifies changes on pull requests and deploys the checked `website/out/` artifact from `main`. It can also be run manually through GitHub Actions. Deployment uses the `github-pages` environment and waits for the build to pass.
 
-For a domain root, use the default configuration. For subpath hosting, configure Next.js `basePath` and update absolute asset/search URLs before building; this repository does not assume a public docs domain or GitHub Pages subpath. No production deployment or custom-domain claim is included in this PR.
+The export includes HTML, assets, a local search index and a 404 page. No Steam key, Python, Electron or Node server is needed by the deployed docs. Pages serves clean paths with trailing slashes, so `/docs/reference/cli/` resolves to its `index.html`. `/api/search` is an exported JSON file; searches run in the browser.
+
+The custom domain uses the default domain-root configuration, without a Next.js `basePath`. GitHub Pages uses Actions as its publishing source and `vapora.micr.dev` as its custom domain. The DNS CNAME for `vapora` points to `microck.github.io`. HTTPS is enforced once GitHub has issued the domain certificate. The deployed site documents the local app; it does not host the Steam scanner.
 
 ## Implementation references
 

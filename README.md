@@ -14,7 +14,7 @@
 
 the main setup path is a [desktop download](https://github.com/Microck/vapora/releases/latest) and a [Steam API key](https://steamcommunity.com/dev/apikey). start with a small scan, read its coverage, then expand when you need more context.
 
-[documentation](website/content/docs/index.mdx) | [downloads](https://github.com/Microck/vapora/releases/latest) | [CLI reference](website/content/docs/reference/cli.mdx)
+[documentation](https://vapora.micr.dev/docs/) | [downloads](https://github.com/Microck/vapora/releases/latest) | [CLI reference](https://vapora.micr.dev/docs/reference/cli/)
 
 ![network explorer with local fixture profiles](docs/screenshots/network.png)
 
@@ -52,7 +52,7 @@ no Node.js or Python installation is needed for desktop downloads. packages incl
 
 ![estimate view with local fixture profiles](docs/screenshots/estimate.png)
 
-[first-scan tutorial](website/content/docs/getting-started/first-scan.mdx) · [installation details](website/content/docs/getting-started/installation.mdx)
+[first-scan tutorial](https://vapora.micr.dev/docs/getting-started/first-scan/) · [installation details](https://vapora.micr.dev/docs/getting-started/installation/)
 
 ### browser / from source
 
@@ -67,7 +67,7 @@ npm run build:history
 npm start -- serve
 ```
 
-open the printed local address, normally `http://127.0.0.1:3000`. use `npm run desktop` for an Electron window. Linux needs a graphical desktop and GTK/NSS libraries. Windows source launches may need the matching Visual C++ runtime; see the [installation guide](website/content/docs/getting-started/installation.mdx).
+open the printed local address, normally `http://127.0.0.1:3000`. use `npm run desktop` for an Electron window. Linux needs a graphical desktop and GTK/NSS libraries. Windows source launches may need the matching Visual C++ runtime; see the [installation guide](https://vapora.micr.dev/docs/getting-started/installation/).
 
 ### api key
 
@@ -85,7 +85,7 @@ $env:STEAM_API_KEY = 'YOUR_KEY'
 npm start -- scan 'https://steamcommunity.com/id/example' --preset inner
 ```
 
-replace the illustrative target with your account. [credential storage and precedence](website/content/docs/getting-started/api-key.mdx).
+replace the illustrative target with your account. [credential storage and precedence](https://vapora.micr.dev/docs/getting-started/api-key/).
 
 ## command surface
 
@@ -115,7 +115,7 @@ npm start -- serve --port 3001 --root ./research
 npm start -- --help
 ```
 
-replace `RUN_ID` with the exact saved ID. CLI scan, estimate and resume require a Steam key. history imports, profiles and report rebuilding work without one. [full CLI reference](website/content/docs/reference/cli.mdx).
+replace `RUN_ID` with the exact saved ID. CLI scan, estimate and resume require a Steam key. history imports, profiles and report rebuilding work without one. [full CLI reference](https://vapora.micr.dev/docs/reference/cli/).
 
 ## collection and analysis
 
@@ -134,7 +134,7 @@ estimates sample at most five lists. depths 3–5 estimate the first two levels,
 
 completed runs can change weights through Ranking → Save ranking without Steam requests. Exports → Rebuild exports regenerates files offline. missing signals remain unknown, and all-zero ranking weights produce no combined index.
 
-[settings and ranges](website/content/docs/reference/settings.mdx) · [formulas and populations](website/content/docs/reference/scoring.mdx) · [coverage limits](website/content/docs/explanation/privacy.mdx)
+[settings and ranges](https://vapora.micr.dev/docs/reference/settings/) · [formulas and populations](https://vapora.micr.dev/docs/reference/scoring/) · [coverage limits](https://vapora.micr.dev/docs/explanation/privacy/)
 
 ## history
 
@@ -144,7 +144,7 @@ the viewer supports friendship periods, persona and real names, URLs, avatars, p
 
 ![history viewer with local fixture profiles](docs/screenshots/history.png)
 
-[history guide](website/content/docs/guides/history.mdx) · [formats and date rules](website/content/docs/reference/history-format.mdx)
+[history guide](https://vapora.micr.dev/docs/guides/history/) · [formats and date rules](https://vapora.micr.dev/docs/reference/history-format/)
 
 ## exports and local data
 
@@ -162,11 +162,11 @@ browser and CLI use the working directory, or `--root DIRECTORY`. installed desk
 
 for Gephi, import nodes first, then undirected edges. filter `Kind` to `friend`, run ForceAtlas2, color by `modularity_class`, and size by `betweenness` or `degree`. inspect group links separately. keep SteamID64 columns as text in spreadsheets.
 
-[export reference](website/content/docs/reference/exports.mdx) · [Gephi workflow](website/content/docs/guides/gephi.mdx) · [saved runs](website/content/docs/guides/saved-runs.mdx)
+[export reference](https://vapora.micr.dev/docs/reference/exports/) · [Gephi workflow](https://vapora.micr.dev/docs/guides/gephi/) · [saved runs](https://vapora.micr.dev/docs/guides/saved-runs/)
 
 ## documentation
 
-full Fumadocs source lives in [`website/`](website). it includes a Steam-inspired dark theme, local search, responsive navigation, setup tutorials, task guides, source-verified references and explanations.
+read the [hosted documentation](https://vapora.micr.dev/docs/). full Fumadocs source lives in [`website/`](website). it includes a Steam-inspired dark theme, local search, responsive navigation, setup tutorials, task guides, source-verified references and explanations.
 
 ```sh
 cd website
@@ -175,13 +175,13 @@ npm run dev
 npm run verify
 ```
 
-`npm run build` exports the site to `website/out/`. it can be served by a static host without Steam credentials. [maintenance and hosting](website/content/docs/project/documentation.mdx).
+`npm run build` exports the site to `website/out/`. it can be served by a static host without Steam credentials. [maintenance and hosting](https://vapora.micr.dev/docs/project/documentation/).
 
-- [installation](website/content/docs/getting-started/installation.mdx)
-- [first scan](website/content/docs/getting-started/first-scan.mdx)
-- [network exploration](website/content/docs/guides/network.mdx)
-- [reranking](website/content/docs/guides/ranking.mdx)
-- [troubleshooting](website/content/docs/guides/troubleshooting.mdx)
+- [installation](https://vapora.micr.dev/docs/getting-started/installation/)
+- [first scan](https://vapora.micr.dev/docs/getting-started/first-scan/)
+- [network exploration](https://vapora.micr.dev/docs/guides/network/)
+- [reranking](https://vapora.micr.dev/docs/guides/ranking/)
+- [troubleshooting](https://vapora.micr.dev/docs/guides/troubleshooting/)
 
 ## development
 
@@ -192,7 +192,7 @@ VAPORA_BROWSER=/path/to/chrome npm run test:e2e
 npm run package
 ```
 
-core CI checks Linux, Windows and macOS. desktop CI launches packaged downloads before release. docs have a separate locked build and link check. see the [development guide](website/content/docs/project/development.mdx), [product contract](docs/product-contract.md) and [release runbook](docs/release-runbook.md).
+core CI checks Linux, Windows and macOS. desktop CI launches packaged downloads before release. docs have a separate locked build and link check. see the [development guide](https://vapora.micr.dev/docs/project/development/), [product contract](docs/product-contract.md) and [release runbook](docs/release-runbook.md).
 
 this is the TypeScript + Effect app. the original Python implementation remains on [legacy](https://github.com/Microck/vapora/tree/legacy), with [release 1.0.2](https://github.com/Microck/vapora/releases/tag/1.0.2). earlier local formats are not automatically migrated.
 
