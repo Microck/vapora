@@ -362,7 +362,12 @@ export async function start(options: Options) {
     await Promise.all([...historyCancellation].map((cancel) => cancel()));
     await Promise.allSettled(historyRequests.values());
     if (cancelJob) await cancelJob();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+      // Chromium preconnections have no HTTP request and survive close's idle cleanup.
+      // Stop accepting connections first, then close sockets owned by this local server.
+      server.closeAllConnections();
+    });
     await runtime.dispose();
   } };
 }

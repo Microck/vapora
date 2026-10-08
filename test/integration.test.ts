@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { request as httpRequest } from "node:http";
+import { connect } from "node:net";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
 import { defaults, SteamId, Settings } from "../src/model.js";
@@ -247,6 +249,25 @@ test("local server validates host and origin, protects keys, and runs a complete
     const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(attached.history?.profile.steamID64, seed);
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("server shutdown closes browser preconnections without waiting for an HTTP request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-shutdown-"));
+  const server = await Server.start({ root, key: "", port: 0 });
+  const socket = connect({ host: "127.0.0.1", port: Number(new URL(server.origin).port) });
+  let closing: Promise<void> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await once(socket, "connect");
+    closing = server.close();
+    await Promise.race([closing, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("An unused browser connection blocked shutdown.")), 1000);
+    })]);
+    await assert.rejects(fetch(server.origin, { headers: { "user-agent": userAgent } }));
+  } finally {
+    clearTimeout(timer); socket.destroy();
+    await (closing ?? server.close());
+    await rm(root, { recursive: true, force: true });
+  }
 });
 test("saved rankings change without Steam authority or collection and attached history survives reopening", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-ranking-")); const fixture = await steamFixture();
