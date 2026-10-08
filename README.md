@@ -37,7 +37,8 @@ map a Steam user's friend network, find communities and hubs, and export Gephi-r
 - an explicit **Skip private profiles** checkbox, with missing data shown in the report.
 - communities, degree, betweenness and hubs; searchable graphs and profile inspection.
 - probable-friend rankings from mutuals, Jaccard, shared groups and shared games.
-- saved settings, offline reranking, dated SteamHistory captures, comment ranking and Gephi-ready exports.
+- saved settings, offline reranking and Gephi-ready exports.
+- automatic SteamHistory loading, a full historical viewer, dated captures and comment ranking.
 
 ![network exploration and profile inspection](docs/screenshots/network.png)
 
@@ -53,10 +54,10 @@ No Node.js or Python installation needed. Get the file for your system from the 
 
 | System | Download | Open it |
 | --- | --- | --- |
-| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-win-x64.exe) | run the installer |
-| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-win-x64-portable.exe) | run it from a writable folder |
-| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-linux-x86_64.AppImage) | make executable, then open |
-| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.1.0/vapora-2.1.0-mac-arm64.dmg) | drag Vapora into Applications |
+| Windows x64 | [installer](https://github.com/Microck/vapora/releases/download/2.2.0/vapora-2.2.0-win-x64.exe) | run the installer |
+| Windows x64 | [portable EXE](https://github.com/Microck/vapora/releases/download/2.2.0/vapora-2.2.0-win-x64-portable.exe) | run it from a writable folder |
+| Linux x64 | [AppImage](https://github.com/Microck/vapora/releases/download/2.2.0/vapora-2.2.0-linux-x86_64.AppImage) | make executable, then open |
+| macOS Apple Silicon | [DMG](https://github.com/Microck/vapora/releases/download/2.2.0/vapora-2.2.0-mac-arm64.dmg) | drag Vapora into Applications |
 
 Portable runs and settings live in `Vapora-data` beside the EXE. Move both together. Installed-app data lives in the OS app-data directory under `Vapora`. Use a session key, or opt into **Remember API key** when secure OS storage is available. Keys never appear in reports.
 
@@ -126,7 +127,7 @@ VAPORA_BROWSER=/path/to/chrome npm run test:e2e
 npm run package
 ```
 
-[Core CI](https://github.com/Microck/vapora/actions/workflows/ci.yml) checks Linux, Windows and macOS. [Desktop CI](https://github.com/Microck/vapora/actions/workflows/desktop.yml) launches the packaged downloads before release. See the [product contract](docs/product-contract.md), [current verification report](docs/verification-2.1.0.md) and [release runbook](docs/release-runbook.md).
+[Core CI](https://github.com/Microck/vapora/actions/workflows/ci.yml) checks Linux, Windows and macOS. [Desktop CI](https://github.com/Microck/vapora/actions/workflows/desktop.yml) launches the packaged downloads before release. See the [product contract](docs/product-contract.md), [history verification report](docs/history-restoration-verification.md) and [release runbook](docs/release-runbook.md).
 
 This is the TypeScript + Effect app. The original Python implementation stays on [legacy](https://github.com/Microck/vapora/tree/legacy), with its [1.0.2 release](https://github.com/Microck/vapora/releases/tag/1.0.2).
 
