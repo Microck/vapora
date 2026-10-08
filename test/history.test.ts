@@ -92,6 +92,23 @@ test("byte-identical reimports reuse one source while distinct original captures
   assert.deepEqual(merged.sources, [...first.sources, ...newer.sources]);
   assert.equal(History.view(merged).profile.lastChecked, 200);
 });
+test("profile-date ties and current coverage use capture time independently of import order", async () => {
+  const old = await parse({ ...profile(100), name: "Old", vacBanned: false });
+  const recent = await parse({ ...profile(100), name: "Recent", vacBanned: true });
+  const older = { ...old.sources[0], capturedAt: "2026-10-08T10:00:00+02:00", coverage: [{ section: "comments", captured: 1, total: 2, expected: 2, status: "partial", error: "Old incomplete capture" }] };
+  const newer = { ...recent.sources[0], capturedAt: "2026-10-08T08:30:00Z", coverage: [{ section: "comments", captured: 2, total: 2, expected: 2, status: "complete", error: null }] };
+  const invalidDate = { ...older, capturedAt: "not a date" };
+  for (const sources of [[older, newer], [newer, older], [invalidDate, newer], [newer, invalidDate]]) {
+    const bundle = Schema.decodeUnknownSync(History.Bundle)({ sources });
+    assert.equal(History.view(bundle).profile.name, "Recent"); assert.equal(History.view(bundle).profile.fields.vacBanned, true);
+    assert.equal(History.coverageError(bundle), null);
+    assert.equal(bundle.sources.length, 2);
+  }
+  const latestPartial = Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...older, capturedAt: "2026-10-08T09:00:00Z" }] });
+  assert.equal(History.coverageError(latestPartial), "Old incomplete capture");
+  const laterObservation = await parse({ ...profile(200), name: "Later observation" });
+  assert.equal(History.view(Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...laterObservation.sources[0], capturedAt: older.capturedAt }] })).profile.name, "Later observation");
+});
 test("devalue pools resolve each reference once without chasing small scalar values and keep deferred chunks", async () => {
   const stream = JSON.stringify({ type: "data", nodes: [{ type: "data", data: [
     { profile: 1 }, { steamID64: 2, name: 3, lastUpdated: 4, historic: 5, vacBanned: 6 }, seed, "Alice", 3, ["Promise", 7], false,
@@ -235,6 +252,10 @@ test("history finishing after a ranking change uses current settings in its resp
     assert.deepEqual(completed.report, expected);
     assert.notDeepEqual(completed.report.commenters, History.view(completed.report, observations).commenters);
     assert.deepEqual(Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), expected);
+    await rm(join(root, "history", `${seed}.json`)); fixture.setStatus(403);
+    const requests = fixture.requests();
+    const reused = Schema.decodeUnknownSync(History.HistoryState)(await (await post("/api/history/account", { id: seed, refresh: false, runId: observations.id })).json());
+    assert.equal(reused.status, "ready"); assert.deepEqual(reused.report, expected); assert.equal(fixture.requests(), requests);
   } finally { fixture.release(path); await app.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("current history paginates all records and retains deleted comment versions and page metadata", async () => {

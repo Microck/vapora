@@ -89,10 +89,13 @@ export async function start(options: Options) {
     yield* store.saveHistory(report);
     return report;
   })));
-  const storedAccountHistory = async (id: SteamId): Promise<History.HistoryState> => {
-    const report = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
+  const savedHistoryState = (id: SteamId, report: History.HistoryReport | null): History.HistoryState => {
     const error = historyErrors.get(id) ?? (report ? History.coverageError(report) : null);
     return { id, status: historyErrors.has(id) || !report ? "unavailable" : error ? "partial" : "ready", error, report };
+  };
+  const storedAccountHistory = async (id: SteamId): Promise<History.HistoryState> => {
+    const report = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(id); }));
+    return savedHistoryState(id, report);
   };
   const accountHistory = async (id: SteamId, refresh: boolean): Promise<History.HistoryState> => {
     const running = historyRequests.get(id); if (running) return running;
@@ -273,6 +276,11 @@ export async function start(options: Options) {
       // Check the target before requesting or modifying any attachment.
       const scan = payload.runId ? await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(payload.runId ?? ""); })) : null;
       if (scan && scan.seed !== payload.id) throw new InputError({ message: "Select the matching account before attaching its history." });
+      const savedReport = scan && !payload.refresh ? await runtime.runPromise(attachedHistory(scan)) : null;
+      if (savedReport) {
+        json(response, 200, savedHistoryState(payload.id, savedReport));
+        return;
+      }
       const state = await accountHistory(payload.id, payload.refresh);
       const report = scan && state.report ? await runtime.runPromise(Effect.gen(function* () {
         // Ranking can change while the provider is pending; project the current saved run.

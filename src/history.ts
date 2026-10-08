@@ -59,8 +59,17 @@ export const HistoryState = Schema.Struct({
   id: SteamId, status: Schema.Literals(["ready", "partial", "unavailable"]), error: Schema.NullOr(Schema.String), report: Schema.NullOr(HistoryReport),
 });
 export interface HistoryState extends Schema.Schema.Type<typeof HistoryState> {}
+const captureTime = (capturedAt: string) => {
+  const parsed = Date.parse(capturedAt);
+  return Number.isNaN(parsed) ? -Infinity : parsed;
+};
 export function coverageError(bundle: Bundle): string | null {
-  const latest = bundle.sources.findLast((source) => source.coverage.length);
+  let latest: Bundle["sources"][number] | undefined; let latestDate = -Infinity;
+  for (const source of bundle.sources) {
+    if (!source.coverage.length) continue;
+    const date = captureTime(source.capturedAt);
+    if (!latest || date > latestDate) { latest = source; latestDate = date; }
+  }
   const issues = latest?.coverage.flatMap((section) => section.error ? [section.error] : []) ?? [];
   return issues.length ? issues.join("\n") : null;
 }
@@ -290,8 +299,7 @@ function friends(bundle: Bundle, scan: Scan | undefined, range: Filter) {
 function comments(bundle: Bundle): Omit<typeof Comment.Type, "friendAtComment">[] {
   const all = new Map<string, { author: SteamId | null; timestamp: number | null; message: string; estimated: boolean; occurrences: number; versions: { record: Record; sourceAsOf: number | null; capturedAt: string }[]; selectedDate: number; selectedCapturedAt: number; perCapture: Map<string, number> }>();
   bundle.sources.forEach((capture, captureIndex) => {
-    const parsedCaptureDate = Date.parse(capture.capturedAt);
-    const captureDate = Number.isNaN(parsedCaptureDate) ? -Infinity : parsedCaptureDate;
+    const captureDate = captureTime(capture.capturedAt);
     capture.snapshots.forEach((profile, snapshotIndex) => { for (const row of profile.historic.comments ?? []) {
       const author = sid(row.Commenter); const timestamp = time(row.Timestamp); const message = text(row.Message) ?? "";
       const identity = commentId(row);
@@ -315,8 +323,11 @@ function comments(bundle: Bundle): Omit<typeof Comment.Type, "friendAtComment">[
 }
 /** Display filters never define a scoring population. Date filtering happens before the reference is formed. */
 export function view(bundle: Bundle, scan?: Scan, range: Filter = {}, settings: Ranking = scan?.settings ?? defaults): HistoryReport {
-  const profiles = bundle.sources.flatMap((source) => source.snapshots);
-  const profile = [...profiles].sort((a, b) => (b.lastChecked ?? -1) - (a.lastChecked ?? -1))[0];
+  const profiles = bundle.sources.flatMap((source) => {
+    const capturedAt = captureTime(source.capturedAt);
+    return source.snapshots.map((profile) => ({ profile, capturedAt }));
+  });
+  const profile = profiles.sort((a, b) => (b.profile.lastChecked ?? -1) - (a.profile.lastChecked ?? -1) || b.capturedAt - a.capturedAt)[0]?.profile;
   if (!profile) throw new InputError({ message: "History has no profile captures." });
   if (scan && scan.seed !== profile.steamID64) throw new InputError({ message: "History belongs to another Steam account." });
   const historicalFriends = friends(bundle, scan, range); const friendsById = new Map(historicalFriends.map((friend) => [friend.id, friend]));

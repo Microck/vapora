@@ -356,5 +356,12 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
   assert.match(await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"), /Recovered from target panel/);
+  await rm(join(root, "history", `${seed}.json`)); history.setStatus(403);
+  const requestsBeforeReopen = history.requests();
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  await page.click("#open-history"); await page.click('[data-history="comments"]');
+  assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
+  assert.equal(history.requests(), requestsBeforeReopen);
   assert.deepEqual(errors, []);
 });
