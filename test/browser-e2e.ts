@@ -23,6 +23,18 @@ async function fill(page: Page, selector: string, value: string) {
 async function visibleText(page: Page, selector: string) {
   return page.$eval(selector, (element) => element.textContent);
 }
+async function checkUndatedRecords(page: Page) {
+  for (const tab of ["persona", "realName", "url", "pfp"]) {
+    await page.click(`[data-history="${tab}"]`); await fill(page, "#history-search", "Timestamp check");
+    const dates = await page.$$eval("#history-rows tr td:nth-child(2)", (cells) => cells.map((cell) => cell.textContent));
+    assert.equal(dates.length, 3); assert.equal(dates.filter((date) => date === "Undated").length, 2);
+    assert.equal(dates.some((date) => date?.includes("Invalid Date")), false);
+    await fill(page, "#history-from", "1970-01-01"); await fill(page, "#history-to", "1970-01-01");
+    assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+    assert.match(await visibleText(page, "#history-rows") ?? "", /Timestamp check Epoch/);
+    await fill(page, "#history-from", ""); await fill(page, "#history-to", "");
+  }
+}
 async function keyForm(page: Page, value: string) {
   await page.click('#open-key'); await fill(page, "#key", value); await page.click('#key-form button[type="submit"]');
   await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#key-dialog")?.open);
@@ -312,16 +324,22 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(history.requests(), calls); // A known failed refresh is retried explicitly, not on every navigation.
   await page.click("#target-history"); await page.click("#open-history-import");
   const pagedFile = join(root, "history-pages.json");
+  const recordDates = [{ label: "Null", Timestamp: null }, { label: "Invalid", Timestamp: "not a date" }, { label: "Epoch", Timestamp: 0 }];
+  const names = recordDates.map(({ label, Timestamp }) => ({ Name: `Timestamp check ${label}`, Timestamp }));
   await writeFile(pagedFile, JSON.stringify({ ...history.document, historic: { ...history.document.historic,
-    persona: Array.from({ length: 201 }, (_, index) => ({ Name: `History name ${index}`, Timestamp: 1791360000 })) } }));
+    persona: [...Array.from({ length: 201 }, (_, index) => ({ Name: `History name ${index}`, Timestamp: 1791360000 })), ...names],
+    realName: names,
+    url: recordDates.map(({ label, Timestamp }) => ({ URL: `Timestamp check ${label}`, Timestamp })),
+    pfp: recordDates.map(({ label, Timestamp }) => ({ AvatarHash: `Timestamp check ${label}`, Timestamp })),
+  } }));
   const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(pagedFile);
   await page.click('#history-form button[type="submit"]');
   await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#history-import-dialog")?.open);
   await page.click('[data-history="persona"]');
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 100);
-  assert.match(await visibleText(page, "#history-count") ?? "", /1–100 of 205/);
-  await page.click("#history-next"); assert.match(await visibleText(page, "#history-count") ?? "", /101–200 of 205/);
-  await page.click("#history-next"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 5);
+  assert.match(await visibleText(page, "#history-count") ?? "", /1–100 of 208/);
+  await page.click("#history-next"); assert.match(await visibleText(page, "#history-count") ?? "", /101–200 of 208/);
+  await page.click("#history-next"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 8);
   await fill(page, "#history-search", "History name 200");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
   assert.equal(await page.$eval("#history-next", (button) => button instanceof HTMLButtonElement && button.disabled), true);
@@ -329,6 +347,7 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.match(await visibleText(page, "#history-rows") ?? "", /History name 200/);
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
   assert.match(await visibleText(page, "#history-count") ?? "", /of 1/);
+  await checkUndatedRecords(page);
   // A recovered refresh must update the open run, its attachment and its download without reopening it.
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   await page.click("#history-refresh");

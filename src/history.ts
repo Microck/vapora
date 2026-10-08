@@ -76,7 +76,7 @@ export function coverageError(bundle: Bundle): string | null {
 }
 
 const text = (value: typeof Schema.Json.Type | undefined) => Schema.is(Schema.String)(value) ? value : null;
-const time = (value: typeof Schema.Json.Type | undefined) => Schema.is(timestamp)(value) ? value : null;
+export const time = (value: typeof Schema.Json.Type | undefined) => Schema.is(timestamp)(value) ? value : null;
 const sid = (value: typeof Schema.Json.Type | undefined) => Schema.is(SteamId)(value) ? value : null;
 const records = (value: typeof Schema.Json.Type | undefined): Record[] => {
   const decoded = Schema.decodeUnknownResult(Schema.Array(Schema.NullOr(Record)))(value);

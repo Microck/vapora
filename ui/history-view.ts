@@ -98,13 +98,12 @@ function recordRows(report: History.HistoryReport, query: string) {
   const dateMatches = dateFilter();
   const match = (record: History.Record) => JSON.stringify(record).toLowerCase().includes(query);
     // Retain the dated context of each supplied record; generic details expose all fields, including unknown ones.
-    const records = report.sources.flatMap((source) => source.snapshots.flatMap((profile) => (profile.historic[section] ?? []).map((record) => ({ record, observed: profile.lastChecked }))));
-    return paginate(records.filter(({ record }) => match(record) && dateMatches(record.Timestamp === undefined ? null : Number(record.Timestamp))), ({ record, observed }) => {
-      const event = record.Timestamp;
+    const records = report.sources.flatMap((source) => source.snapshots.flatMap((profile) => (profile.historic[section] ?? []).map((record) => ({ record, observed: profile.lastChecked, event: History.time(record.Timestamp) }))));
+    return paginate(records.filter(({ record, event }) => match(record) && dateMatches(event)), ({ record, observed, event }) => {
       const row = document.createElement("tr");
       if (section === "pfp") identity(row, null, fieldText(record.AvatarHash), History.avatar(record));
       else rowCell(row, fieldText(record.Name ?? record.URL));
-      rowCell(row, event === undefined ? "Undated" : date(Number(event))); rowCell(row, date(observed)); inspect(row, record); return row;
+      rowCell(row, date(event)); rowCell(row, date(observed)); inspect(row, record); return row;
     });
 }
 function renderTable() {
