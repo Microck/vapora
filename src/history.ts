@@ -78,7 +78,10 @@ export function avatar(record: Record): string | null { return hashAvatar(text(r
 /** The provider uses numeric and string identifiers; both denote the same comment. */
 export function commentId(record: Record): string | null {
   for (const value of [record.CommentID, record.ID]) {
-    if (Schema.is(Schema.Number)(value)) return String(value);
+    if (Schema.is(Schema.Number)(value)) {
+      if (!Number.isSafeInteger(value)) throw new InputError({ message: "A numeric comment ID cannot be represented exactly. Supply comment IDs as JSON strings." });
+      return String(value);
+    }
     if (Schema.is(Schema.String)(value) && value.length) return value;
   }
   return null;
@@ -177,6 +180,7 @@ function normalize(record: Record): Profile {
     else if (Schema.is(Section)(key)) throw new InputError({ message: `History section ${key} must contain records. The original file was not changed.` });
     // Unknown metadata remains in fields and the original bytes, outside the interpreted record lists.
   }
+  for (const comment of history.comments ?? []) commentId(comment);
   return { steamID64: id, name: text(record.name) ?? id, lastChecked: time(record.lastChecked) ?? time(record.lastUpdated), fields: record, historic: history };
 }
 /** Preserve the exact input and every snapshot; normalization is a projection, never a replacement of source bytes. */

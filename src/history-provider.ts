@@ -38,8 +38,12 @@ const readPages = Effect.fn("SteamHistory.pages")(function* (session: Session, d
     if (section === "comments") query.set("commentFilter", filter);
     const outcome = yield* request(session, `/id/${document.steamID64}/history?${query}`).pipe(Effect.result);
     if (outcome._tag === "Failure") { error = outcome.failure.message; break; }
-    const decoded = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(History.PageResponse))(outcome.success.contents).pipe(Effect.result);
-    if (decoded._tag === "Failure") { error = "SteamHistory returned malformed history records."; break; }
+    const decoded = yield* Effect.try({ try: () => {
+      const batch = Schema.decodeUnknownSync(Schema.fromJsonString(History.PageResponse))(outcome.success.contents);
+      if (section === "comments") for (const row of batch.data) History.commentId(row);
+      return batch;
+    }, catch: (cause) => cause instanceof InputError ? cause : new InputError({ message: "SteamHistory returned malformed history records." }) }).pipe(Effect.result);
+    if (decoded._tag === "Failure") { error = decoded.failure.message; break; }
     const batch = decoded.success;
     if (total !== null && total !== batch.total) { error = "SteamHistory's page total changed during collection. Refresh to retry."; break; }
     total = batch.total;

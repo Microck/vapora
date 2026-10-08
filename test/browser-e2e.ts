@@ -347,5 +347,14 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.match(await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"), /Recovered attached comment/);
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered attached comment/);
+  history.setStatus(403); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  await page.click('[data-screen="scan"]');
+  history.rows.set("comments", [...history.document.historic.comments, { ID: "target-recovered", Commenter: second, Message: "Recovered from target panel", Timestamp: 1791360000 }]);
+  history.setStatus(200); await page.click("#target-history-retry");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
+  assert.match(await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"), /Recovered from target panel/);
   assert.deepEqual(errors, []);
 });

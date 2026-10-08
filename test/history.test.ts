@@ -137,6 +137,23 @@ test("numeric comment identifiers reconcile All, Deleted and edited versions wit
   assert.equal(report.commenters[0]?.count, 1);
   assert.equal(History.commentId({ ID: 0 }), "0");
 });
+test("unsafe numeric comment IDs fail explicitly while exact large string IDs stay distinct", async () => {
+  const contents = `{"steamID64":"${seed}","lastChecked":100,"historic":{"comments":[{"CommentID":9007199254740993,"Message":"rounded"}]}}`;
+  await assert.rejects(Effect.runPromise(History.parse(contents)), /numeric comment ID cannot be represented exactly/);
+  assert.throws(() => History.commentId({ ID: Number.MAX_SAFE_INTEGER + 1 }), /JSON strings/);
+  assert.throws(() => History.commentId({ CommentID: 1.5 }), /JSON strings/);
+  assert.equal(History.commentId({ ID: Number.MAX_SAFE_INTEGER }), String(Number.MAX_SAFE_INTEGER));
+  const report = History.view(await parse(profile(100, [], [{ ID: "9007199254740992" }, { ID: "9007199254740993" }])));
+  assert.equal(report.comments.length, 2);
+  const Provider = await import("../src/history-provider.js"); const fixture = await historyFixture();
+  fixture.replies.set("comments:0", '{"data":[{"CommentID":9007199254740993}],"total":1}');
+  try {
+    const partial = History.view(await Effect.runPromise(Provider.fetchAccount(seed, fixture.session)));
+    assert.equal(partial.comments.length, 0);
+    assert.equal(partial.profile.historic.persona?.length, 2);
+    assert.match(partial.sources[0]?.coverage.find((row) => row.section === "comments")?.error ?? "", /numeric comment ID/);
+  } finally { await fixture.close(); }
+});
 test("account fetching reuses current paginated captures; failure retains data and scan API stays independent", async () => {
   const fixture = await historyFixture();
   const root = await mkdtemp(join(tmpdir(), "vapora-history-"));

@@ -709,10 +709,11 @@ buttons("target-history").addEventListener("click", () => {
   else if (!historyAccount) { notice("Verify or select an account to load its history."); return; }
   showScreen("history");
 });
-buttons("target-history-retry").addEventListener("click", () => { const id = preview?.id ?? historyAccount; if (id) void loadAccountHistory(id, true); });
-for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => {
-  if (historyAccount) void loadAccountHistory(historyAccount, true, selected?.scan.seed === historyAccount ? selected.scan.id : undefined);
-});
+function refreshAccountHistory(id: SteamId | null) {
+  if (id) void loadAccountHistory(id, true, selected?.scan.seed === id ? selected.scan.id : undefined);
+}
+buttons("target-history-retry").addEventListener("click", () => refreshAccountHistory(preview?.id ?? historyAccount));
+for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => refreshAccountHistory(historyAccount));
 HistoryUI.initialize();
 applySettings(defaults);
 Tooltips.install(get("app-tooltip"));
