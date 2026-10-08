@@ -53,7 +53,8 @@ export const HistoryReport = Schema.Struct({
   profile: Profile, sources: Bundle.fields.sources, warning: Schema.String, warnings: Schema.Array(Schema.String),
   friends: Schema.Array(DurationRank), comments: Schema.Array(Comment), commenters: Schema.Array(CommentRank),
   locations: Schema.Array(Scoring.LocationSignal), locationCoverage: Scoring.LocationCoverage, referenceSize: Schema.Number,
-});
+}).check(Schema.makeFilter((report) => report.sources.every((source) => source.snapshots.every((snapshot) => snapshot.steamID64 === report.profile.steamID64))
+  ? undefined : "Every retained history snapshot must belong to the report's Steam account."));
 export interface HistoryReport extends Schema.Schema.Type<typeof HistoryReport> {}
 export const HistoryState = Schema.Struct({
   id: SteamId, status: Schema.Literals(["ready", "partial", "unavailable"]), error: Schema.NullOr(Schema.String), report: Schema.NullOr(HistoryReport),

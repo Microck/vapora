@@ -366,6 +366,14 @@ test("recreated account cache preserves run-only original captures and comment v
     assert.equal(mismatched.history, null); assert.match(mismatched.historyError ?? "", /Cached history belongs to another Steam account/);
     assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
     assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), wrongCache);
+    const foreign = History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, historic: {} }))));
+    const mixed = JSON.stringify({ ...merged.history, sources: [...merged.history?.sources ?? [], ...foreign.sources] });
+    await writeFile(join(root, "history", `${seed}.json`), mixed);
+    await assert.rejects(runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).accountHistory(seed); })), /invalid/);
+    const hiddenAccount = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(hiddenAccount.history, null); assert.match(hiddenAccount.historyError ?? "", /invalid/);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), mixed);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
   } finally { await server.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 test("desktop key storage exposes capabilities, retains authority on save failure and forgets without Steam calls", async () => {
@@ -519,7 +527,9 @@ test("CLI history imports preserve run-only captures and reject invalid saved hi
     await assert.rejects(importHistory(), /Cached history belongs to another Steam account/);
     assert.equal(await readFile(cachePath, "utf8"), wrongAccount); assert.equal(await readFile(attachmentPath, "utf8"), validAttachment);
     await writeFile(cachePath, validCache);
-    for (const { invalidAttachment, error } of [{ invalidAttachment: wrongAccount, error: /Attached history belongs to another Steam account/ }, { invalidAttachment: "invalid JSON", error: /invalid/ }]) {
+    const foreign = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(wrongAccount);
+    const mixed = JSON.stringify({ ...merged, sources: [...merged.sources, ...foreign.sources] });
+    for (const { invalidAttachment, error } of [{ invalidAttachment: wrongAccount, error: /Attached history belongs to another Steam account/ }, { invalidAttachment: "invalid JSON", error: /invalid/ }, { invalidAttachment: mixed, error: /invalid/ }]) {
       await writeFile(attachmentPath, invalidAttachment);
       await assert.rejects(importHistory(), error);
       assert.equal(await readFile(attachmentPath, "utf8"), invalidAttachment); assert.equal(await readFile(cachePath, "utf8"), validCache);

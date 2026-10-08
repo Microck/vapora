@@ -10,6 +10,7 @@ import * as Scoring from "../src/scoring.js";
 import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
 import * as Storage from "../src/storage.js";
+import * as Contracts from "../src/contracts.js";
 import { seed, second, third, fourth, player, scan, historyFixture } from "./fixtures.js";
 
 const profile = (lastChecked: number, friends: readonly History.Record[] = [], comments: readonly History.Record[] = []) => ({
@@ -272,6 +273,38 @@ test("history finishing after a ranking change uses current settings in its resp
     const requests = fixture.requests();
     const reused = Schema.decodeUnknownSync(History.HistoryState)(await (await post("/api/history/account", { id: seed, refresh: false, runId: observations.id })).json());
     assert.equal(reused.status, "ready"); assert.deepEqual(reused.report, expected); assert.equal(fixture.requests(), requests);
+  } finally { fixture.release(path); await app.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
+test("concurrent history refresh and analysis retain all captures with current indices", { timeout: 15000 }, async () => {
+  const fixture = await historyFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-history-writes-"));
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [second, third]), player(second, [seed]), player(third, [seed])]);
+  const original = History.view(await parse(profile(100, [], [{ ID: "original", Message: "Retain run-only capture" }])));
+  await runtime.runPromise(Effect.gen(function* () {
+    const store = yield* Storage.Service; yield* store.create(observations);
+    yield* store.writeArtifact(observations.id, "history.json", JSON.stringify(original));
+  }));
+  const app = await Server.start({ root, key: "", port: 0, historySession: fixture.session });
+  const post = (path: string, body: History.Record) => fetch(`${app.origin}${path}`, { method: "POST", headers: { origin: app.origin, "content-type": "application/json", "user-agent": "OpenAI File Downloader, XaiImageApiFetch/1.0" }, body: JSON.stringify(body) });
+  const path = `/id/${seed}/__data.json`;
+  try {
+    for (const countBaseline of [1, 2, 3, 4]) {
+      const arrived = fixture.hold(path);
+      const refresh = post("/api/history/account", { id: seed, refresh: true, runId: observations.id }); await arrived;
+      const analyze = post("/api/analyze", { id: observations.id, ranking: { topN: 2, countBaseline, locationBaseline: 1, locationAggregation: "sum", hubPercentile: .9, weights: defaults.weights } });
+      fixture.release(path);
+      const reopening = fetch(`${app.origin}/api/runs/${observations.id}`, { headers: { "user-agent": "OpenAI File Downloader, XaiImageApiFetch/1.0" } });
+      const [refreshed, analyzed, reopened] = await Promise.all([refresh, analyze, reopening]);
+      assert.equal(refreshed.status, 200); assert.equal(analyzed.status, 200);
+      const view = Schema.decodeUnknownSync(Contracts.RunView)(await reopened.json());
+      assert.ok(view.history); assert.deepEqual(view.history, History.view(view.history, view.scan));
+      const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
+      const cached = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(join(root, "history", `${seed}.json`), "utf8"));
+      const attachment = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8"));
+      assert.deepEqual(attachment, History.view(History.merge(original, cached), saved));
+      assert.equal(saved.settings.countBaseline, countBaseline);
+      assert.ok(attachment.comments.some((row) => row.message === "Retain run-only capture"));
+      assert.ok(attachment.sources.length >= 2);
+    }
   } finally { fixture.release(path); await app.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("current history paginates all records and retains deleted comment versions and page metadata", async () => {
