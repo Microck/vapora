@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import puppeteer from "puppeteer-core";
-import type { Page } from "puppeteer-core";
+import type { Page, ScreenshotOptions } from "puppeteer-core";
 import { Schema } from "effect";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
@@ -110,8 +110,9 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   const screenshot = async (name: string) => {
     if (!process.env.VAPORA_BROWSER_SCREENSHOTS) return;
     if (name === "exports") await page.setViewport({ width: 1078, height: 800 });
-    const clip = name === "exports" ? await page.$eval("body", (body) => ({ x: 0, y: 0, width: innerWidth, height: body.getBoundingClientRect().height })) : undefined;
-    await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`), ...(clip ? { clip } : {}) });
+    const screenshotOptions: ScreenshotOptions = { path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`) };
+    if (name === "exports") screenshotOptions.clip = await page.$eval("body", (body) => ({ x: 0, y: 0, width: innerWidth, height: body.getBoundingClientRect().height }));
+    await page.screenshot(screenshotOptions);
     if (name === "exports") await page.setViewport({ width: 1078, height: 599 });
   };
   const state = async () => Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
