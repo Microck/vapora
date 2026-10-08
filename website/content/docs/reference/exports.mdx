@@ -1,0 +1,42 @@
+---
+title: "Reports and exports"
+description: "Artifact paths, exact CSV headers and rebuild behavior."
+---
+
+```text
+outputs/<run-id>/
+  scan.json
+  analysis.json
+  probable-friends.csv
+  run.log
+  gephi/
+    nodes.csv
+    edges.csv
+  history.json          # when attached
+```
+
+`scan.json` holds settings, profile observations and the resume frontier. `analysis.json` holds metrics, rankings and coverage. `run.log` holds timestamped progress and diagnostic details.
+
+| CSV | Columns |
+| --- | --- |
+| `gephi/nodes.csv` | `Id`, `Label`, `degree`, `betweenness`, `modularity_class`, `is_seed`, `is_hub`, `is_banned`, `vac_bans`, `is_public` |
+| `gephi/edges.csv` | `Source`, `Target`, `Kind` with `friend` or `group` |
+| `probable-friends.csv` | `candidate_steamid`, `name`, `score`, `evidence_score`, `undirected_mutual_count`, `incoming_mutual_count`, `authored_count_index`, `admitted`, `jaccard_with_seed`, `shared_groups`, `shared_games`, `friends_status` |
+
+CSV fields are quoted when needed, and formula-like text is escaped for spreadsheet imports. Steam IDs stay strings in JSON; set spreadsheet ID columns to text.
+
+
+
+## Interpretation and availability
+
+`Id`, `Source`, `Target` and candidate identifiers are SteamID64 strings. `modularity_class` maps to graph community; `is_hub` uses the configured betweenness percentile. `vac_bans` is an observed VAC count; unavailable ban observations are not confirmed clean records.
+
+`admitted` distinguishes ranking candidates inside the graph cap. `incoming_mutual_count` differs from undirected mutuals; `score` and `evidence_score` currently contain the same bounded combined index. See [scoring](/docs/reference/scoring).
+
+Optional `history.json` contains merged, reimportable history with original captures. [History format](/docs/reference/history-format) explains identity and date preservation.
+
+## Rebuild
+
+**Exports → Rebuild exports** regenerates reports/CSV for a completed run offline, retaining checkpoint bytes and attached history. `npm start -- analyze RUN_ID` rebuilds from saved observations. No API key is needed. Incomplete runs and concurrent operations reject export rebuilding.
+
+The browser download surface only exposes known run artifacts. Desktop **Open output folder** opens the selected run or outputs root.

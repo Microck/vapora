@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.source/
+out/
+public/screenshots/
+public/vapora.svg
+*.tsbuildinfo
+next-env.d.ts

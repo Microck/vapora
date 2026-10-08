@@ -80,7 +80,7 @@ Defaults come from [`src/model.ts`](../src/model.ts). Saved profiles contain set
 | Shared groups | Off | Optional group observations and edges |
 | Shared games | Off | Optional public owned-game overlap |
 | Hub percentile | 0.99 | 0.5-1; graphs with zero betweenness have no hubs |
-| Ranking weights | Mutual 1, Jaccard 1, groups 0.5, games 0.5 | Each accepts 0-100 |
+| Ranking weights | Mutual 1, Jaccard 0, groups 0, games 0 | Each accepts 0-100 |
 
 The CLI presets are `inner` with depth 1 and cap 300, and `community` with the defaults above. GUI output choices select files, not presets.
 
@@ -137,7 +137,7 @@ Start with friendship edges, then inspect shared-group links separately. Degree 
 
 ### probable friends and location signals
 
-Friend ranking defaults to the authored incoming-mutual count index. Optional friend, group and game Jaccard weights combine with that index. The evidence score uses the same bounded score without rescaling the leading row. Missing signals stay unknown, and a private friend list can still have mutuals observed through another public list. See [restored analysis controls](#restored-analysis-controls) for the formulas.
+Friend ranking defaults to the authored incoming-mutual count index. Optional friend, group and game Jaccard weights combine with that index. Both score and evidence score use the same bounded score; the leading row is not rescaled. Missing signals stay unknown, and a private friend list can still have mutuals observed through another public list. See [restored analysis controls](#restored-analysis-controls) for the formulas.
 
 Location signals group supplied Steam country, state and city codes among admitted direct friends. Support uses incoming mutual counts, with product aggregation by default: any zero contribution makes that city's support zero. Sum aggregation is also available.
 

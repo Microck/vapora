@@ -1,0 +1,29 @@
+---
+title: "Export to Gephi"
+description: "Continue exploring an observed network in a graph analysis tool."
+---
+
+## Before you start
+
+Complete a scan and open its output folder or download its Gephi exports. Keep `nodes.csv` and `edges.csv` from the same run together.
+
+
+
+1. Create a project and import `gephi/nodes.csv` as a nodes table.
+2. Import `gephi/edges.csv` as undirected edges.
+3. Filter `Kind` to `friend` for friendship analysis; include `group` for shared membership.
+4. Run ForceAtlas2, color by `modularity_class`, and size by `betweenness` or `degree`.
+
+Start with friendship edges, then inspect shared-group links separately. Degree filters and k-core analysis can help explore dense groups. Communities and centrality describe the collected graph, which may cover only part of a person's network.
+
+
+
+## Preserve the meaning of each edge
+
+`Kind=friend` describes an observed friendship; `Kind=group` describes shared membership. Mixing these creates a different graph. Steam IDs should stay exact text identifiers.
+
+## Reproduce your analysis
+
+Keep the original `scan.json`, `analysis.json` and collection settings beside your Gephi project. Record filters and layout choices when sharing a visualization. A truncated or partially observed network remains partial after importing it.
+
+See [exports reference](/docs/reference/exports) for the exact columns and [network metrics](/docs/guides/network) for their interpretation.

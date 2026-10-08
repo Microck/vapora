@@ -1,0 +1,35 @@
+---
+title: "Steam API key"
+description: "Use a session key, an environment key or secure desktop storage."
+---
+
+Obtain a key through [Steam's API key page](https://steamcommunity.com/dev/apikey). Follow the requirements shown by Steam; Vapora does not issue keys.
+
+## Desktop or browser
+
+Open **Set API key** in the toolbar, paste the key and save it. Vapora checks a submitted key with Steam before replacing the session key, then continues the lookup, estimate or scan that requested it. The input clears after saving.
+
+A browser key is session-only. Desktop offers **Remember API key** when secure OS encryption is available. Remembering stores ciphertext in `steam-key.enc` in the desktop data folder. Linux's insecure `basic_text` backend disables this option.
+
+**Forget saved key** removes the saved file and leaves the current session usable. Submitting a new session-only key also removes a remembered copy. A remembered key belongs to the OS account and machine that encrypted it; it does not move between machines with a portable install.
+
+## CLI
+
+Set `STEAM_API_KEY` in your shell or copy `.env.example` to `.env` and fill it in. `npm start` loads `.env` when it exists.
+
+```sh
+# bash / zsh
+export STEAM_API_KEY='YOUR_KEY'
+npm start -- estimate 'https://steamcommunity.com/id/example' --depth 1
+```
+
+```powershell
+$env:STEAM_API_KEY = 'YOUR_KEY'
+npm start -- estimate 'https://steamcommunity.com/id/example' --depth 1
+```
+
+An environment key takes precedence at desktop startup. Keep `.env` private. Keys stay on the local server and do not appear in reports or exports.
+
+## Operations without a key
+
+Saved-run browsing, offline reranking, export rebuilding, configuration profiles and local history import work without a Steam key. [CLI reference](/docs/reference/cli) lists which commands require one.

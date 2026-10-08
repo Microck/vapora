@@ -1,0 +1,45 @@
+---
+title: "Settings reference"
+description: "Source-verified defaults, ranges and precedence."
+---
+
+The canonical validation and defaults live in [`src/model.ts`](https://github.com/Microck/vapora/blob/main/src/model.ts).
+
+| Setting / CLI flag | Default | Accepted values |
+| --- | --- | --- |
+| Depth / `--depth` | 2 | Integer 1–5 |
+| Nodes / `--max-nodes` | 500 | Integer 0–1000; 0 removes cap |
+| Requests/min / `--rpm` | 120 | Integer 0–120; 0 removes pacing |
+| Skip private / `--skip-private` | Off | Boolean enable flag |
+| Groups / `--groups` | Off | Boolean enable flag |
+| Games / `--games` | Off | Boolean enable flag |
+| Hub percentile / `--hub-percentile` | 0.99 | Number 0.5–1 |
+| Mutual weight / `--mutual-weight` | 1 | Number 0–100 |
+| Friend Jaccard / `--jaccard-weight` | 0 | Number 0–100 |
+| Group weight / `--group-weight` | 0 | Number 0–100 |
+| Game weight / `--game-weight` | 0 | Number 0–100 |
+| Top N / `--top-n` | 5 | Integer 1–1000 |
+| Count baseline / `--count-baseline` | 50 | Integer 1–1000000 |
+| Location aggregation / `--location-support` | product | `sum` or `product` |
+| Location baseline / `--location-baseline` | 100 | Integer 1–1000000 |
+
+## Presets and profiles
+
+`inner` uses depth 1 and cap 300. `community` uses all defaults. CLI settings start from defaults, apply the chosen preset, replace settings with the saved profile when supplied, then apply explicit flags. Boolean flags enable a feature; there are no corresponding `--no-*` flags.
+
+GUI **Apply** saves defaults. Named profiles contain settings only. GUI file filters are unrelated to CLI presets.
+
+Resume uses saved run settings. CLI `analyze` rebuilds from the checkpoint; ranking flags do not edit that saved checkpoint. Use the UI's **Save ranking** to change a completed run.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `STEAM_API_KEY` | Steam API credential for CLI and startup |
+| `VAPORA_ROOT` | Desktop data root |
+| `VAPORA_BROWSER` | Chrome/Chromium executable for browser E2E tests |
+| `VAPORA_BROWSER_SCREENSHOTS` | Optional browser test screenshot destination |
+| `VAPORA_DESKTOP` | Packaged executable for desktop E2E |
+| `VAPORA_DESKTOP_ASAR` | Packaged `app.asar` for desktop E2E |
+
+`npm start` optionally loads `.env`. See [credentials](/docs/getting-started/api-key) and [CLI](/docs/reference/cli).

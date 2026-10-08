@@ -1,0 +1,67 @@
+---
+title: "CLI reference"
+description: "Complete command surface and option behavior for the local app."
+---
+
+Commands run from a built source checkout through `npm start -- COMMAND`. The desktop release is an app download, not a separately installed `vapora` shell command.
+
+```sh
+npm start -- --help
+```
+
+## Commands
+
+| Command | Purpose | Steam key |
+| --- | --- | --- |
+| `serve` | Start browser UI; default command | Needed only for live Steam operations |
+| `scan TARGET` | Collect and export a new network | Required |
+| `estimate TARGET` | Sample without saving a run; print JSON | Required |
+| `resume RUN_ID` | Continue checkpoint using its settings | Required |
+| `analyze RUN_ID` | Rebuild saved reports and exports | No |
+| `recent` | Print saved run ID, status, seed and node count | No |
+| `profiles` | List named settings profiles | No |
+| `profile-save NAME` | Save selected settings as a profile | No |
+| `history FILE` | Import JSON / NDJSON / provider data stream | No |
+
+## Examples
+
+```sh
+npm start -- serve --port 3001 --root ./research
+npm start -- scan 'https://steamcommunity.com/id/example' --preset inner
+npm start -- scan '76561198000000000' --depth 2 --max-nodes 200 --skip-private --games
+npm start -- estimate '76561198000000000' --depth 2
+npm start -- recent
+npm start -- resume RUN_ID
+npm start -- analyze RUN_ID
+npm start -- profile-save small --depth 1 --max-nodes 100
+npm start -- scan 'https://steamcommunity.com/id/example' --profile small
+npm start -- profiles
+npm start -- history profile.json --run RUN_ID
+```
+
+Replace sample targets and `RUN_ID`. `/id/NAME` means vanity name, including numeric names; `/profiles/ID` and bare numeric targets mean SteamID64. All commands accept `--root DIRECTORY`; use the same root when reading a previous run.
+
+## Options
+
+| Option | Use |
+| --- | --- |
+| `--preset inner\|community` | Collection preset |
+| `--profile NAME` | Load saved settings |
+| `--depth`, `--max-nodes`, `--rpm` | Collection scope and pacing |
+| `--groups`, `--games`, `--skip-private` | Enable optional collection behavior |
+| `--hub-percentile` | Hub threshold |
+| `--mutual-weight`, `--jaccard-weight`, `--group-weight`, `--game-weight` | Ranking blend |
+| `--top-n`, `--count-baseline` | Count-index reference controls |
+| `--location-support sum\|product`, `--location-baseline` | Location calculation |
+| `--root DIRECTORY` | Local data root; defaults to working directory |
+| `--port PORT` | Serve port, integer 0–65535; default 3000; 0 chooses a free port |
+| `--run RUN_ID` | Attach imported history to a matching run |
+| `--help`, `-h` | Print help and exit |
+
+Accepted ranges and defaults are in [settings](/docs/reference/settings). Collection/ranking flags apply when choosing settings for scan, estimate or profile-save. Resume keeps saved settings. Analyze, recent, profiles and history do not apply ranking overrides.
+
+## Output and termination
+
+`estimate` and `history` print JSON. `recent` prints tab-separated run summaries and invalid-file notices; `profiles` prints one name per line. Scans print terminal progress on TTYs and completion paths. Errors go to stderr and set a nonzero exit status. This is not a global JSON-output CLI.
+
+SIGINT/SIGTERM cancels active CLI collection while preserving checkpoints. The browser server prints its address and closes on those signals. On an interactive terminal, launching without arguments offers a browser / scan / estimate / recent prompt. Without a TTY, no command defaults to `serve`.
