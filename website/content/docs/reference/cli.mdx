@@ -62,6 +62,16 @@ Accepted ranges and defaults are in [settings](/docs/reference/settings). Collec
 
 ## Output and termination
 
-`estimate` and `history` print JSON. `recent` prints tab-separated run summaries and invalid-file notices; `profiles` prints one name per line. Scans print terminal progress on TTYs and completion paths. Errors go to stderr and set a nonzero exit status. This is not a global JSON-output CLI.
+| Command | Output |
+| --- | --- |
+| `estimate`, `history` | JSON |
+| `recent` | Tab-separated summaries and invalid-file notices |
+| `profiles` | One name per line |
+| `scan`, `resume` | Progress on interactive terminals; completion paths |
+| `serve` | Server address |
 
-SIGINT/SIGTERM cancels active CLI collection while preserving checkpoints. The browser server prints its address and closes on those signals. On an interactive terminal, launching without arguments offers a browser / scan / estimate / recent prompt. Without a TTY, launching without a command starts the browser server (`serve`) and stays running until stopped.
+Errors go to stderr with a nonzero exit status. There is no global JSON-output mode.
+
+- **Stop:** SIGINT/SIGTERM cancels collection while preserving checkpoints, or closes the browser server.
+- **No arguments, interactive terminal:** choose browser, scan, estimate or recent from a prompt.
+- **No command, noninteractive terminal:** starts `serve` and stays running until stopped.

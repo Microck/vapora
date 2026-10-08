@@ -1,5 +1,5 @@
 import { source } from '@/lib/source';
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page';
+import { DocsBody, DocsPage, DocsTitle } from 'fumadocs-ui/page';
 import { getMDXComponents } from '@/mdx-components';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -9,7 +9,7 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
   if (!page) notFound();
   const MDX = page.data.body;
   return <DocsPage toc={page.data.toc} full={page.data.full}>
-    <DocsTitle>{page.data.title}</DocsTitle><DocsDescription>{page.data.description}</DocsDescription>
+    <DocsTitle>{page.data.title}</DocsTitle>
     <DocsBody><MDX components={getMDXComponents()} /></DocsBody>
     <a className="edit-link" href={`https://github.com/Microck/vapora/blob/main/website/content/docs/${page.path}`}>Edit this page on GitHub ↗</a>
   </DocsPage>;

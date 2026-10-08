@@ -1,12 +1,57 @@
 ---
 title: "SteamHistory captures"
-description: "Fetch, import and inspect dated history without mixing it with current Steam facts."
+description: "Load, refresh and inspect dated account history."
 ---
 
+## Load and refresh automatically
+
+1. Verify a target or select a recent avatar. Vapora loads that account's history separately from the Steam scan.
+2. Complete verification in the temporary browser window if prompted.
+3. Open the history viewer. Use **Refresh** to fetch again; saved captures are reused until then.
+
+Typing a target does not make requests. A history failure does not block Steam scanning.
+
+| Result | What Vapora keeps |
+| --- | --- |
+| Complete fetch | All history sections and paginated responses, with source URLs |
+| Partial fetch | Returned records plus the failed section or count discrepancy |
+| Blocked or failed refresh | The last dated capture, with a Retry option |
+
+Matching captures attach to run results. Historical facts stay separate from current Steam observations; source dates stay separate from retrieval time.
+
+### Why comment totals can differ
+
+Automatic loading uses a fresh public session and requests every comment page, including deleted-comment pages.
+
+- SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter).
+- The profile-summary counter may be stale or include inaccessible records.
+- Vapora records the summary total and accessible endpoint total separately. A gap marks coverage partial; missing comments are not invented.
+- Imported authenticated captures retain the records supplied by the user.
+
+## Inspect the viewer
+
+![History viewer with local fixture profiles](/screenshots/history.png)
+
+| Section | Contents |
+| --- | --- |
+| Friends | Friendship periods and membership evidence |
+| Profile | Previous names, URLs and avatars |
+| Comments | Captured messages and a separate comment ranking |
+| Profile and bans | Dated profile metadata and ban observations |
+
+Use search, friendship filters and date ranges to narrow the view. Profile and ban date filters use the source observation date.
+
+The friend-comment index uses positive-count authors with friendship evidence anywhere in the captures, including former friends. Changing the friendship filter does not change that reference population.
 
 ## Import a local capture
 
-Use **Import history** or `npm start -- history FILE` with a local normalized JSON file:
+Use **Import history**, or:
+
+```sh
+npm start -- history FILE
+```
+
+Accepted inputs: normalized JSON, profile NDJSON and complete SteamHistory Svelte data/chunk streams. Browser imports accept up to **2 MB**.
 
 ```json
 {
@@ -25,25 +70,22 @@ Use **Import history** or `npm start -- history FILE` with a local normalized JS
 }
 ```
 
+Every capture, unknown field and original input stays in the export. **Original** downloads the input unchanged. Automatic captures preserve raw profile/page responses and can be reimported.
+
 ## Interpret dates
 
-Dates are Unix seconds. A missing or zero `UnfriendDate` means friends as of the source date, not necessarily today. `lastUpdated` is also accepted as the provider observation date. A newer closure supersedes an older open record. Overlapping intervals count once; invalid or contradictory periods remain inspectable and show an unknown duration.
-
-## Inspect the viewer
-
-![History viewer with local fixture profiles](/screenshots/history.png)
-
-The viewer includes friendship periods, names, URLs, avatars, comments and profile/ban metadata. Search, friendship filters and date ranges help inspect captures. Comment ranking is separate from network ranking. Its friend index uses positive-count commenters with friendship evidence anywhere in the supplied captures, including former friends. Changing the friendship filter never changes that reference. Profile and ban date filters use the source observation date.
-
-Profile NDJSON and complete SteamHistory Svelte data/chunk streams are accepted. Every capture and unknown field stays in the export, along with the original input. **Original** buttons download those inputs unchanged.
-
-## Load and refresh automatically
-
-Verifying a target or selecting a recent avatar fetches its history independently. Typing never fetches it. Saved captures are reused until **Refresh**. Automatic loading opens a temporary browser session for verification, then fetches every history section with pagination, including deleted comments. It preserves raw profile/page responses in a reimportable capture. SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter). Automatic loading uses a fresh public session. Its returned comment total can differ from the profile-summary counter, which may be stale or include inaccessible records. Vapora keeps these totals separate and marks the gap partial without inventing comments. Imports preserve authenticated captures supplied by the user. Partial history names the failed section or provider count discrepancy; a blocked or failed refresh keeps the last dated capture and offers Retry. Source dates remain separate from retrieval time. Steam scanning remains available. Matching saved captures attach to run results, while current Steam facts stay separate from historical facts.
+| Field or condition | Meaning |
+| --- | --- |
+| Dates | Unix seconds |
+| Zero or missing `UnfriendDate` | Friends as of the source date, not necessarily today |
+| `lastChecked` or `lastUpdated` | Provider observation date |
+| Newer closure | Supersedes an older open record |
+| Overlapping intervals | Count once |
+| Invalid or contradictory periods | Remain inspectable, with unknown duration |
 
 ## Attach to a saved run
 
-Attach history only to a run for the same Steam account, or import it independently. Attached history reopens with the run and adds `history.json` to its exports. Browser imports accept up to 2 MB.
+Attach history only to a run for the same Steam account. It reopens with that run and adds `history.json` to exports. You can also import history independently.
 
 ## Related references
 

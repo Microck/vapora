@@ -2,9 +2,9 @@ name: Documentation
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/screenshots/**', 'assets/vapora.svg', '.github/workflows/docs.yml']
+    paths: ['website/**', 'docs/screenshots/**', 'assets/vapora.svg', 'assets/vapora.ico', '.github/workflows/docs.yml']
   pull_request:
-    paths: ['website/**', 'docs/screenshots/**', 'assets/vapora.svg', '.github/workflows/docs.yml']
+    paths: ['website/**', 'docs/screenshots/**', 'assets/vapora.svg', 'assets/vapora.ico', '.github/workflows/docs.yml']
   workflow_dispatch:
 permissions:
   contents: read

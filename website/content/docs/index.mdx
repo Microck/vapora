@@ -1,33 +1,34 @@
 ---
 title: "Vapora documentation"
-description: "Explore public Steam networks and keep the limits of each observation visible."
+description: "Install, scan, explore and export."
 ---
 
-Vapora is a local desktop, browser and CLI app for mapping public Steam friend networks. It collects public observations, computes network metrics, displays dated history and writes reusable reports.
+Vapora maps public Steam friend networks. Run it locally as a desktop app, browser app or CLI.
 
-<Cards>
-  <Card title="Install Vapora" href="/docs/getting-started/installation">Choose a desktop download or build from source.</Card>
-  <Card title="Make your first scan" href="/docs/getting-started/first-scan">From API key to a small, saved network.</Card>
-  <Card title="CLI reference" href="/docs/reference/cli">Every command, option and credential requirement.</Card>
-  <Card title="Understand the scores" href="/docs/reference/scoring">Formulas, populations and missing observations.</Card>
-</Cards>
+## Start here
 
-## Choose a path
+1. [Install Vapora](/docs/getting-started/installation).
+2. [Set your Steam API key](/docs/getting-started/api-key).
+3. [Make your first scan](/docs/getting-started/first-scan).
+
+## Explore and manage runs
 
 | You want to… | Start with |
 | --- | --- |
-| Learn by completing a small scan | [First scan](/docs/getting-started/first-scan) |
 | Explore communities and profile details | [Network explorer](/docs/guides/network) |
 | Inspect previous names, friendships or comments | [SteamHistory](/docs/guides/history) |
 | Use Gephi or spreadsheet exports | [Gephi workflow](/docs/guides/gephi) |
+| Resume, back up or move a run | [Saved runs](/docs/guides/saved-runs) |
+| Use the terminal | [CLI reference](/docs/reference/cli) |
 | Change an option or interpret a field | [Settings](/docs/reference/settings), [exports](/docs/reference/exports) |
 | Understand what the data cannot establish | [Privacy and coverage](/docs/explanation/privacy) |
 | Contribute code or documentation | [Development](/docs/project/development) |
 
 ## Version and scope
 
-These pages describe the TypeScript + Effect application at version 2.2.0. Desktop packages contain the history runtime. Browser and CLI launches run locally from a source checkout. The original Python app lives on the [legacy branch](https://github.com/Microck/vapora/tree/legacy).
+- **Version:** 2.2.0, TypeScript + Effect.
+- **Desktop:** includes the history runtime. Browser and CLI use a source checkout.
+- **Screenshots:** local fixture profiles.
+- **Original Python app:** preserved on [legacy](https://github.com/Microck/vapora/tree/legacy).
 
-<Callout type="warn" title="Evidence has limits">Scores are heuristics. Public friendships, comments and self-reported location fields do not prove real-life relationships or residence. Private and unavailable observations stay unknown.</Callout>
-
-Screenshots throughout this site use local fixture profiles.
+Scores describe captured evidence. Private data stays unknown; friendships, comments and location fields do not prove real-life relationships or residence. See [privacy and coverage](/docs/explanation/privacy).

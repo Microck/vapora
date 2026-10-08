@@ -34,12 +34,12 @@ All current captures were opened and visually inspected:
 - [Browser Scan](screenshots/scan.png)
 - [Browser Results](screenshots/desktop.png)
 - [Narrow Results](screenshots/mobile.png)
-- [Profile inspector](screenshots/inspector.png)
-- [Community graph](screenshots/network.png)
+- [Profile inspector](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/inspector.png)
+- [Community graph](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/network.png)
 - [Saved runs](screenshots/runs.png)
-- [Attached history](screenshots/history.png)
+- [Attached history](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/history.png)
 - [Scan ranking options](screenshots/ranking-options.png)
-- [Saved-run ranking](screenshots/ranking.png)
+- [Saved-run ranking](https://raw.githubusercontent.com/Microck/vapora/685feada940ee4ee023be7fa0a0f4713e5970f38/docs/screenshots/ranking.png)
 - [Run info](screenshots/run-info.png)
 
 The screenshots use distinct sample avatars from the HTTP fixture. They are not live Steam accounts. An authenticated live scan of the authorized Microck profile completed with five accounts, five loaded avatars, public group observations, four public game observations and one private game observation. The cap correctly reported partial coverage (4 of 48 direct friends admitted). All six exports were nonempty and contained no API key. The browser displayed the real identities and graph without renderer errors. A second five-account scan started from the browser Analyze control against Steam and completed; its saved report reopened after a server restart, with five loaded avatars and six valid exports. A live depth-1 CLI estimate also passed. These are bounded checks, not a claim that every Steam account or endpoint is always available.
