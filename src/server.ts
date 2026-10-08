@@ -114,6 +114,7 @@ export async function start(options: Options) {
   const attachedHistory = (scan: Scan) => Effect.gen(function* () {
     const store = yield* Storage.Service;
     const attachment = yield* store.history(scan.id);
+    if (attachment && attachment.profile.steamID64 !== scan.seed) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
     const cached = yield* store.accountHistory(scan.seed);
     const source = cached ?? attachment;
     if (!source) return null;

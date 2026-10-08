@@ -327,12 +327,13 @@ export function view(bundle: Bundle, scan?: Scan, range: Filter = {}, settings: 
   const index = Scoring.countIndex(population, settings.topN, settings.countBaseline);
   const live = scan?.players.find((player) => player.id === scan.seed);
   const liveSeed = live?.friendsObservedAt ? live : undefined;
+  const liveAsOf = liveSeed?.friendsObservedAt ? Math.floor(Date.parse(liveSeed.friendsObservedAt) / 1000) : null;
   const commenters = [...authors].map(([id, author]) => {
     const friend = id === null ? undefined : friendsById.get(id);
     const inReference = id !== null && referenceIds.has(id);
     const status = id === null ? "unknown" as const : friend?.status ?? (liveSeed?.friends.includes(id) ? "current" as const : "other" as const);
     return { id, name: friend?.name ?? id ?? "Unknown author", avatar: friend?.avatar ?? null, ...author,
-      status, asOf: friend?.asOf ?? null, share: captured.length ? author.count / captured.length * 100 : 0,
+      status, asOf: friend ? friend.asOf : status === "current" ? liveAsOf : null, share: captured.length ? author.count / captured.length * 100 : 0,
       index: inReference ? index(author.count) : null, inReference };
   }).sort((a, b) => b.count - a.count || (b.latest ?? -1) - (a.latest ?? -1) || (a.id ?? "").localeCompare(b.id ?? ""));
   const locationContributors = commenters.filter((author) => author.inReference && author.id !== null).map((author) => {

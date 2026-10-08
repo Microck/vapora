@@ -303,6 +303,15 @@ test("saved rankings change without Steam authority or collection and attached h
     assert.deepEqual(await readFile(checkpointPath), checkpoint);
     await rm(analysisPath, { recursive: true });
     assert.equal((await post("/api/analyze", JSON.stringify({ id: observations.id, ranking: { ...ranking, hubPercentile: 0 } }))).status, 400);
+    const otherAccount = History.view(await Effect.runPromise(History.parse(JSON.stringify({ ...history, steamID64: second }))));
+    const mismatchedContents = JSON.stringify(otherAccount);
+    await writeFile(join(root, "outputs", observations.id, "history.json"), mismatchedContents);
+    const cacheBeforeMismatch = await readFile(join(root, "history", `${seed}.json`), "utf8");
+    const mismatchedAttachment = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
+    assert.equal(mismatchedAttachment.history, null); assert.match(mismatchedAttachment.historyError ?? "", /another Steam account/);
+    assert.deepEqual(mismatchedAttachment.scan, persisted);
+    assert.equal(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8"), mismatchedContents);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), cacheBeforeMismatch);
     await writeFile(join(root, "outputs", observations.id, "history.json"), "invalid history");
     const damagedAttachment = Schema.decodeUnknownSync(Contracts.RunView)(await (await get(`/api/runs/${observations.id}`)).json());
     assert.deepEqual(damagedAttachment.scan.settings, persisted.settings);

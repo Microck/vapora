@@ -334,6 +334,11 @@ test("friend and commenter membership select the newest observation and expose s
   assert.equal(newer.friends[0]?.status, "former"); assert.equal(newer.friends[0]?.asOf, 300);
   assert.equal(newer.commenters[0]?.status, "former"); assert.equal(newer.commenters[0]?.asOf, 300);
   assert.equal(History.view(current, datedScan(300, [], "private")).friends[0]?.status, "current");
+  const liveOnly = await parse(profile(200, [], [event]));
+  const liveOnlyMember = History.view(liveOnly, datedScan(300, [second])).commenters[0];
+  assert.equal(liveOnlyMember?.status, "current"); assert.equal(liveOnlyMember?.asOf, 300);
+  assert.equal(History.view(liveOnly, datedScan(300, [])).commenters[0]?.asOf, null);
+  assert.equal(History.view(liveOnly, scan([player(seed, [second], { friendsObservedAt: null })])).commenters[0]?.asOf, null);
   const contradiction = History.view(current, datedScan(200, []));
   assert.equal(contradiction.friends[0]?.status, "unknown");
   assert.equal(contradiction.commenters[0]?.status, "unknown");
