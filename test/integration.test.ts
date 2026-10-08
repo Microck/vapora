@@ -334,6 +334,39 @@ test("saved rankings change without Steam authority or collection and attached h
     assert.deepEqual(fixture.requests, []);
   } finally { await server.close(); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
+test("recreated account cache preserves run-only original captures and comment versions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vapora-history-merge-"));
+  const runtime = ManagedRuntime.make(Storage.layer(root)); const observations = scan([player(seed, [])]);
+  const oldContents = JSON.stringify({ steamID64: seed, lastChecked: 1000, customField: "keep", historic: { comments: [{ ID: "shared", Message: "before" }] } });
+  const old = History.view(await Effect.runPromise(History.parse(oldContents)));
+  await runtime.runPromise(Effect.gen(function* () {
+    const store = yield* Storage.Service; yield* store.create(observations);
+    yield* store.writeArtifact(observations.id, "history.json", JSON.stringify(old));
+  }));
+  const server = await Server.start({ root, key: "", port: 0 });
+  const get = () => fetch(`${server.origin}/api/runs/${observations.id}`, { headers: { "user-agent": userAgent } });
+  try {
+    const withoutCache = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(withoutCache.history?.sources[0]?.contents, oldContents);
+    const recentContents = JSON.stringify({ steamID64: seed, lastChecked: 2000, historic: { comments: [{ ID: "shared", Message: "after" }] } });
+    const imported = await fetch(`${server.origin}/api/history`, { method: "POST", headers: { origin: server.origin, "content-type": "application/json", "user-agent": userAgent }, body: JSON.stringify({ contents: recentContents }) });
+    assert.equal(imported.status, 200);
+    const merged = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(merged.historyError, null);
+    assert.deepEqual(merged.history?.sources.map((source) => source.contents), [oldContents, recentContents]);
+    assert.equal(merged.history?.comments.length, 1); assert.equal(merged.history?.comments[0]?.message, "after");
+    assert.equal(merged.history?.comments[0]?.versions.length, 2);
+    assert.equal(merged.history?.sources[0]?.snapshots[0]?.fields.customField, "keep");
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
+    assert.deepEqual(Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json()).history, merged.history);
+    const wrongCache = JSON.stringify(History.view(await Effect.runPromise(History.parse(JSON.stringify({ steamID64: second, lastChecked: 3000, historic: {} })))));
+    await writeFile(join(root, "history", `${seed}.json`), wrongCache);
+    const mismatched = Schema.decodeUnknownSync(Contracts.RunView)(await (await get()).json());
+    assert.equal(mismatched.history, null); assert.match(mismatched.historyError ?? "", /Cached history belongs to another Steam account/);
+    assert.deepEqual(JSON.parse(await readFile(join(root, "outputs", observations.id, "history.json"), "utf8")), merged.history);
+    assert.equal(await readFile(join(root, "history", `${seed}.json`), "utf8"), wrongCache);
+  } finally { await server.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
+});
 test("desktop key storage exposes capabilities, retains authority on save failure and forgets without Steam calls", async () => {
   const root = await mkdtemp(join(tmpdir(), "vapora-key-storage-")); const fixture = await steamFixture();
   const keyPath = join(root, "steam-key.enc"); await writeFile(keyPath, "encrypted fixture");

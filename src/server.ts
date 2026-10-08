@@ -116,7 +116,8 @@ export async function start(options: Options) {
     const attachment = yield* store.history(scan.id);
     if (attachment && attachment.profile.steamID64 !== scan.seed) return yield* Effect.fail(new InputError({ message: "Attached history belongs to another Steam account. Inspect its original captures before replacing it." }));
     const cached = yield* store.accountHistory(scan.seed);
-    const source = cached ?? attachment;
+    if (cached && cached.profile.steamID64 !== scan.seed) return yield* Effect.fail(new InputError({ message: "Cached history belongs to another Steam account. Inspect its original captures before replacing it." }));
+    const source = attachment && cached ? History.merge(attachment, cached) : cached ?? attachment;
     if (!source) return null;
     const report = yield* Effect.try({ try: () => History.view(source, scan),
       catch: () => new InputError({ message: "Saved history could not be analyzed. Inspect its original captures before replacing it." }) });
