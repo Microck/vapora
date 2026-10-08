@@ -64,4 +64,4 @@ Accepted ranges and defaults are in [settings](/docs/reference/settings). Collec
 
 `estimate` and `history` print JSON. `recent` prints tab-separated run summaries and invalid-file notices; `profiles` prints one name per line. Scans print terminal progress on TTYs and completion paths. Errors go to stderr and set a nonzero exit status. This is not a global JSON-output CLI.
 
-SIGINT/SIGTERM cancels active CLI collection while preserving checkpoints. The browser server prints its address and closes on those signals. On an interactive terminal, launching without arguments offers a browser / scan / estimate / recent prompt. Without a TTY, no command defaults to `serve`.
+SIGINT/SIGTERM cancels active CLI collection while preserving checkpoints. The browser server prints its address and closes on those signals. On an interactive terminal, launching without arguments offers a browser / scan / estimate / recent prompt. Without a TTY, launching without a command starts the browser server (`serve`) and stays running until stopped.
