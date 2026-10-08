@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
 import assert from 'node:assert/strict';
 const root = resolve('out');
 async function walk(dir, extension = '.html') {
@@ -46,7 +46,7 @@ else console.log(`Validated ${checked} internal page, asset and anchor links acr
 
 const contentRoot = resolve('content/docs');
 const documents = await walk(contentRoot, '.mdx');
-const expectedUrls = documents.map((file) => '/docs' + file.slice(contentRoot.length).replace(/\.mdx$/, '').replace(/\/index$/, '')).sort();
+const expectedUrls = documents.map((file) => '/docs' + file.slice(contentRoot.length).split(sep).join('/').replace(/\.mdx$/, '').replace(/\/index$/, '')).sort();
 const index = await readFile(join(root, 'llms.txt'), 'utf8');
 const indexedUrls = [...index.matchAll(/\]\((\/docs[^)]*)\)/g)].map((match) => match[1]).sort();
 assert.deepEqual(indexedUrls, expectedUrls, 'The text index must list every docs page exactly once.');
