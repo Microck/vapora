@@ -42,7 +42,7 @@ get the matching file from the [latest release](https://github.com/Microck/vapor
 | Linux x64 | AppImage | make executable, then open |
 | macOS Apple Silicon | DMG | drag into Applications |
 
-no Node.js or Python installation is needed for desktop downloads. packages include the history runtime. downloads are unsigned and not notarized; compare the file with the release's `SHA256SUMS.txt` before approving an OS warning. Linux without FUSE can use `--appimage-extract-and-run`.
+no Node.js or Python installation is needed for desktop downloads. packages include the history runtime. the portable EXE silently unpacks into Windows TEMP and needs about 1 GB free there, plus room for scan data. downloads are unsigned and not notarized; compare the file with the release's `SHA256SUMS.txt` before approving an OS warning. Linux without FUSE can use `--appimage-extract-and-run`.
 
 1. open Vapora and use the key button to set your Steam API key.
 2. enter a Steam profile URL or SteamID64; use the check button to verify it.

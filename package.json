@@ -85,7 +85,8 @@
     },
     "portable": {
       "artifactName": "vapora-${version}-win-${arch}-portable.${ext}",
-      "unpackDirName": false
+      "unpackDirName": false,
+      "useZip": true
     },
     "extraResources": [
       {

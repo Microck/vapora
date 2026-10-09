@@ -89,23 +89,27 @@ function dateFilter() {
 }
 function profileRows(report: History.HistoryReport, query: string) {
   const dateMatches = dateFilter();
-  return paginate(report.sources.flatMap((source) => source.snapshots).filter((profile) => JSON.stringify(profile.fields).toLowerCase().includes(query) && dateMatches(profile.lastChecked)), (profile) => {
+  const profiles = report.sources.flatMap((source, sourceIndex) => source.snapshots.map((profile, snapshotIndex) =>
+    ({ profile, sourceIndex, snapshotIndex })));
+  return paginate(profiles.filter(({ profile }) => JSON.stringify(profile.fields).toLowerCase().includes(query) && dateMatches(profile.lastChecked)), ({ profile, sourceIndex, snapshotIndex }) => {
     const row = document.createElement("tr"); const fields = profile.fields;
     rowCell(row, profile.name); rowCell(row, date(profile.lastChecked));
     for (const key of ["creationDate", "vacBanned", "vacCount", "gameBans", "communityBanned", "economyBanned"]) rowCell(row, fieldText(fields[key]));
-    inspect(row, fields, JSON.stringify(fields)); return row;
+    inspect(row, fields, JSON.stringify([sourceIndex, snapshotIndex])); return row;
   });
 }
 function recordRows(report: History.HistoryReport, query: string) {
   const dateMatches = dateFilter();
   const match = (record: History.Record) => JSON.stringify(record).toLowerCase().includes(query);
     // Retain the dated context of each supplied record; generic details expose all fields, including unknown ones.
-    const records = report.sources.flatMap((source) => source.snapshots.flatMap((profile) => (profile.historic[section] ?? []).map((record) => ({ record, observed: profile.lastChecked, event: History.time(record.Timestamp) }))));
-    return paginate(records.filter(({ record, event }) => match(record) && dateMatches(event)), ({ record, observed, event }) => {
+    // Positions belong to the retained source, before filtering or pagination, so identical records keep distinct openers.
+    const records = report.sources.flatMap((source, sourceIndex) => source.snapshots.flatMap((profile, snapshotIndex) => (profile.historic[section] ?? []).map((record, recordIndex) =>
+      ({ record, observed: profile.lastChecked, event: History.time(record.Timestamp), sourceIndex, snapshotIndex, recordIndex }))));
+    return paginate(records.filter(({ record, event }) => match(record) && dateMatches(event)), ({ record, observed, event, sourceIndex, snapshotIndex, recordIndex }) => {
       const row = document.createElement("tr");
       if (section === "pfp") identity(row, null, fieldText(record.AvatarHash), History.avatar(record));
       else rowCell(row, fieldText(record.Name ?? record.URL));
-      rowCell(row, date(event)); rowCell(row, date(observed)); inspect(row, record, JSON.stringify([observed, record])); return row;
+      rowCell(row, date(event)); rowCell(row, date(observed)); inspect(row, record, JSON.stringify([sourceIndex, snapshotIndex, recordIndex])); return row;
     });
 }
 function renderTable() {

@@ -46,7 +46,7 @@ npm run desktop
 
 The same app runs in a native Electron window. Window buttons minimize, maximize/restore and close it. **Open output folder** opens the selected run directory or the outputs root. Closing an active scan saves a resumable checkpoint.
 
-Browser and CLI data default to the working directory; use `--root DIRECTORY` to choose another location. Installed desktop data defaults to the OS app-data directory under `Vapora`. The Windows portable EXE stores runs, settings and session files in `Vapora-data` beside the EXE. Move that folder together with the EXE to keep your saved runs. Set `VAPORA_ROOT` to choose another desktop data location. Use the same root to share runs between launches, with one process operating on a saved run at a time.
+Browser and CLI data default to the working directory; use `--root DIRECTORY` to choose another location. Installed desktop data defaults to the OS app-data directory under `Vapora`. The Windows portable EXE stores runs, settings and session files in `Vapora-data` beside the EXE. Its silent launcher unpacks directly into Windows TEMP before opening the app, then removes that runtime when the app closes. Keep about 1 GB free there, plus space for scan data. Move that folder together with the EXE to keep your saved runs. Set `VAPORA_ROOT` to choose another desktop data location. Use the same root to share runs between launches, with one process operating on a saved run at a time.
 
 ### command line
 

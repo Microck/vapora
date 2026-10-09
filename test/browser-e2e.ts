@@ -63,6 +63,28 @@ async function checkIndependentDetails(page: Page) {
   await page.setViewport({ width: 1078, height: 599 });
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-details.png") });
 }
+async function checkDuplicateHistoryOpeners(page: Page, root: string) {
+  // Identical retained records need separate focus targets within and across captures.
+  const repeated = { steamID64: seed, lastChecked: 1791360000, name: "Duplicate opener fixture", historic: { persona: [{ Name: "Repeated alias", Timestamp: 1791360000 }] } };
+  for (const [filename, contents] of [["duplicates.jsonl", [repeated, repeated].map((profile) => JSON.stringify(profile)).join("\n")],
+    ["duplicate.json", JSON.stringify(repeated, null, 2)]] as const) {
+    const path = join(root, filename); await writeFile(path, contents);
+    await page.click("#open-history-import"); const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(path);
+    await page.click('#history-form button[type="submit"]');
+    await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#history-import-dialog")?.open);
+  }
+  for (const [tab, query] of [["profile", "Duplicate opener fixture"], ["persona", "Repeated alias"]] as const) {
+    await page.click(`[data-history="${tab}"]`); await fill(page, "#history-search", query);
+    assert.equal((await page.$$("#history-rows button")).length, 3);
+    const first = await page.$("#history-rows button"); assert.ok(first); await first.click();
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+    await page.keyboard.press("Enter"); await fill(page, "#history-search", query);
+    assert.equal(await first.evaluate((button) => button.isConnected), false);
+    await page.focus(".details-window"); await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+  }
+}
 async function checkProfileDetails(page: Page) {
   await page.click('[data-view="friends"]');
   await page.$$eval("#friend-rows tr button", (buttons) => {
@@ -481,5 +503,6 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click("#open-history"); await page.click('[data-history="comments"]');
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
   assert.equal(history.requests(), requestsBeforeReopen);
+  await checkDuplicateHistoryOpeners(page, root);
   assert.deepEqual(errors, []);
 });
