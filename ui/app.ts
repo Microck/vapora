@@ -83,15 +83,57 @@ function showScreen(name: typeof Screen.Type) {
   if (name === "results") renderGraph();
 }
 
+/** Keep the selected VGUI tab against its panel, even when the strip overflows. */
+function installTabStrips() {
+  for (const tabs of document.querySelectorAll<HTMLElement>(".tabs")) {
+    const bar = document.createElement("div"); bar.className = "tab-bar";
+    const previous = document.createElement("button"); const next = document.createElement("button");
+    const name = tabs.getAttribute("aria-label") ?? "Views";
+    for (const [button, label, glyph] of [[previous, "Previous", "‹"], [next, "Next", "›"]] as const) {
+      button.type = "button"; button.className = "tab-scroll"; button.textContent = glyph;
+      button.setAttribute("aria-label", `${label} ${name.toLowerCase()}`);
+    }
+    tabs.before(bar); bar.append(previous, tabs, next);
+    const revealSelected = () => {
+      const selected = tabs.querySelector('[aria-current="page"]')?.getBoundingClientRect();
+      if (!selected) return;
+      const bounds = tabs.getBoundingClientRect();
+      if (selected.left < bounds.left) tabs.scrollBy({ left: selected.left - bounds.left, behavior: "instant" });
+      else if (selected.right > bounds.right) tabs.scrollBy({ left: selected.right - bounds.right, behavior: "instant" });
+    };
+    const update = () => {
+      const overflow = tabs.scrollWidth > bar.clientWidth + 1;
+      previous.hidden = next.hidden = !overflow;
+      previous.disabled = tabs.scrollLeft <= 1;
+      next.disabled = tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 1;
+    };
+    previous.addEventListener("click", () => tabs.scrollBy({ left: -tabs.clientWidth * .75, behavior: "instant" }));
+    next.addEventListener("click", () => tabs.scrollBy({ left: tabs.clientWidth * .75, behavior: "instant" }));
+    tabs.addEventListener("scroll", update);
+    tabs.addEventListener("click", revealSelected);
+    new ResizeObserver(() => { update(); revealSelected(); }).observe(bar);
+    new MutationObserver(update).observe(tabs, { attributes: true, attributeFilter: ["hidden"], subtree: true });
+    update();
+  }
+}
+
 function notice(message: string) { get("notice").textContent = message; get("notice").hidden = !message; }
-function task(action: () => Promise<void>) {
+function task(action: () => Promise<void>, reportError: (message: string) => void = notice) {
+  reportError("");
+  void action().catch((error) => reportError(error instanceof Error ? error.message : "The action failed. Try again."));
+}
+function dialogTask(id: string, action: () => Promise<void>) {
   notice("");
-  void action().catch((error) => notice(error instanceof Error ? error.message : "The action failed."));
+  const status = get(`${id}-error`);
+  task(action, (message) => {
+    status.textContent = message; status.hidden = !message;
+    if (message) status.focus({ preventScroll: true });
+  });
 }
 async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<T>, payload?: P) {
   const response = await fetch(path, payload === undefined ? { headers: { accept: "application/json" } } : {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
-  });
+  }).catch(() => { throw new Error("Cannot reach Vapora. Make sure the app is running, then retry the action."); });
   const json: unknown = await response.json();
   if (!response.ok) {
     const failure = Schema.decodeUnknownSync(Contracts.Failure)(json);
@@ -286,14 +328,15 @@ function rankingFacts(id: SteamId): readonly (readonly [string, string | number]
 function profileFacts(player: Player, metric: Contracts.Report["metrics"][number] | undefined): readonly (readonly [string, string | number])[] {
   const bans = player.bans;
   return [
-    ["Friend list as of", player.friendsObservedAt ?? "Not observed"], ["Bans as of", player.bansObservedAt ?? "Not observed"],
+    ["Friend list as of", player.friendsObservedAt ? new Date(player.friendsObservedAt).toLocaleString() : "Not observed"],
+    ["Bans as of", player.bansObservedAt ? new Date(player.bansObservedAt).toLocaleString() : "Not observed"],
     ["Depth", player.level], ["Profile", availabilityLabels[player.visibility]], ["Friend list", availabilityLabels[player.friendsStatus]],
     ["Groups", player.groupsStatus === "public" ? player.groups.length : availabilityLabels[player.groupsStatus]],
     ["Games", player.gamesStatus === "public" ? player.games.length : availabilityLabels[player.gamesStatus]],
     ["VAC bans", bans ? bans.vacCount : availabilityLabels[player.bansStatus]],
-    ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "yes" : "no" : availabilityLabels[player.bansStatus]],
+    ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "Yes" : "No" : availabilityLabels[player.bansStatus]],
     ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
-    ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "yes" : "no" : "unknown"],
+    ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "Yes" : "No" : "unknown"],
   ];
 }
 function openProfileDetails(account: SteamId, resolveOpener: Details.Opener) {
@@ -492,7 +535,8 @@ async function refresh() {
     }
   } catch (error) {
     get("key-indicator").textContent = "Disconnected";
-    notice(error instanceof Error ? error.message : "Cannot reach the local server.");
+    // A background poll must not replace the explanation of an unsaved action.
+    if (get("notice").hidden) notice(error instanceof Error ? error.message : "Cannot reach Vapora. Make sure the app is running, then retry.");
   } finally {
     refreshing = false; clearTimeout(timer); timer = setTimeout(() => void refresh(), currentState?.job.status === "running" ? 1500 : 10000);
   }
@@ -584,7 +628,7 @@ buttons("apply-settings").addEventListener("click", () => task(async () => {
   if (!get("scan-form").querySelector<HTMLInputElement>(":invalid")) {
     await api("/api/profiles", Contracts.Ok, { name: "default", settings: readSettings() }); await refresh(); notice("Saved default settings.");
   } else throw new Error("Check the node limit and request rate.");
-}));
+}, (message) => notice(message ? `Settings were not saved. ${message}` : "")));
 buttons("show-key").addEventListener("click", () => {
   const show = inputs.key.type === "password";
   inputs.key.type = show ? "text" : "password";
@@ -614,13 +658,21 @@ get("key-form").addEventListener("submit", (event) => {
     if (continuation) task(continuation);
   });
 });
-get("profile-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
+get("profile-form").addEventListener("submit", (event) => { event.preventDefault(); dialogTask("save-dialog", async () => {
+  inputs.name.setAttribute("aria-invalid", String(!inputs.name.checkValidity()));
+  if (!inputs.name.validity.valid) throw new Error("Use 1-64 letters, digits, hyphens or underscores. Start with a letter or digit.");
   await api("/api/profiles", Contracts.Ok, { name: inputs.name.value, settings: readSettings() }); dialog("save-dialog").close(); await refresh();
 }); });
-buttons("load-profile").addEventListener("click", () => task(async () => {
-  if (!profiles.value) throw new Error("Choose a saved profile first.");
+buttons("load-profile").addEventListener("click", () => dialogTask("load-dialog", async () => {
+  profiles.setAttribute("aria-invalid", String(!profiles.value));
+  if (!profiles.value) throw new Error("Choose a saved profile, then click Load.");
   applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); dialog("load-dialog").close();
 }));
+inputs.name.addEventListener("input", () => inputs.name.removeAttribute("aria-invalid"));
+profiles.addEventListener("change", () => profiles.removeAttribute("aria-invalid"));
+for (const id of ["save-dialog", "load-dialog", "history-import-dialog"]) dialog(id).addEventListener("close", () => {
+  get(`${id}-error`).hidden = true; get(`${id}-error`).textContent = "";
+});
 function dialog(id: string) {
   const found = get(id); if (!(found instanceof HTMLDialogElement)) throw new Error(`Expected dialog: ${id}`); return found;
 }
@@ -701,7 +753,7 @@ function renderZoom() {
 buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderZoom(); });
 buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderZoom(); });
 buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderGraph(); renderZoom(); });
-get("history-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
+get("history-form").addEventListener("submit", (event) => { event.preventDefault(); dialogTask("history-import-dialog", async () => {
   const file = inputs.file.files?.[0];
   if (!file) throw new Error("Choose a normalized history file.");
   if (file.size > 2 * 1024 * 1024) throw new Error("The file exceeds the 2 MB import limit.");
@@ -727,6 +779,7 @@ function refreshAccountHistory(id: SteamId | null) {
 buttons("target-history-retry").addEventListener("click", () => refreshAccountHistory(preview?.id ?? historyAccount));
 for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => refreshAccountHistory(historyAccount));
 HistoryUI.initialize();
+installTabStrips();
 applySettings(defaults);
 Tooltips.install(get("app-tooltip"));
 renderTarget(); renderOutput(); renderRecent();

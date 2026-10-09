@@ -39,7 +39,10 @@ function identity(row: HTMLTableRowElement, id: string | null, name: string, ima
   avatar.src = image ?? "/placeholder.jpg"; avatar.referrerPolicy = "no-referrer";
   avatar.onerror = () => { avatar.onerror = null; avatar.src = "/placeholder.jpg"; };
   const link = document.createElement(id ? "a" : "span"); link.append(avatar, document.createTextNode(name)); link.className = "player-link";
-  if (link instanceof HTMLAnchorElement) { link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer"; }
+  if (link instanceof HTMLAnchorElement) {
+    link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
+    link.setAttribute("aria-label", `${name}, Steam ID ${id}`); link.dataset.tooltip = `Steam ID ${id}`;
+  }
   cell.append(link);
 }
 function filteredReport() {
@@ -65,7 +68,8 @@ function table(headers: readonly string[], { rows, total }: { rows: readonly HTM
 function friendsRows(report: History.HistoryReport, query: string) {
   return paginate(report.friends.filter((friend) => JSON.stringify(friend.metadata).toLowerCase().includes(query) && statusMatches(friend.status)), (friend) => {
       const row = document.createElement("tr"); identity(row, friend.id, friend.name, friend.avatar);
-      rowCell(row, friend.status); rowCell(row, date(friend.asOf)); rowCell(row, friend.durationSeconds === null ? "Unknown" : `${Math.floor(friend.durationSeconds / 86400)} days`);
+      const days = friend.durationSeconds === null ? null : Math.floor(friend.durationSeconds / 86400);
+      rowCell(row, friend.status); rowCell(row, date(friend.asOf)); rowCell(row, days === null ? "Unknown" : `${days} ${days === 1 ? "day" : "days"}`);
       rowCell(row, numeric(friend.relativeDuration)); inspect(row, friend.periodSources, friend.id); return row;
   });
 }
@@ -77,8 +81,10 @@ function rankingRows(report: History.HistoryReport, query: string) {
   });
 }
 function commentsRows(report: History.HistoryReport, query: string) {
-  return paginate(report.comments.filter((comment) => `${comment.author ?? ""} ${comment.message}`.toLowerCase().includes(query)), (comment) => {
-      const row = document.createElement("tr"); identity(row, comment.author, comment.author ?? "Unknown author", null);
+  const authors = new Map(report.commenters.map((author) => [author.id, author]));
+  return paginate(report.comments.filter((comment) => `${authors.get(comment.author)?.name ?? ""} ${comment.author ?? ""} ${comment.message}`.toLowerCase().includes(query)), (comment) => {
+      const author = authors.get(comment.author);
+      const row = document.createElement("tr"); identity(row, comment.author, author?.name ?? comment.author ?? "Unknown author", author?.avatar ?? null);
       rowCell(row, date(comment.timestamp)); rowCell(row, comment.message); rowCell(row, comment.friendAtComment); rowCell(row, comment.estimated ? "Estimated" : "Identified"); inspect(row, comment.versions, comment.key); return row;
   });
 }
@@ -94,7 +100,12 @@ function profileRows(report: History.HistoryReport, query: string) {
   return paginate(profiles.filter(({ profile }) => JSON.stringify(profile.fields).toLowerCase().includes(query) && dateMatches(profile.lastChecked)), ({ profile, sourceIndex, snapshotIndex }) => {
     const row = document.createElement("tr"); const fields = profile.fields;
     rowCell(row, profile.name); rowCell(row, date(profile.lastChecked));
-    for (const key of ["creationDate", "vacBanned", "vacCount", "gameBans", "communityBanned", "economyBanned"]) rowCell(row, fieldText(fields[key]));
+    const created = History.time(fields.creationDate);
+    rowCell(row, created === null ? fields.creationDate == null ? "Not supplied" : "Unknown" : date(created));
+    for (const key of ["vacBanned", "vacCount", "gameBans", "communityBanned", "economyBanned"]) {
+      const value = fields[key];
+      rowCell(row, value === true ? "Yes" : value === false ? "No" : value === "none" ? "None" : fieldText(value));
+    }
     inspect(row, fields, JSON.stringify([sourceIndex, snapshotIndex])); return row;
   });
 }
@@ -131,7 +142,7 @@ function renderTable() {
     });
     table(["Country", "State", "City", "Contributors", "Zero counts", "Raw support", "Share %", "Index / 100", "Details"], locations);
   } else if (section === "profile") {
-    table(["Name", "Source as of", "Created (Unix)", "VAC banned", "VAC count", "Game bans", "Community ban", "Economy ban", "All fields"], profileRows(report, query));
+    table(["Name", "Source as of", "Created", "VAC banned", "VAC count", "Game bans", "Community ban", "Economy ban", "All fields"], profileRows(report, query));
   } else {
     table([section === "pfp" ? "Avatar" : section === "url" ? "URL" : "Name", "Record date", "Source as of", "All fields"], recordRows(report, query));
   }

@@ -109,17 +109,20 @@
       </div>
     </section>
     <dialog id="save-dialog" aria-labelledby="save-heading">
-      <form id="profile-form" class="stack-form">
+      <form id="profile-form" class="stack-form" novalidate>
         <h2 id="save-heading">Save settings</h2>
         <label for="profile-name">Profile name</label>
-        <input id="profile-name" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}" required>
+        <input id="profile-name" pattern="[a-zA-Z0-9][a-zA-Z0-9_\-]{0,63}" aria-describedby="profile-name-hint save-dialog-error" required>
+        <p id="profile-name-hint" class="hint">1-64 letters, digits, hyphens or underscores. Start with a letter or digit.</p>
+        <p id="save-dialog-error" class="dialog-error" role="alert" tabindex="-1" hidden></p>
         <div class="dialog-actions"><button type="button" data-close="save-dialog">Cancel</button><button type="submit">Save</button></div>
       </form>
     </dialog>
     <dialog id="load-dialog" aria-labelledby="load-heading">
       <h2 id="load-heading">Load settings</h2>
       <label for="profiles" class="sr-only">Saved profiles</label>
-      <select id="profiles"><option value="">Choose profile</option></select>
+      <select id="profiles" aria-describedby="load-dialog-error"><option value="">Choose profile</option></select>
+      <p id="load-dialog-error" class="dialog-error" role="alert" tabindex="-1" hidden></p>
       <div class="dialog-actions"><button type="button" data-close="load-dialog">Cancel</button><button id="load-profile" type="button">Load</button></div>
     </dialog>
 
@@ -181,7 +184,7 @@
         <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
           <div class="section-line"><h2>Ranked friends</h2><label class="search-label">Filter friends<input id="friend-search" type="search" placeholder="Name or Steam ID"></label></div>
-          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col" data-tooltip="Relative network evidence on a 0 to 100 scale, not a friendship probability">Evidence / 100</th><th scope="col" data-tooltip="Incoming count used by the authored index. Details also show undirected mutuals.">Incoming mutuals</th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th><th scope="col">VAC</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th scope="col">Friend</th><th scope="col">Evidence / 100 <button class="info" type="button" aria-label="About evidence / 100" data-tooltip="Relative network evidence on a 0 to 100 scale, not a friendship probability">i</button></th><th scope="col">Incoming mutuals <button class="info" type="button" aria-label="About incoming mutuals" data-tooltip="Incoming count used by the authored index. Details also show undirected mutuals.">i</button></th><th scope="col">Jaccard</th><th scope="col">Groups</th><th scope="col">Games</th><th scope="col">Friend list</th><th scope="col">VAC</th></tr></thead><tbody id="friend-rows"></tbody></table></div>
           <p id="friend-empty" class="hint" hidden>No friends match this filter.</p>
         </section>
         <section id="network-view" class="view" hidden>
@@ -194,7 +197,7 @@
 
         </section>
         <section id="locations-view" class="view" hidden>
-          <div class="section-line"><h2 data-tooltip="Self-reported Steam codes among observed friends; they do not verify residence">Network location signals</h2><span id="location-coverage"></span></div>
+          <div class="section-line"><h2>Network location signals <button class="info" type="button" aria-label="About network location signals" data-tooltip="Self-reported Steam codes among observed friends; they do not verify residence">i</button></h2><span id="location-coverage"></span></div>
           <div class="table-wrap"><table><thead><tr><th scope="col">Country</th><th scope="col">State code</th><th scope="col">City ID</th><th scope="col">Friends</th><th scope="col">Raw support</th><th scope="col">Share %</th><th scope="col">Index / 100</th><th scope="col">Details</th></tr></thead><tbody id="location-rows"></tbody></table></div>
           <p id="location-empty" class="hint" hidden>No friends supply country and city fields.</p>
         </section>
@@ -203,7 +206,7 @@
           <div id="downloads" class="file-list"></div>
         </section>
         <section id="ranking-view" class="view" hidden>
-          <h2 data-tooltip="Recompute this run using its saved observations, without Steam requests">Ranking settings</h2>
+          <h2>Ranking settings <button class="info" type="button" aria-label="About ranking settings" data-tooltip="Recompute this run using its saved observations, without Steam requests">i</button></h2>
           <form id="ranking-form"><div class="weights">
           <label>Top N<input id="ranking-topN" type="number" min="1" max="1000" required></label>
           <label>Count baseline<input id="ranking-countBaseline" type="number" min="1" max="1000000" required></label>
@@ -227,20 +230,21 @@
         <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import History</h2>
           <form id="history-form" class="stack-form">
             <label for="history-file">History file, up to 2 MB</label>
-            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" data-tooltip="History JSON, profile snapshots, or the complete data/chunk response" required>
+            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" aria-describedby="history-import-dialog-error" data-tooltip="History JSON, profile snapshots, or the complete data/chunk response" required>
             <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
+            <p id="history-import-dialog-error" class="dialog-error" role="alert" tabindex="-1" hidden></p>
             <button type="submit">Analyze history</button>
           </form>
           <div class="dialog-actions"><button type="button" data-close="history-import-dialog">Cancel</button></div>
         </dialog>
         <div id="history-result" hidden>
-          <div class="section-line"><h2 id="history-name"></h2><span id="history-asof"></span><button id="history-refresh" type="button">Refresh</button><button id="history-export" type="button">Export history</button><a id="history-download" hidden>Run history.json</a></div>
+          <div class="section-line"><h2 id="history-name"></h2><span id="history-asof" tabindex="0"></span><button id="history-refresh" type="button">Refresh</button><button id="history-export" type="button">Export history</button><a id="history-download" hidden>Run history.json</a></div>
           <p id="history-warnings" role="status" hidden></p>
           <nav class="tabs" aria-label="History views">
             <button type="button" data-history="friends" aria-current="page">Friends</button><button type="button" data-history="ranking">Comment ranking</button><button type="button" data-history="comments">Comments</button><button type="button" data-history="persona">Names</button><button type="button" data-history="realName">Real names</button><button type="button" data-history="url">URLs</button><button type="button" data-history="pfp">Avatars</button><button type="button" data-history="profile">Profile / bans</button><button type="button" data-history="locations">Comment locations</button>
           </nav>
           <div class="panel"><div class="section-line history-filters"><label>Search<input id="history-search" type="search" placeholder="Name, ID or text"></label><label id="history-status-label">Friend status<select id="history-status"><option value="all">All</option><option value="current">Current</option><option value="former">Former</option><option value="other">Other</option><option value="unknown">Unknown</option></select></label><label>From<input id="history-from" type="date"></label><label>To<input id="history-to" type="date"></label></div>
-          <p id="history-scope" data-tooltip="Counts cover supplied captures only. Undated comments appear only without a date range. Friendship filters never change the friend-comment scoring reference."></p>
+          <div class="history-scope-line"><p id="history-scope"></p><button class="info" type="button" aria-label="About captured history counts" data-tooltip="Counts cover supplied captures only. Undated comments appear only without a date range. Friendship filters never change the friend-comment scoring reference.">i</button></div>
           <div class="table-wrap"><table><thead><tr id="history-columns"></tr></thead><tbody id="history-rows"></tbody></table></div>
           <div class="section-line"><span id="history-count" role="status"></span><button id="history-previous" type="button">Previous</button><button id="history-next" type="button">Next</button></div>
           <div id="history-sources" class="file-list"></div></div>

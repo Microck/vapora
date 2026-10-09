@@ -1,5 +1,13 @@
 /** One top-layer tooltip serves static and dynamically rendered controls, including dialogs. */
 export function install(tooltip: HTMLElement) {
+  // Help descriptions remain available to assistive technology while the popover is closed.
+  for (const [index, anchor] of document.querySelectorAll<HTMLElement>(".info[data-tooltip]").entries()) {
+    const description = document.createElement("span"); description.className = "sr-only";
+    description.id = `help-description-${index}`; description.textContent = anchor.dataset.tooltip ?? "";
+    const existing = anchor.getAttribute("aria-describedby");
+    anchor.setAttribute("aria-describedby", existing ? `${existing} ${description.id}` : description.id);
+    anchor.after(description);
+  }
   let trigger: HTMLElement | null = null;
   let pinned = false;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -28,14 +36,30 @@ export function install(tooltip: HTMLElement) {
     hide(); trigger = anchor;
     tooltip.textContent = anchor.dataset.tooltip ?? "";
     const descriptions = anchor.getAttribute("aria-describedby");
-    anchor.setAttribute("aria-describedby", descriptions ? `${descriptions} ${tooltip.id}` : tooltip.id);
+    if (!anchor.classList.contains("info") || !descriptions) {
+      anchor.setAttribute("aria-describedby", descriptions ? `${descriptions} ${tooltip.id}` : tooltip.id);
+    }
     tooltip.showPopover();
     const bounds = anchor.getBoundingClientRect();
     const box = tooltip.getBoundingClientRect();
-    const left = Math.max(8, Math.min(bounds.left, innerWidth - box.width - 8));
-    const below = bounds.bottom + 7;
-    const top = below + box.height <= innerHeight - 8 ? below : Math.max(8, bounds.top - box.height - 7);
-    tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+    // Prefer beside the trigger. Placing help below a rail or profile link hides its next action.
+    const placements = [[bounds.right + 7, bounds.top], [bounds.left - box.width - 7, bounds.top],
+      [bounds.left, bounds.top - box.height - 7], [bounds.left, bounds.bottom + 7]] as const;
+    const surface = anchor.closest("dialog:modal") ?? document;
+    const controls = [...surface.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]")]
+      .filter((control) => !tooltip.contains(control)).map((control) => control.getBoundingClientRect())
+      .filter((rect) => rect.width && rect.height && rect.bottom > 0 && rect.top < innerHeight);
+    let smallestOverlap = Infinity;
+    for (const [x, y] of placements) {
+      const left = Math.max(8, Math.min(x, innerWidth - box.width - 8));
+      const top = Math.max(8, Math.min(y, innerHeight - box.height - 8));
+      const overlap = controls.reduce((total, rect) => total
+        + Math.max(0, Math.min(left + box.width, rect.right) - Math.max(left, rect.left))
+        * Math.max(0, Math.min(top + box.height, rect.bottom) - Math.max(top, rect.top)), 0);
+      if (overlap >= smallestOverlap) continue;
+      smallestOverlap = overlap; tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+      if (!overlap) break;
+    }
   }
 
   function leave() {

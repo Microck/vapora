@@ -182,8 +182,12 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.$eval("#app-tooltip", (element) => element.matches(":popover-open")), true);
   await page.keyboard.press("Escape"); await page.waitForSelector('#app-tooltip:popover-open', { hidden: true });
   await page.focus(help); await page.waitForSelector('#app-tooltip:popover-open');
-  assert.equal(await page.$eval(help, (element) => element.getAttribute("aria-describedby")), "app-tooltip");
+  const helpDescription = await page.$eval(help, (element) => element.getAttribute("aria-describedby"));
+  assert.ok(helpDescription);
+  assert.match(await page.$eval(help, (element) => (element.getAttribute("aria-describedby") ?? "").split(" ")
+    .map((id) => document.getElementById(id)?.textContent).join(" ")), /0 removes the cap/);
   await page.keyboard.press("Escape"); await page.waitForSelector('#app-tooltip:popover-open', { hidden: true });
+  assert.equal(await page.$eval(help, (element) => element.getAttribute("aria-describedby")), helpDescription);
   await page.click(help); await page.hover("#target"); await delay(150);
   assert.equal(await page.$eval("#app-tooltip", (element) => element.matches(":popover-open")), true);
   await page.click("#target"); assert.match(await visibleText(page, "#app-tooltip") ?? "", /Steam ID/);
@@ -504,5 +508,91 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
   assert.equal(history.requests(), requestsBeforeReopen);
   await checkDuplicateHistoryOpeners(page, root);
+  assert.deepEqual(errors, []);
+});
+
+test("Steam UI keeps ranking fields aligned, errors inside dialogs and help controls reachable", { timeout: 90000 }, async (context) => {
+  const executablePath = process.env.VAPORA_BROWSER; assert.ok(executablePath);
+  const shutdown: (() => Promise<void>)[] = []; let root: string | undefined;
+  context.after(async () => {
+    const outcomes = await Promise.allSettled(shutdown.map((close) => close()));
+    if (root) await rm(root, { recursive: true, force: true });
+    for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
+  });
+  const fixture = await steamFixture(); const history = await historyFixture();
+  shutdown.push(() => fixture.close(), () => history.close());
+  root = await mkdtemp(join(tmpdir(), "vapora-ui-browser-"));
+  const server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: history.url, historySession: history.session, retryBaseMs: 1 });
+  shutdown.push(() => server.close());
+  const browser = await puppeteer.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  shutdown.push(() => browser.close());
+  const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
+  await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 700 }); await page.goto(server.origin);
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#scan-button")?.disabled);
+  await page.click("#open-scan-ranking");
+  for (const width of [1078, 320]) {
+    await page.setViewport({ width, height: 740 });
+    const fields = await page.$$eval("#scan-ranking-dialog .weights input, #scan-ranking-dialog .weights select", (controls) => controls.map((control) => {
+      const box = control.getBoundingClientRect(); const label = control.parentElement?.getBoundingClientRect();
+      if (!label) throw new Error("Expected ranking label");
+      return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, height: box.height, inside: box.left >= label.left && box.right <= label.right };
+    }));
+    assert.equal(fields.length, 9);
+    for (const [index, field] of fields.entries()) {
+      assert.equal(field.height, 32); assert.equal(field.inside, true);
+      for (const other of fields.slice(index + 1)) assert.equal(field.x < other.right && field.right > other.x && field.y < other.bottom && field.bottom > other.y, false);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  }
+  await page.keyboard.press("Escape"); await page.setViewport({ width: 1078, height: 700 });
+  await page.click("#save-settings"); await fill(page, "#profile-name", "spaces are invalid");
+  await page.click('#profile-form button[type="submit"]'); await page.waitForSelector("#save-dialog-error:not([hidden])");
+  assert.match(await visibleText(page, "#save-dialog-error"), /letters, digits/);
+  assert.equal(await page.$eval("#profile-name", (field) => field.getAttribute("aria-invalid")), "true");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "save-dialog-error");
+  await fill(page, "#profile-name", "ui-audit"); await page.click('#profile-form button[type="submit"]');
+  await page.waitForSelector("#save-dialog[open]", { hidden: true });
+  // Restored focus opens Save's help. It must leave Load's click target usable.
+  await page.waitForSelector("#app-tooltip:popover-open");
+  assert.equal(await page.$eval("#open-settings", (button) => {
+    const box = button.getBoundingClientRect(); return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest("button") === button;
+  }), true);
+  await page.click("#open-settings"); await page.select("#profiles", ""); await page.click("#load-profile");
+  await page.waitForSelector("#load-dialog-error:not([hidden])"); assert.match(await visibleText(page, "#load-dialog-error"), /Choose a saved profile/);
+  await page.select("#profiles", "ui-audit"); await page.click("#load-profile"); await page.waitForSelector("#load-dialog[open]", { hidden: true });
+  await page.setOfflineMode(true); await page.click("#apply-settings");
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Settings were not saved"));
+  assert.match(await visibleText(page, "#notice"), /retry/);
+  await page.setOfflineMode(false); await page.click("#apply-settings");
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
+  await fill(page, "#target", seed); await fill(page, "#maxNodes", "5"); await fill(page, "#rpm", "0");
+  await page.click("#lookup-target"); await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  await page.click("#scan-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
+  const help = '[aria-label="About evidence / 100"]'; await page.focus(help);
+  await page.waitForSelector("#app-tooltip:popover-open"); assert.match(await visibleText(page, "#app-tooltip"), /not a friendship probability/);
+  await page.keyboard.press("Escape");
+  assert.match(await page.$eval(help, (button) => (button.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent).join(" ")), /not a friendship probability/);
+  await page.focus("#friend-rows .player-link"); await page.click("#friend-rows button");
+  await page.waitForSelector(".details-window"); await page.keyboard.press("Escape");
+  await page.setViewport({ width: 320, height: 740 }); await page.click('[data-view="ranking"]');
+  const tops = await page.$$eval('#report .tabs button:not([hidden])', (tabs) => tabs.map((tab) => tab.getBoundingClientRect().top));
+  assert.ok(tops.every((top) => Math.abs(top - (tops[0] ?? top)) < 1));
+  assert.equal(await page.$eval('#report .tab-scroll:last-child', (button) => button instanceof HTMLElement && !button.hidden), true);
+  assert.equal(await page.$eval('[data-view="ranking"]', (tab) => { const box = tab.getBoundingClientRect(); const strip = tab.parentElement?.getBoundingClientRect(); return strip && box.left >= strip.left - 1 && box.right <= strip.right + 1; }), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  await page.setViewport({ width: 1078, height: 700 }); await page.click("#open-history"); await page.click('[data-history="comments"]');
+  assert.match(await visibleText(page, "#history-rows"), /Bob/); await fill(page, "#history-search", "Bob");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "");
+  await page.click('[data-history="friends"]');
+  const durations = await page.$$eval("#history-rows tr td:nth-child(4)", (cells) => cells.map((cell) => cell.textContent));
+  assert.ok(durations.includes("1 day")); assert.equal(durations.includes("1 days"), false);
+  await page.click('[data-history="profile"]'); assert.doesNotMatch(await visibleText(page, "#history-rows"), /1400000000|\btrue\b/);
+  assert.match(await visibleText(page, "#history-rows"), /Yes/); assert.match(await visibleText(page, "#history-rows"), /Not supplied/);
+  await page.click("#history-rows button"); assert.match(await visibleText(page, ".details-record"), /1400000000/); await page.keyboard.press("Escape");
+  const invalid = join(root, "invalid.json"); await writeFile(invalid, "{invalid");
+  await page.click("#open-history-import"); const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(invalid);
+  await page.click('#history-form button[type="submit"]'); await page.waitForSelector("#history-import-dialog-error:not([hidden])");
+  assert.match(await visibleText(page, "#history-import-dialog-error"), /not valid JSON/);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "history-import-dialog-error");
   assert.deepEqual(errors, []);
 });
