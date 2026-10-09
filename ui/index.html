@@ -131,10 +131,10 @@
         <h2 id="scan-ranking-heading">Ranking options</h2>
         <div class="weights">
           <label>Top N<input id="topN" type="number" min="1" max="1000" required></label>
-          <label>Count baseline<input id="countBaseline" type="number" min="1" max="1000000" required></label>
-          <label>Location support<select id="locationAggregation"><option value="product">Product</option><option value="sum">Sum</option></select></label>
-          <label>Location baseline<input id="locationBaseline" type="number" min="1" max="1000000" required></label>
-          <label>Hub percentile<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required></label>
+          <label>Count scale<input id="countBaseline" type="number" min="1" max="1000000" data-tooltip="Count baseline: the incoming friend count where the fixed part of the count index reaches its maximum." required></label>
+          <label>Location rule<select id="locationAggregation" data-tooltip="Location support: multiply (Product) or add (Sum) incoming friend counts for each city."><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location scale<input id="locationBaseline" type="number" min="1" max="1000000" data-tooltip="Location baseline: the city support where the fixed part of its location index reaches its maximum." required></label>
+          <label>Hub cutoff<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" data-tooltip="Hub percentile: 0.99 marks profiles at or above the 99th percentile of betweenness. Profiles with zero betweenness are excluded." required></label>
           <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
           <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
           <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
@@ -209,10 +209,10 @@
           <h2>Ranking settings <button class="info" type="button" aria-label="About ranking settings" data-tooltip="Recompute this run using its saved observations, without Steam requests">i</button></h2>
           <form id="ranking-form"><div class="weights">
           <label>Top N<input id="ranking-topN" type="number" min="1" max="1000" required></label>
-          <label>Count baseline<input id="ranking-countBaseline" type="number" min="1" max="1000000" required></label>
-          <label>Location support<select id="ranking-locationAggregation"><option value="product">Product</option><option value="sum">Sum</option></select></label>
-          <label>Location baseline<input id="ranking-locationBaseline" type="number" min="1" max="1000000" required></label>
-            <label>Hub percentile<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required></label>
+          <label>Count scale<input id="ranking-countBaseline" type="number" min="1" max="1000000" data-tooltip="Count baseline: the incoming friend count where the fixed part of the count index reaches its maximum." required></label>
+          <label>Location rule<select id="ranking-locationAggregation" data-tooltip="Location support: multiply (Product) or add (Sum) incoming friend counts for each city."><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location scale<input id="ranking-locationBaseline" type="number" min="1" max="1000000" data-tooltip="Location baseline: the city support where the fixed part of its location index reaches its maximum." required></label>
+            <label>Hub cutoff<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" data-tooltip="Hub percentile: 0.99 marks profiles at or above the 99th percentile of betweenness. Profiles with zero betweenness are excluded." required></label>
             <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
             <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
             <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required></label>

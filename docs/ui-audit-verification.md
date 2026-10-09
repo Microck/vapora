@@ -6,7 +6,7 @@ scan settings, analysis formulas, provider behavior and export data unchanged.
 
 | Area | Corrected behavior |
 | --- | --- |
-| Ranking forms | Inputs and selects stay within their columns, share a 32 px height and align below wrapped labels. |
+| Ranking forms | Short labels stay consistent across both forms: Count scale, Location rule, Location scale and Hub cutoff. In-app help explains the original terms. Inputs and selects stay within their columns, share a 32 px height and align below labels. |
 | Dialog errors | Save, Load and History import errors appear inside the open dialog and receive focus. Invalid fields expose their state to assistive technology. |
 | Tooltip placement | Help chooses a position with the least overlap with nearby controls. Save settings help leaves Load settings clickable; profile help leaves Details clickable. |
 | Offline actions | Apply says that settings were not saved, explains how to reconnect and retains that message during background polling. Retrying after reconnecting saves the settings. |
