@@ -81,7 +81,8 @@ function rankingRows(report: History.HistoryReport, query: string) {
   });
 }
 function commentsRows(report: History.HistoryReport, query: string) {
-  const authors = new Map(report.commenters.map((author) => [author.id, author]));
+  // Unidentified comments share no identity, even when ranking groups their counts.
+  const authors = new Map(report.commenters.filter((author) => author.id !== null).map((author) => [author.id, author]));
   return paginate(report.comments.filter((comment) => `${authors.get(comment.author)?.name ?? ""} ${comment.author ?? ""} ${comment.message}`.toLowerCase().includes(query)), (comment) => {
       const author = authors.get(comment.author);
       const row = document.createElement("tr"); identity(row, comment.author, author?.name ?? comment.author ?? "Unknown author", author?.avatar ?? null);

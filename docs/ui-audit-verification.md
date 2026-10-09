@@ -26,7 +26,9 @@ scan settings, analysis formulas, provider behavior and export data unchanged.
   content zoom. The screenshots below were opened and inspected.
 - All 18 ranking controls across the two forms were checked for hover,
   keyboard focus, tooltip descriptions, Escape dismissal and viewport bounds.
-  Reading help leaves the field values unchanged.
+  Reading help leaves the field values unchanged. A 320 x 100 short-window check
+  verifies that long help stays within the viewport and scrolls by mouse wheel
+  inside a modal without closing.
 - Linux source Electron: ranking and API-key dialogs render; maximize reaches
   1280 x 878, restore returns to 1078 x 599, and the close control exits the app.
 

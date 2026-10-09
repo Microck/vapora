@@ -95,7 +95,7 @@ body.desktop main { flex: 1; min-height: 0; }
 .info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; min-height: 14px; height: 14px; padding: 0; border: 0; color: var(--GreenBG); background: var(--OffWhite); border-radius: 50%; font: bold 11px/1 Arial, sans-serif; vertical-align: middle; cursor: help; }
 .info::before { content: ''; position: absolute; inset: -5px; }
 .info:hover, .info:active { color: var(--DarkGreenBG); background: var(--Maize); }
-.app-tooltip { position: fixed; inset: auto; margin: 0; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); padding: 7px 10px; border: 1px solid; border-color: var(--Outset); background: var(--DarkGreenBG); color: var(--OffWhite); font-size: 13px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; box-shadow: 2px 2px #0006; }
+.app-tooltip { position: fixed; inset: auto; margin: 0; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 7px 10px; border: 1px solid; border-color: var(--Outset); background: var(--DarkGreenBG); color: var(--OffWhite); font-size: 13px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; box-shadow: 2px 2px #0006; }
 #apply-settings { position: absolute; right: 16px; bottom: 14px; font-size: 14px; }
 #open-scan-ranking { position: absolute; left: 20px; bottom: 14px; font-size: 14px; }
 .mode-output { display: grid; grid-template-columns: 194px minmax(0, 1fr); gap: 26px; padding: 16px 20px 22px; }

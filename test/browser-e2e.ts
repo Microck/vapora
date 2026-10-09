@@ -554,6 +554,23 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
     });
   }), true);
   await page.keyboard.press("Escape"); await page.waitForSelector("#app-tooltip:popover-open", { hidden: true });
+  await page.setViewport({ width: 320, height: 100 });
+  await page.$eval("#mutualWeight", (input) => {
+    if (!(input instanceof HTMLInputElement)) throw new Error("Expected ranking input");
+    input.blur(); input.scrollIntoView();
+  });
+  await delay(150); await page.focus("#mutualWeight");
+  await page.waitForSelector("#app-tooltip:popover-open");
+  assert.equal(await page.$eval("#app-tooltip", (tooltip) => {
+    const box = tooltip.getBoundingClientRect();
+    return tooltip.scrollHeight > tooltip.clientHeight && box.top >= 8 && box.bottom <= innerHeight - 8;
+  }), true);
+  await page.hover("#app-tooltip"); await page.mouse.wheel({ deltaY: 100 });
+  await page.waitForFunction(() => {
+    const tooltip = document.querySelector("#app-tooltip");
+    return tooltip?.matches(":popover-open") && tooltip.scrollTop > 0;
+  });
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape"); await page.setViewport({ width: 1078, height: 700 });
   await page.click("#save-settings"); await fill(page, "#profile-name", "spaces are invalid");
   await page.click('#profile-form button[type="submit"]'); await page.waitForSelector("#save-dialog-error:not([hidden])");
@@ -592,7 +609,9 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await page.setViewport({ width: 1078, height: 700 }); await page.click("#open-history"); await page.click('[data-history="comments"]');
   assert.match(await visibleText(page, "#history-rows"), /Bob/); await fill(page, "#history-search", "Bob");
-  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "");
+  assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "Undated unknown author");
+  assert.equal(await page.$$eval("#history-rows tr", (rows) => rows.some((row) => row.textContent?.includes("Undated unknown author") && row.cells[0]?.textContent === "Unknown author")), true);
+  await fill(page, "#history-search", "");
   await page.click('[data-history="friends"]');
   const durations = await page.$$eval("#history-rows tr td:nth-child(4)", (cells) => cells.map((cell) => cell.textContent));
   assert.ok(durations.includes("1 day")); assert.equal(durations.includes("1 days"), false);

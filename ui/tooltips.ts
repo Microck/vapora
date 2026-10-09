@@ -34,6 +34,10 @@ export function install(tooltip: HTMLElement) {
     clearTimeout(hideTimer);
     if (anchor === trigger) return;
     hide(); trigger = anchor;
+    // A modal makes outside elements inert, including a top-layer popover.
+    // Keep help inside its dialog so hovering and scrolling remain usable.
+    const container = anchor.closest("dialog:modal") ?? document.body;
+    if (tooltip.parentElement !== container) container.append(tooltip);
     tooltip.textContent = anchor.dataset.tooltip ?? "";
     const descriptions = anchor.getAttribute("aria-describedby");
     if (!anchor.classList.contains("info") || !descriptions) {
@@ -87,6 +91,7 @@ export function install(tooltip: HTMLElement) {
     if (trigger?.contains(event.target instanceof Node ? event.target : null)) hide();
   });
   document.addEventListener("click", (event) => {
+    if (tooltip.contains(event.target instanceof Node ? event.target : null)) return;
     const anchor = findTrigger(event.target);
     if (!anchor) { hide(); return; }
     if (anchor === trigger && pinned) { hide(); return; }
@@ -96,6 +101,9 @@ export function install(tooltip: HTMLElement) {
     if (event.key !== "Escape" || !trigger) return;
     hide(); event.preventDefault(); event.stopPropagation();
   }, true);
-  document.addEventListener("scroll", hide, true);
+  document.addEventListener("scroll", (event) => {
+    // Reading overflowing help must not dismiss it; scrolling the page still does.
+    if (!tooltip.contains(event.target instanceof Node ? event.target : null)) hide();
+  }, true);
   window.addEventListener("resize", hide);
 }
