@@ -6,7 +6,7 @@ scan settings, analysis formulas, provider behavior and export data unchanged.
 
 | Area | Corrected behavior |
 | --- | --- |
-| Ranking forms | Short labels stay consistent across both forms: Count scale, Location rule, Location scale and Hub cutoff. In-app help explains the original terms. Inputs and selects stay within their columns, share a 32 px height and align below labels. |
+| Ranking forms | Short labels stay consistent across both forms: Count scale, Location rule, Location scale and Hub cutoff. All nine fields explain their purpose and the effect of changing their values through in-app help, including Top N and weights. Inputs and selects stay within their columns, share a 32 px height and align below labels. |
 | Dialog errors | Save, Load and History import errors appear inside the open dialog and receive focus. Invalid fields expose their state to assistive technology. |
 | Tooltip placement | Help chooses a position with the least overlap with nearby controls. Save settings help leaves Load settings clickable; profile help leaves Details clickable. |
 | Offline actions | Apply says that settings were not saved, explains how to reconnect and retains that message during background polling. Retrying after reconnecting saves the settings. |
@@ -24,6 +24,9 @@ scan settings, analysis formulas, provider behavior and export data unchanged.
   help, narrow tabs and history presentation.
 - Manual browser checks: 1078 x 700 and 320 x 740 viewports, plus 200% CSS
   content zoom. The screenshots below were opened and inspected.
+- All 18 ranking controls across the two forms were checked for hover,
+  keyboard focus, tooltip descriptions, Escape dismissal and viewport bounds.
+  Reading help leaves the field values unchanged.
 - Linux source Electron: ranking and API-key dialogs render; maximize reaches
   1280 x 878, restore returns to 1078 x 599, and the close control exits the app.
 
@@ -51,3 +54,12 @@ pair uses the same viewport and action; fixture account state can differ.
 | History comments | ![History comments before](screenshots/ui-audit/history-comments-before.png) | ![History comments after](screenshots/ui-audit/history-comments-after.png) |
 | History profile | ![History profile before](screenshots/ui-audit/history-profile-before.png) | ![History profile after](screenshots/ui-audit/history-profile-after.png) |
 | Invalid history import | ![History import before](screenshots/ui-audit/history-import-before.png) | ![History import after](screenshots/ui-audit/history-import-after.png) |
+
+## Ranking help
+
+Each ranking field explains its purpose and the effect of changing its value.
+These examples show the hub definition and the all-zero weights behavior.
+
+| Results help | Narrow dialog help |
+| --- | --- |
+| ![Hub cutoff explanation](screenshots/ui-audit/ranking-help-after.png) | ![Mutual weight explanation](screenshots/ui-audit/ranking-help-narrow-after.png) |

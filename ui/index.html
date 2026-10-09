@@ -130,15 +130,15 @@
       <form id="scan-ranking-form">
         <h2 id="scan-ranking-heading">Ranking options</h2>
         <div class="weights">
-          <label>Top N<input id="topN" type="number" min="1" max="1000" required></label>
-          <label>Count scale<input id="countBaseline" type="number" min="1" max="1000000" data-tooltip="Count baseline: the incoming friend count where the fixed part of the count index reaches its maximum." required></label>
-          <label>Location rule<select id="locationAggregation" data-tooltip="Location support: multiply (Product) or add (Sum) incoming friend counts for each city."><option value="product">Product</option><option value="sum">Sum</option></select></label>
-          <label>Location scale<input id="locationBaseline" type="number" min="1" max="1000000" data-tooltip="Location baseline: the city support where the fixed part of its location index reaches its maximum." required></label>
-          <label>Hub cutoff<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" data-tooltip="Hub percentile: 0.99 marks profiles at or above the 99th percentile of betweenness. Profiles with zero betweenness are excluded." required></label>
-          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required></label>
-          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
-          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required></label>
+          <label>Top N<input id="topN" type="number" min="1" max="1000" required data-tooltip="Uses the N friends most often listed by other friends as the score reference. Increasing N can raise count scores. It does not limit the results shown."></label>
+          <label>Count scale<input id="countBaseline" type="number" min="1" max="1000000" required data-tooltip="Number of other friends who must list a profile to fill the fixed part of its count score. Higher values reduce this part; lower values increase it, up to its cap."></label>
+          <label>Location rule<select id="locationAggregation" data-tooltip="Combines incoming friend counts for each city. Product multiplies them, so a zero makes that city's support zero. Sum adds them, so zero counts do not erase other support."><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location scale<input id="locationBaseline" type="number" min="1" max="1000000" required data-tooltip="City support needed to fill the fixed part of its location score. Higher values reduce this part; lower values increase it, up to its cap."></label>
+          <label>Hub cutoff<input id="hub" type="number" min="0.5" max="1" step="0.001" value="0.99" required data-tooltip="Uses betweenness: how often a profile lies on shortest paths between others. Higher cutoffs can mark fewer hubs. 0.99 uses the 99th percentile, including ties. Profiles with zero betweenness are excluded."></label>
+          <label>Mutual weight<input id="mutualWeight" type="number" min="0" max="100" step="0.1" value="1" required data-tooltip="Relative influence of how often other friends list this profile. Increase it to favor that count; 0 ignores it. If all weights are 0, friends sort by incoming counts only."></label>
+          <label>Jaccard weight<input id="jaccardWeight" type="number" min="0" max="100" step="0.1" value="1" required data-tooltip="Relative influence of friend-list overlap: shared friends divided by all unique friends in both lists. Increase it to favor overlap; 0 ignores it. Missing lists contribute 0."></label>
+          <label>Group weight<input id="groupWeight" type="number" min="0" max="100" step="0.1" value="0.5" required data-tooltip="Relative influence of group overlap: shared groups divided by all unique groups across both profiles. Increase it to favor similar memberships; 0 ignores it. Missing memberships contribute 0."></label>
+          <label>Game weight<input id="gameWeight" type="number" min="0" max="100" step="0.1" value="0.5" required data-tooltip="Relative influence of game-library overlap: shared games divided by all unique games across both profiles. Increase it to favor similar libraries; 0 ignores it. Missing libraries contribute 0."></label>
         </div>
         <div class="dialog-actions"><button type="submit">Done</button></div>
       </form>
@@ -208,15 +208,15 @@
         <section id="ranking-view" class="view" hidden>
           <h2>Ranking settings <button class="info" type="button" aria-label="About ranking settings" data-tooltip="Recompute this run using its saved observations, without Steam requests">i</button></h2>
           <form id="ranking-form"><div class="weights">
-          <label>Top N<input id="ranking-topN" type="number" min="1" max="1000" required></label>
-          <label>Count scale<input id="ranking-countBaseline" type="number" min="1" max="1000000" data-tooltip="Count baseline: the incoming friend count where the fixed part of the count index reaches its maximum." required></label>
-          <label>Location rule<select id="ranking-locationAggregation" data-tooltip="Location support: multiply (Product) or add (Sum) incoming friend counts for each city."><option value="product">Product</option><option value="sum">Sum</option></select></label>
-          <label>Location scale<input id="ranking-locationBaseline" type="number" min="1" max="1000000" data-tooltip="Location baseline: the city support where the fixed part of its location index reaches its maximum." required></label>
-            <label>Hub cutoff<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" data-tooltip="Hub percentile: 0.99 marks profiles at or above the 99th percentile of betweenness. Profiles with zero betweenness are excluded." required></label>
-            <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required></label>
-            <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required></label>
-            <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required></label>
-            <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required></label>
+          <label>Top N<input id="ranking-topN" type="number" min="1" max="1000" required data-tooltip="Uses the N friends most often listed by other friends as the score reference. Increasing N can raise count scores. It does not limit the results shown."></label>
+          <label>Count scale<input id="ranking-countBaseline" type="number" min="1" max="1000000" required data-tooltip="Number of other friends who must list a profile to fill the fixed part of its count score. Higher values reduce this part; lower values increase it, up to its cap."></label>
+          <label>Location rule<select id="ranking-locationAggregation" data-tooltip="Combines incoming friend counts for each city. Product multiplies them, so a zero makes that city's support zero. Sum adds them, so zero counts do not erase other support."><option value="product">Product</option><option value="sum">Sum</option></select></label>
+          <label>Location scale<input id="ranking-locationBaseline" type="number" min="1" max="1000000" required data-tooltip="City support needed to fill the fixed part of its location score. Higher values reduce this part; lower values increase it, up to its cap."></label>
+            <label>Hub cutoff<input id="ranking-hub" type="number" min="0.5" max="1" step="0.001" required data-tooltip="Uses betweenness: how often a profile lies on shortest paths between others. Higher cutoffs can mark fewer hubs. 0.99 uses the 99th percentile, including ties. Profiles with zero betweenness are excluded."></label>
+            <label>Mutual weight<input id="ranking-mutual" type="number" min="0" max="100" step="0.1" required data-tooltip="Relative influence of how often other friends list this profile. Increase it to favor that count; 0 ignores it. If all weights are 0, friends sort by incoming counts only."></label>
+            <label>Jaccard weight<input id="ranking-jaccard" type="number" min="0" max="100" step="0.1" required data-tooltip="Relative influence of friend-list overlap: shared friends divided by all unique friends in both lists. Increase it to favor overlap; 0 ignores it. Missing lists contribute 0."></label>
+            <label>Group weight<input id="ranking-groups" type="number" min="0" max="100" step="0.1" required data-tooltip="Relative influence of group overlap: shared groups divided by all unique groups across both profiles. Increase it to favor similar memberships; 0 ignores it. Missing memberships contribute 0."></label>
+            <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required data-tooltip="Relative influence of game-library overlap: shared games divided by all unique games across both profiles. Increase it to favor similar libraries; 0 ignores it. Missing libraries contribute 0."></label>
           </div><button id="save-ranking" type="submit">Save ranking</button></form>
         </section>
         </div></div>

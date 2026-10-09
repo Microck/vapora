@@ -544,6 +544,15 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   }
+  await page.focus("#mutualWeight"); await page.waitForSelector("#app-tooltip:popover-open");
+  assert.equal(await page.$eval("#app-tooltip", (tooltip) => {
+    const box = tooltip.getBoundingClientRect();
+    return [...document.querySelectorAll("#scan-ranking-form input, #scan-ranking-form select, #scan-ranking-form button")].every((control) => {
+      const rect = control.getBoundingClientRect();
+      return rect.right <= box.left || rect.left >= box.right || rect.bottom <= box.top || rect.top >= box.bottom;
+    });
+  }), true);
+  await page.keyboard.press("Escape"); await page.waitForSelector("#app-tooltip:popover-open", { hidden: true });
   await page.keyboard.press("Escape"); await page.setViewport({ width: 1078, height: 700 });
   await page.click("#save-settings"); await fill(page, "#profile-name", "spaces are invalid");
   await page.click('#profile-form button[type="submit"]'); await page.waitForSelector("#save-dialog-error:not([hidden])");

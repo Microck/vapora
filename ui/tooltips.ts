@@ -43,10 +43,13 @@ export function install(tooltip: HTMLElement) {
     const bounds = anchor.getBoundingClientRect();
     const box = tooltip.getBoundingClientRect();
     // Prefer beside the trigger. Placing help below a rail or profile link hides its next action.
+    // Viewport edges also offer room when a narrow form fills every adjacent position.
     const placements = [[bounds.right + 7, bounds.top], [bounds.left - box.width - 7, bounds.top],
-      [bounds.left, bounds.top - box.height - 7], [bounds.left, bounds.bottom + 7]] as const;
+      [bounds.left, bounds.top - box.height - 7], [bounds.left, bounds.bottom + 7],
+      [bounds.left, 8], [bounds.left, innerHeight - box.height - 8]] as const;
     const surface = anchor.closest("dialog:modal") ?? document;
-    const controls = [...surface.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]")]
+    // Focus-only containers such as the workspace are not action hit targets.
+    const controls = [...surface.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
       .filter((control) => !tooltip.contains(control)).map((control) => control.getBoundingClientRect())
       .filter((rect) => rect.width && rect.height && rect.bottom > 0 && rect.top < innerHeight);
     let smallestOverlap = Infinity;
