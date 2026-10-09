@@ -5,12 +5,12 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import puppeteer from "puppeteer-core";
-import type { Page, ScreenshotOptions } from "puppeteer-core";
+import type { Page, ScreenshotOptions, HTTPRequest } from "puppeteer-core";
 import { Schema } from "effect";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
 import * as History from "../src/history.js";
-import { steamFixture, historyFixture, seed, second, key, player, scan, checkNodePicture } from "./fixtures.js";
+import { steamFixture, historyFixture, seed, second, key, player, scan, denseScan, checkNodePicture } from "./fixtures.js";
 
 const userAgent = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 async function fill(page: Page, selector: string, value: string) {
@@ -832,6 +832,26 @@ test("network preview expands in-app, keeps all connections and supports explora
   assert.equal(await visibleText(page, "#network-layout-status"), "Layout paused");
   assert.equal(fixture.requests.filter((request) => request.path.startsWith("/ISteamUser/")).length, 0, "Exploration must not fetch new Steam observations");
   assert.equal(await readFile(join(directory, "scan.json"), "utf8"), JSON.stringify(saved));
+  // Navigate away during real dense-run analysis, without delaying or intercepting HTTP.
+  const dense = denseScan(); const denseDirectory = join(root, "outputs", dense.id);
+  await mkdir(denseDirectory); await writeFile(join(denseDirectory, "scan.json"), JSON.stringify(dense));
+  // A hash-only navigation does not reload the app or open a different saved run.
+  await page.goto("about:blank");
+  const denseUrl = `${server.origin}/api/runs/${dense.id}`;
+  const started = page.waitForRequest((request) => request.url() === denseUrl);
+  const cancelled = new Promise<string>((resolve) => {
+    const listener = (request: HTTPRequest) => {
+      if (request.url() !== denseUrl) return;
+      page.off("requestfailed", listener); resolve(request.failure()?.errorText ?? "");
+    };
+    page.on("requestfailed", listener);
+  });
+  await page.goto(`${server.origin}/#${dense.id}`, { waitUntil: "domcontentloaded" }); await started;
+  await page.click('[data-screen="scan"]');
+  assert.match(await cancelled, /ERR_ABORTED/);
+  assert.equal(await page.$eval("#scan-screen", (screen) => screen instanceof HTMLElement && screen.hidden), false);
+  await page.goto("about:blank");
+  await page.goto(`${server.origin}/#${saved.id}`); await page.waitForSelector("#report-status", { visible: true });
   assert.deepEqual(errors, []);
 });
 

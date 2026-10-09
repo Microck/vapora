@@ -59,6 +59,7 @@ let recentSignature = "";
 let profileSignature = "";
 let lastJob: string | null = null;
 let runRequest = 0;
+let activeRun: AbortController | null = null;
 let runSignature = "";
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
@@ -70,6 +71,7 @@ let explorer: Explorer | null = null;
 /** Keep view contents mounted so navigation preserves forms, reports, and keyboard state. */
 function showScreen(name: typeof Screen.Type) {
   navigationVersion++;
+  activeRun?.abort();
   for (const screen of document.querySelectorAll<HTMLElement>(".screen")) screen.hidden = screen.id !== `${name}-screen`;
   for (const tab of document.querySelectorAll<HTMLElement>(".toolbar [data-screen]")) {
     if (tab.dataset.screen === name) tab.setAttribute("aria-current", "page");
@@ -131,9 +133,9 @@ function dialogTask(id: string, action: () => Promise<void>) {
     if (message) status.focus({ preventScroll: true });
   });
 }
-async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<T>, payload?: P) {
-  const response = await fetch(path, payload === undefined ? { headers: { accept: "application/json" } } : {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<T>, payload?: P, signal?: AbortSignal) {
+  const response = await fetch(path, payload === undefined ? { headers: { accept: "application/json" }, signal: signal ?? null } : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: signal ?? null,
   }).catch(() => { throw new Error("Cannot reach Vapora. Make sure the app is running, then retry the action."); });
   const json: unknown = await response.json();
   if (!response.ok) {
@@ -397,8 +399,13 @@ async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) 
 async function openRun(id: string, navigation = navigationVersion) {
   const request = ++runRequest;
   const historyVersion = historyRequest;
-  const view = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
-  if (request !== runRequest) return;
+  activeRun?.abort();
+  const controller = new AbortController(); activeRun = controller;
+  // Closing the superseded HTTP request also interrupts its server-side analysis worker.
+  const view = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView, undefined, controller.signal)
+    .catch((error) => { if (controller.signal.aborted) return null; throw error; })
+    .finally(() => { if (activeRun === controller) activeRun = null; });
+  if (!view || request !== runRequest) return;
   selected = view;
   const typed = inputs.target.value.trim();
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
@@ -585,7 +592,7 @@ get("output-mode").addEventListener("change", (event) => {
   outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
 for (const form of ["scan-form", "scan-ranking-form"]) get(form).addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
-inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; historyRequest++; accountHistory = null; historyAccount = null; get("target-history-status").textContent = ""; get("target-history-retry").hidden = true; get("history-result").hidden = true; get("history-fetch-status").hidden = true; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
+inputs.target.addEventListener("input", () => { activeRun?.abort(); preview = null; previewTarget = ""; historyRequest++; accountHistory = null; historyAccount = null; get("target-history-status").textContent = ""; get("target-history-retry").hidden = true; get("history-result").hidden = true; get("history-fetch-status").hidden = true; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
   settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
 });
