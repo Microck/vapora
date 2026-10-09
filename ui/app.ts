@@ -4,9 +4,9 @@ import type { Availability, SteamId } from "../src/model.js";
 import * as Contracts from "../src/contracts.js";
 import { displaySupport } from "../src/scoring.js";
 import * as HistoryUI from "./history-view.js";
-import { HistoryState, coverageError } from "../src/history.js";
+import { HistoryState, coverageError, diagnosticText } from "../src/history.js";
 import { HistoryReport } from "../src/history.js";
-import * as Network from "./network.js";
+import { Explorer } from "./explorer.js";
 import * as Tooltips from "./tooltips.js";
 import * as Details from "./details.js";
 
@@ -46,7 +46,7 @@ const inputs = {
   runSearch: control("run-search"), networkSearch: control("network-search"),
   key: control("key"), name: control("profile-name"), search: control("friend-search"), file: control("history-file"), attach: control("attach-history"),
 };
-const profiles = select("profiles"); const edgeKind = select("edge-kind");
+const profiles = select("profiles");
 const OutputMode = Schema.Literals(["all", "report", "gephi"]);
 let outputMode: typeof OutputMode.Type = "all";
 let preview: Pick<Player, "id" | "name" | "avatar"> | null = null;
@@ -58,21 +58,20 @@ let currentState: Contracts.State | null = null;
 let recentSignature = "";
 let profileSignature = "";
 let lastJob: string | null = null;
-let selectedNode: SteamId | null = null;
 let runRequest = 0;
+let activeRun: AbortController | null = null;
 let runSignature = "";
-let zoom = 1;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let settingsVersion = 0;
 const Screen = Schema.Literals(["scan", "results", "history"]);
 let navigationVersion = 0;
-let graphReport: Contracts.Report | null = null;
-let graphSelection = "";
+let explorer: Explorer | null = null;
 
 /** Keep view contents mounted so navigation preserves forms, reports, and keyboard state. */
 function showScreen(name: typeof Screen.Type) {
   navigationVersion++;
+  activeRun?.abort();
   for (const screen of document.querySelectorAll<HTMLElement>(".screen")) screen.hidden = screen.id !== `${name}-screen`;
   for (const tab of document.querySelectorAll<HTMLElement>(".toolbar [data-screen]")) {
     if (tab.dataset.screen === name) tab.setAttribute("aria-current", "page");
@@ -81,6 +80,7 @@ function showScreen(name: typeof Screen.Type) {
   window.scrollTo({ top: 0, behavior: "instant" });
   get("results").scrollTo({ top: 0, behavior: "instant" });
   if (name === "results") renderGraph();
+  else explorer?.hide();
 }
 
 /** Keep the selected VGUI tab against its panel, even when the strip overflows. */
@@ -133,9 +133,9 @@ function dialogTask(id: string, action: () => Promise<void>) {
     if (message) status.focus({ preventScroll: true });
   });
 }
-async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<T>, payload?: P) {
-  const response = await fetch(path, payload === undefined ? { headers: { accept: "application/json" } } : {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+async function api<T, P = never>(path: string, schema: Schema.ConstraintDecoder<T>, payload?: P, signal?: AbortSignal) {
+  const response = await fetch(path, payload === undefined ? { headers: { accept: "application/json" }, signal: signal ?? null } : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), signal: signal ?? null,
   }).catch(() => { throw new Error("Cannot reach Vapora. Make sure the app is running, then retry the action."); });
   const json: unknown = await response.json();
   if (!response.ok) {
@@ -166,19 +166,10 @@ function applySettings(settings: Settings) {
 function renderDepth() {
   for (const button of document.querySelectorAll<HTMLElement>("[data-depth]")) button.setAttribute("aria-pressed", String(button.dataset.depth === inputs.depth.value));
 }
-/** A missing or failed Steam image keeps the same square placeholder, without repeated retries. */
-function setAvatar(image: HTMLImageElement, url: string | null) {
-  image.onerror = url ? () => { image.onerror = null; image.src = "/placeholder.jpg"; } : null;
-  image.referrerPolicy = "no-referrer"; image.alt = ""; image.src = url ?? "/placeholder.jpg";
-}
-function avatarImage(url: string | null) {
-  const image = document.createElement("img"); image.className = "profile-avatar"; image.width = 24; image.height = 24;
-  setAvatar(image, url); return image;
-}
 function profileImage(id: string, url: string | null) {
   const image = get(id);
   if (!(image instanceof HTMLImageElement)) throw new Error(`Expected image: ${id}`);
-  setAvatar(image, url);
+  Details.setAvatar(image, url);
 }
 /** Clear the identity immediately when the target no longer matches the selected run. */
 function renderTarget() {
@@ -196,7 +187,7 @@ function cell(row: HTMLTableRowElement, text: string | number) {
   const td = document.createElement("td"); td.textContent = String(text); row.append(td); return td;
 }
 function playerCell(row: HTMLTableRowElement, id: SteamId, name: string, avatar: string | null) {
-  const td = cell(row, ""); const link = document.createElement("a"); link.className = "player-link"; link.append(avatarImage(avatar), document.createTextNode(name));
+  const td = cell(row, ""); const link = document.createElement("a"); link.className = "player-link"; link.append(Details.avatar(avatar), document.createTextNode(name));
   link.href = `https://steamcommunity.com/profiles/${id}/`; link.target = "_blank"; link.rel = "noreferrer";
   link.dataset.tooltip = `Steam ID ${id}`; link.setAttribute("aria-label", `${name}, Steam ID ${id}`); td.append(link);
   return td;
@@ -317,67 +308,34 @@ function renderRanking() {
   buttons("rebuild-exports").disabled = buttons("save-ranking").disabled;
 }
 function inspectNode(id: SteamId, resolveOpener: Details.Opener) {
-  selectedNode = id; renderGraph();
-  openProfileDetails(id, resolveOpener);
-}
-function rankingFacts(id: SteamId): readonly (readonly [string, string | number])[] {
-  const rank = selected?.report.friends.find((friend) => friend.id === id);
-  return rank ? [
-    ["Incoming mutuals", rank.incomingMutual], ["Undirected mutuals", rank.mutual],
-    ["Count index / 100", rank.countIndex?.toFixed(2) ?? "Unknown"], ["Reference friends", selected?.report.coverage.directFriends ?? 0],
-    ["Game Jaccard", rank.gameJaccard?.toFixed(4) ?? "Unknown"], ["Group Jaccard", rank.groupJaccard?.toFixed(4) ?? "Unknown"],
-  ] : [];
-}
-function profileFacts(player: Player, metric: Contracts.Report["metrics"][number] | undefined): readonly (readonly [string, string | number])[] {
-  const bans = player.bans;
-  return [
-    ["Friend list as of", player.friendsObservedAt ? new Date(player.friendsObservedAt).toLocaleString() : "Not observed"],
-    ["Bans as of", player.bansObservedAt ? new Date(player.bansObservedAt).toLocaleString() : "Not observed"],
-    ["Depth", player.level], ["Profile", availabilityLabels[player.visibility]], ["Friend list", availabilityLabels[player.friendsStatus]],
-    ["Groups", player.groupsStatus === "public" ? player.groups.length : availabilityLabels[player.groupsStatus]],
-    ["Games", player.gamesStatus === "public" ? player.games.length : availabilityLabels[player.gamesStatus]],
-    ["VAC bans", bans ? bans.vacCount : availabilityLabels[player.bansStatus]],
-    ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "Yes" : "No" : availabilityLabels[player.bansStatus]],
-    ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
-    ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "Yes" : "No" : "unknown"],
-  ];
-}
-function openProfileDetails(account: SteamId, resolveOpener: Details.Opener) {
-  const player = selected?.scan.players.find((p) => p.id === account);
-  const rank = selected?.report.friends.find((friend) => friend.id === account);
-  const metric = selected?.report.metrics.find((m) => m.id === account);
-  const id = player?.id ?? rank?.id;
-  if (!id) return;
-  const name = player?.name ?? rank?.name ?? id;
-  const contents = document.createElement("div");
-  const identity = document.createElement("div"); identity.className = "details-identity";
-  const text = document.createElement("div"); const heading = document.createElement("h3"); heading.textContent = name;
-  const link = document.createElement("a"); link.href = `https://steamcommunity.com/profiles/${id}/`;
-  link.target = "_blank"; link.rel = "noreferrer"; link.textContent = id; link.dataset.tooltip = "Open Steam profile";
-  text.append(heading, link); identity.append(avatarImage(player?.avatar ?? null), text);
-  const facts = document.createElement("dl"); facts.className = "details-facts";
-  const fields = player ? profileFacts(player, metric) : [["Collection", "Outside admitted graph"]] as const;
-  for (const [label, value] of [...fields, ...rankingFacts(id)]) {
-    const term = document.createElement("dt"); term.textContent = label;
-    const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
-  }
-  contents.append(identity, facts); Details.open(`Details for ${name}`, contents, resolveOpener, id);
+  if (explorer?.viewer.graph.hasNode(id)) explorer.viewer.select(id);
+  if (selected) Details.profile(selected, id, resolveOpener);
 }
 function renderGraph() {
-  const graph = get("graph");
-  if (!(graph instanceof SVGSVGElement) || !selected || get("network-view").hidden || get("results-screen").hidden || get("report").hidden) return;
-  const selection = JSON.stringify([selectedNode, inputs.networkSearch.value, edgeKind.value]);
-  if (graphReport === selected.report && graphSelection === selection) return;
-  Network.render(graph, get("community-legend"), get("network-matches"), get("graph-count"), selected,
-    { id: selectedNode, zoom, query: inputs.networkSearch.value, edges: edgeKind.value },
-    (id) => inspectNode(id, () => graph.querySelector<SVGGElement>(`[data-node-id="${id}"]`)));
-  graphReport = selected.report; graphSelection = selection;
+  if (!selected || get("network-view").hidden || get("results-screen").hidden || get("report").hidden) return;
+  if (explorer?.view.report !== selected.report) {
+    explorer?.destroy();
+    explorer = null;
+    const controls = get("network-view").querySelectorAll<HTMLInputElement | HTMLButtonElement>(".network-controls input, .network-controls button:not(.info), #network-maximize");
+    for (const control of controls) control.disabled = false;
+    try { explorer = new Explorer(get("network-view"), selected); }
+    catch {
+      for (const control of controls) control.disabled = true;
+      get("graph-count").textContent = "Graph unavailable";
+      const message = document.createElement("p"); message.textContent = "Could not start the graph renderer. Enable graphics acceleration, then try again.";
+      const retry = document.createElement("button"); retry.type = "button"; retry.textContent = "Try again";
+      retry.addEventListener("click", renderGraph); get("graph").replaceChildren(message, retry);
+      return;
+    }
+  }
+  explorer?.show();
 }
 function toggleRuns(visible: boolean) {
   get("run-library").hidden = !visible; buttons("toggle-runs").setAttribute("aria-expanded", String(visible));
   buttons("toggle-runs").textContent = visible && selected ? "Back to report" : "Saved runs";
   get("report").hidden = visible || !selected; get("empty").hidden = visible || Boolean(selected);
   if (!visible) renderGraph();
+  else explorer?.hide();
 }
 function renderRuns() {
   if (!currentState) return;
@@ -390,7 +348,7 @@ function renderRuns() {
     `${run.name} ${run.seed} ${run.id}`.toLowerCase().includes(query));
   for (const run of runs) {
     const row = document.createElement("tr"); const name = cell(row, ""); const button = document.createElement("button");
-    button.type = "button"; button.className = "run-link"; button.append(avatarImage(run.avatar), document.createTextNode(run.name));
+    button.type = "button"; button.className = "run-link"; button.append(Details.avatar(run.avatar), document.createTextNode(run.name));
     button.addEventListener("click", () => task(() => openRun(run.id))); name.append(button);
     cell(row, new Date(run.createdAt).toLocaleString()); cell(row, run.status === "running" ? "unfinished" : run.status); cell(row, run.nodes); cell(row, run.id); rows.append(row);
   }
@@ -411,10 +369,11 @@ function renderHistory(report: HistoryReport, runId: string | null) {
 }
 function renderAccountHistory(state: HistoryState, runId?: string) {
   accountHistory = state; historyAccount = state.id;
+  const message = diagnosticText(state.error ?? "");
   get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
-  get("target-history-status").dataset.tooltip = state.error ?? "Saved history capture";
+  get("target-history-status").dataset.tooltip = message || "Saved history capture";
   get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
-  get("history-fetch-status").textContent = state.error ?? ""; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
+  get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
   if (state.report) {
     renderHistory(state.report, runId ?? null);
     if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
@@ -433,21 +392,30 @@ async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) 
   } catch (error) {
     if (request !== historyRequest) return;
     get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false; get("history-retry").hidden = false;
-    const message = error instanceof Error ? error.message : "History could not be loaded.";
+    const message = diagnosticText(error instanceof Error ? error.message : "History could not be loaded.");
     get("target-history-status").dataset.tooltip = message; get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = false;
   }
 }
 async function openRun(id: string, navigation = navigationVersion) {
   const request = ++runRequest;
-  const view = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView);
-  if (request !== runRequest) return;
+  const historyVersion = historyRequest;
+  activeRun?.abort();
+  const controller = new AbortController(); activeRun = controller;
+  // Closing the superseded HTTP request also interrupts its server-side analysis worker.
+  const view = await api(`/api/runs/${encodeURIComponent(id)}`, Contracts.RunView, undefined, controller.signal)
+    .catch((error) => { if (controller.signal.aborted) return null; throw error; })
+    .finally(() => { if (activeRun === controller) activeRun = null; });
+  if (!view || request !== runRequest) return;
   selected = view;
   const typed = inputs.target.value.trim();
   if (!typed || typed === linkedTarget) { inputs.target.value = selected.scan.seed; linkedTarget = selected.scan.seed; }
-  selectedNode = null; zoom = 1; inputs.networkSearch.value = ""; toggleRuns(false);
+  explorer?.destroy(); explorer = null; inputs.networkSearch.value = ""; toggleRuns(false);
   location.hash = id; renderReport(); renderRecent();
-  if (view.historyError) notice(view.historyError);
-  if (view.scan.status === "complete") void loadAccountHistory(view.scan.seed, false, view.scan.id);
+  if (view.historyError) notice(diagnosticText(view.historyError));
+  // Loading a saved report must not supersede a newer target lookup or navigation.
+  if (view.scan.status === "complete" && historyVersion === historyRequest && navigation === navigationVersion) {
+    void loadAccountHistory(view.scan.seed, false, view.scan.id);
+  }
   // A report response must not override a navigation choice made while it loaded.
   if (navigation === navigationVersion) {
     showScreen("results");
@@ -471,24 +439,32 @@ function renderRecent() {
   const issues = currentState?.runIssues ?? [];
   for (const run of runs) {
     const button = document.createElement("button"); button.type = "button";
-    button.append(avatarImage(run.avatar));
+    button.append(Details.avatar(run.avatar));
     button.setAttribute("aria-pressed", String(inputs.target.value.trim() === run.seed));
     button.dataset.tooltip = `Select ${run.name} as target`;
     button.setAttribute("aria-label", button.dataset.tooltip);
     button.addEventListener("click", () => preselectTarget(run)); recent.append(button);
   }
   for (const issue of issues) {
-    const button = document.createElement("button"); button.type = "button"; button.append(avatarImage(null));
+    const button = document.createElement("button"); button.type = "button"; button.append(Details.avatar(null));
     button.dataset.tooltip = `Invalid run ${issue.id}`; button.setAttribute("aria-label", button.dataset.tooltip);
     button.addEventListener("click", () => notice(issue.message)); recent.append(button);
   }
   const emptySlots = Math.max(0, 5 - runs.length - issues.length);
   for (let i = 0; i < emptySlots; i++) {
-    const empty = avatarImage(null); empty.setAttribute("aria-hidden", "true"); recent.append(empty);
+    const empty = Details.avatar(null); empty.setAttribute("aria-hidden", "true"); recent.append(empty);
   }
   if (runs.length + issues.length === 0) {
     const status = document.createElement("span"); status.className = "sr-only"; status.textContent = "No saved runs."; recent.append(status);
   }
+}
+function remainingTime(progress: Contracts.Progress | null): string {
+  if (progress?.phase === "Analyzing network" || progress?.phase === "Complete") return "Finishing…";
+  const seconds = progress?.etaSeconds;
+  if (seconds == null) return "ETA estimating…";
+  if (seconds < 60) return `ETA ~${seconds}s`;
+  if (seconds < 3600) return `ETA ~${Math.ceil(seconds / 60)}m`;
+  return `ETA ~${Math.ceil(seconds / 3600)}h`;
 }
 function renderProgress(state: Contracts.State) {
     get("key-indicator").textContent = state.hasKey ? "Key ready" : "Key needed";
@@ -505,7 +481,7 @@ function renderProgress(state: Contracts.State) {
     get("progress-section").hidden = !running;
     get("progress-title").textContent = state.job.progress?.phase ?? "Resolving profile";
     const progress = state.job.progress;
-    get("progress-text").textContent = progress ? `${progress.scanned}/${progress.nodes} profiles scanned · ${progress.remaining} queued` : "Connecting to Steam";
+    get("progress-text").textContent = progress ? `${progress.scanned}/${progress.nodes} scanned · ${remainingTime(progress)}` : "Connecting to Steam · ETA estimating…";
     const bar = get("progress"); bar.setAttribute("max", String(Math.max(1, progress?.nodes ?? 1))); bar.setAttribute("value", String(progress?.scanned ?? 0));
 }
 async function refresh() {
@@ -616,7 +592,7 @@ get("output-mode").addEventListener("change", (event) => {
   outputMode = Schema.decodeUnknownSync(OutputMode)(event.target.value); renderOutput();
 });
 for (const form of ["scan-form", "scan-ranking-form"]) get(form).addEventListener("input", () => { settingsVersion++; get("estimate-result").textContent = ""; });
-inputs.target.addEventListener("input", () => { preview = null; previewTarget = ""; historyRequest++; accountHistory = null; historyAccount = null; get("target-history-status").textContent = ""; get("target-history-retry").hidden = true; get("history-result").hidden = true; get("history-fetch-status").hidden = true; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
+inputs.target.addEventListener("input", () => { activeRun?.abort(); preview = null; previewTarget = ""; historyRequest++; accountHistory = null; historyAccount = null; get("target-history-status").textContent = ""; get("target-history-retry").hidden = true; get("history-result").hidden = true; get("history-fetch-status").hidden = true; get("estimate-result").textContent = ""; renderTarget(); renderRecent(); });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-depth]")) button.addEventListener("click", () => {
   settingsVersion++; inputs.depth.value = button.dataset.depth ?? "2"; renderDepth(); get("estimate-result").textContent = "";
 });
@@ -708,7 +684,12 @@ buttons("open-scan-ranking").addEventListener("click", () => dialog("scan-rankin
 get("scan-ranking-form").addEventListener("submit", (event) => { event.preventDefault(); dialog("scan-ranking-dialog").close(); });
 buttons("open-run-info").addEventListener("click", () => dialog("run-info-dialog").showModal());
 for (const button of document.querySelectorAll<HTMLElement>("[data-close]")) button.addEventListener("click", () => dialog(button.dataset.close ?? "").close());
-buttons("cancel-button").addEventListener("click", () => task(async () => { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }));
+buttons("cancel-button").addEventListener("click", () => task(async () => {
+  const button = buttons("cancel-button");
+  button.disabled = true; button.textContent = "Saving checkpoint…";
+  try { await api("/api/cancel", Contracts.Ok, {}); await refresh(); }
+  finally { button.disabled = false; button.textContent = "Cancel and save"; }
+}));
 buttons("resume-button").addEventListener("click", () => steamTask(async () => { if (selected) { await api("/api/resume", Contracts.Ok, { id: selected.scan.id }); await refresh(); } }));
 inputs.search.addEventListener("input", renderFriends);
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-screen]")) {
@@ -720,6 +701,7 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-view]")) t
   tab.setAttribute("aria-current", "page");
   for (const view of document.querySelectorAll<HTMLElement>(".view")) view.hidden = view.id !== `${tab.dataset.view}-view`;
   if (tab.dataset.view === "network") renderGraph();
+  else explorer?.hide();
 });
 buttons("rebuild-exports").addEventListener("click", () => task(async () => {
   if (!selected) return;
@@ -731,7 +713,6 @@ buttons("rebuild-exports").addEventListener("click", () => task(async () => {
   } finally { await refresh(); }
 }));
 inputs.runSearch.addEventListener("input", renderRuns); select("run-status").addEventListener("change", renderRuns);
-inputs.networkSearch.addEventListener("input", renderGraph);
 buttons("toggle-runs").addEventListener("click", () => toggleRuns(get("run-library").hidden));
 buttons("open-history").addEventListener("click", () => {
   if (selected?.history) { renderHistory(selected.history, selected.scan.id); showScreen("history"); }
@@ -748,14 +729,6 @@ get("ranking-form").addEventListener("submit", (event) => { event.preventDefault
     notice("Saved ranking. Collected observations are unchanged.");
   } finally { await refresh(); }
 }); });
-edgeKind.addEventListener("change", renderGraph);
-function renderZoom() {
-  const graph = get("graph");
-  if (graph instanceof SVGSVGElement && selected) Network.setZoom(graph, selected, zoom);
-}
-buttons("zoom-in").addEventListener("click", () => { zoom = Math.min(4, zoom * 1.25); renderZoom(); });
-buttons("zoom-out").addEventListener("click", () => { zoom = Math.max(.5, zoom / 1.25); renderZoom(); });
-buttons("zoom-reset").addEventListener("click", () => { zoom = 1; selectedNode = null; renderGraph(); renderZoom(); });
 get("history-form").addEventListener("submit", (event) => { event.preventDefault(); dialogTask("history-import-dialog", async () => {
   const file = inputs.file.files?.[0];
   if (!file) throw new Error("Choose a normalized history file.");

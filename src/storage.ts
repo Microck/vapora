@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile, appendFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { Context, Effect, Layer, Schedule, Schema } from "effect";
+import { Context, Effect, Layer, Schedule, Schema, Semaphore } from "effect";
 import { InputError, Scan, Settings, StorageError, RunId, SteamId } from "./model.js";
 
 import type { Artifact } from "./model.js";
@@ -73,6 +73,9 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
   const output = join(root, "outputs");
   const profileDir = join(root, "profiles");
   const historyDir = join(root, "history");
+  // Windows replacement can fail while this process is reading the destination.
+  // Queue scan-file reads and writes fairly; external sharing locks still use atomic's bounded retry.
+  const runFiles = yield* Semaphore.make(1);
   yield* io("Could not create Vapora's output and profile directories.", async () => {
     await mkdir(output, { recursive: true, mode: 0o700 });
     await mkdir(profileDir, { recursive: true, mode: 0o700 });
@@ -86,10 +89,10 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
     Effect.map((validated) => join(profileDir, `${validated}.json`)),
     Effect.mapError(() => new InputError({ message: "Profile names must use 1-64 letters, digits, hyphens, or underscores." })),
   );
-  const save = Effect.fn("Storage.save")((scan: Scan) => atomic(join(output, scan.id, "scan.json"), JSON.stringify(scan, null, 2)));
+  const save = Effect.fn("Storage.save")((scan: Scan) => runFiles.withPermit(atomic(join(output, scan.id, "scan.json"), JSON.stringify(scan, null, 2))));
   const read = Effect.fn("Storage.read")(function* (id: string) {
     const path = yield* runPath(id);
-    const contents = yield* io("Could not read this run. Check that its scan.json exists.", () => readFile(join(path, "scan.json"), "utf8"));
+    const contents = yield* runFiles.withPermit(io("Could not read this run. Check that its scan.json exists.", () => readFile(join(path, "scan.json"), "utf8")));
     const scan = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Scan))(contents).pipe(
       Effect.mapError(() => new StorageError({ message: "This checkpoint is invalid. Vapora 2 requires its current scan.json format." })),
     );
@@ -132,11 +135,11 @@ export const layer = (directory = process.cwd()) => Layer.effect(Service, Effect
     writeArtifact: Effect.fn("Storage.writeArtifact")(function* (id: string, artifact: Artifact, contents: string) {
       const path = yield* runPath(id);
       if (artifact.startsWith("gephi/")) yield* io("Could not create the Gephi export directory.", () => mkdir(join(path, "gephi"), { recursive: true }));
-      yield* atomic(join(path, artifact), contents);
+      yield* runFiles.withPermit(atomic(join(path, artifact), contents));
     }),
     readArtifact: Effect.fn("Storage.readArtifact")(function* (id: string, artifact: Artifact) {
       const path = yield* runPath(id);
-      return yield* io(`This run has no ${artifact}. Finish or resume the run first.`, () => readFile(join(path, artifact), "utf8"));
+      return yield* runFiles.withPermit(io(`This run has no ${artifact}. Finish or resume the run first.`, () => readFile(join(path, artifact), "utf8")));
     }),
     history: Effect.fn("Storage.history")(function* (id: string) {
       const path = yield* runPath(id);

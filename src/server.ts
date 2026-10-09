@@ -34,6 +34,7 @@ const AnalyzeRequest = Schema.Struct({ id: Schema.NonEmptyString, ranking: Ranki
 // Only bundled UI assets are public. Never resolve request paths against the filesystem.
 const files = new Map([
   ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
+  ["/network-layout.js", { name: "network-layout.js", type: "text/javascript; charset=utf-8" }],
   ["/app.js", { name: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/style.css", { name: "style.css", type: "text/css; charset=utf-8" }],
   ["/vapora.svg", { name: "vapora.svg", type: "image/svg+xml" }],
@@ -152,7 +153,8 @@ export async function start(options: Options) {
   }));
   const savedRun = (id: string) => Effect.gen(function* () {
     const saved = yield* savedObservations(id);
-    return { scan: saved.scan, report: Analysis.analyze(saved.scan), history: saved.history, historyError: saved.historyError } satisfies RunView;
+    const report = yield* Analysis.calculate(saved.scan);
+    return { scan: saved.scan, report, history: saved.history, historyError: saved.historyError } satisfies RunView;
   });
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
@@ -162,11 +164,11 @@ export async function start(options: Options) {
   const steamLayer = (settings: Settings) => Steam.layer({ key, requestsPerMinute: settings.requestsPerMinute,
     baseUrl: options.steamBaseUrl, retryBaseMs: options.retryBaseMs });
   const observe: Scanner.Observe = (progress) => { job = { ...job, id: progress.id, progress }; };
-  const launch = (workflow: Effect.Effect<Scan, Steam.ApiError | InputError | StorageError, Storage.Service>) => {
+  const launch = (workflow: Effect.Effect<Scan, Steam.ApiError | InputError | StorageError | Analysis.AnalysisError, Storage.Service>) => {
     job = { operationId: randomUUID(), status: "running", id: null, error: null, progress: null };
     const fiber = runtime.runFork(workflow.pipe(Effect.onExit((exit) => Effect.sync(() => {
-      job = { ...job, status: exit._tag === "Success" ? "complete" : Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
-        error: exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause) ? failureMessage(exit.cause) : null };
+      job = { ...job, status: exit._tag === "Success" ? "complete" : Cause.hasInterruptsOnly(exit.cause) ? "cancelled" : "failed",
+        error: exit._tag === "Failure" && !Cause.hasInterruptsOnly(exit.cause) ? failureMessage(exit.cause) : null };
       cancelJob = null;
     }))));
     cancelJob = () => Effect.runPromise(Fiber.interrupt(fiber));
@@ -208,7 +210,11 @@ export async function start(options: Options) {
     }
     const runMatch = /^\/api\/runs\/([^/]+)$/.exec(url.pathname);
     if (runMatch?.[1]) {
-      json(response, 200, await runtime.runPromise(savedRun(runMatch[1])));
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      response.once("close", cancel);
+      try { json(response, 200, await runtime.runPromise(savedRun(runMatch[1]), { signal: controller.signal })); }
+      finally { response.off("close", cancel); }
       return;
     }
     const profileMatch = /^\/api\/profiles\/([^/]+)$/.exec(url.pathname);

@@ -1,117 +1,265 @@
-import type { SteamId } from "../src/model.js";
+import Graph from "graphology";
+import Sigma from "sigma";
+import { layerFill } from "sigma/rendering";
+import { layerBorder } from "@sigma/node-border";
+import type { StylesDeclaration } from "sigma/types";
+import { NodePictures } from "./network-images.js";
+import type { Player, SteamId } from "../src/model.js";
 import type { RunView } from "../src/contracts.js";
+import type { LayoutFrame, LayoutNode } from "./network-layout.js";
 
-const colors = ["#8abfff", "#a8dba8", "#e9b9e8", "#eed68b", "#99d9d9", "#e6ad95"];
-const svgElement = <K extends keyof SVGElementTagNameMap>(tag: K) => document.createElementNS("http://www.w3.org/2000/svg", tag);
-const color = (community: number) => colors[community % colors.length] ?? "#fff";
+// Muted community colours belong to the graph, while the surrounding controls keep Steam's palette.
+const colors = ["#a9c48a", "#d6bc72", "#87b3c1", "#c58f80", "#b2a0c5", "#80b59f", "#d3a377", "#9caed0", "#c8a8b7", "#c5c88a", "#7dbdbc", "#bfa9da", "#d1c3a2", "#8ea384", "#b79c7e", "#98bacb"];
+export const communityColor = (community: number) => colors[community % colors.length] ?? "#d8ded3";
+type Node = LayoutNode & { label: string; search: string; color: string; community: number; degree: number; groupDegree: number; image: string; baseSize: number };
+type Edge = { kind: RunView["report"]["edges"][number]["kind"]; color: string; size: number };
+interface NodeState { dim: boolean; selected: boolean; focus: boolean; match: boolean; labels: boolean }
+interface EdgeState { dim: boolean; active: boolean }
+export interface Filters { query: string; kind: string; community: string; scope: string; minimum: number; availability: string }
+const defaults: Filters = { query: "", kind: "friend", community: "all", scope: "all", minimum: 0, availability: "all" };
 
-/** Stable community clusters keep the same positions across search, selection and zoom. */
-function positions(view: RunView) {
-  const groups = new Map<number, typeof view.report.metrics[number][]>();
-  for (const metric of view.report.metrics) {
-    const members = groups.get(metric.community) ?? []; members.push(metric); groups.set(metric.community, members);
-  }
-  const columns = Math.ceil(Math.sqrt(groups.size));
-  const rows = Math.ceil(groups.size / columns);
-  const cellWidth = 940 / Math.max(1, columns); const cellHeight = 590 / Math.max(1, rows);
-  const points = new Map<SteamId, { x: number; y: number }>();
-  let groupIndex = 0;
-  for (const [, members] of [...groups].sort(([a], [b]) => a - b)) {
-    const x = 30 + cellWidth * ((groupIndex % columns) + .5);
-    const y = 30 + cellHeight * (Math.floor(groupIndex / columns) + .5);
-    const sorted = [...members].sort((a, b) => Number(b.id === view.scan.seed) - Number(a.id === view.scan.seed) || a.id.localeCompare(b.id));
-    for (let i = 0; i < sorted.length; i++) {
-      const metric = sorted[i]; if (!metric) continue;
-      const radius = Math.sqrt(i / Math.max(1, sorted.length - 1)) * .38;
-      const angle = i * Math.PI * (3 - Math.sqrt(5));
-      points.set(metric.id, { x: x + Math.cos(angle) * radius * cellWidth, y: y + Math.sin(angle) * radius * cellHeight });
+/** One renderer owns both the embedded preview and the expanded in-app explorer. All data stays local. */
+export class Viewer {
+  readonly graph = new Graph<Node, Edge>({ type: "undirected", multi: true });
+  readonly players: ReadonlyMap<string, Player>;
+  readonly renderer: Sigma<Node, Edge, {}, NodeState, EdgeState>;
+  readonly communities = new Map<number, number>();
+  filters = { ...defaults };
+  selected: string | null = null;
+  private hovered: string | null = null;
+  private visible = new Set<string>();
+  private highlighted = new Set<string>();
+  private activeEdges = new Set<string>();
+  private focused = new Set<string>();
+  private found = new Set<string>();
+  private worker: Worker | null = null;
+  private settled = false;
+  private disposed = false;
+  private labels = true;
+  private size = 1;
+  private visibleEdges = 0;
+  private layoutStatus = "Arranging…";
+  private hoverFrame = 0;
+  private readonly pictures: NodePictures;
+  onChange = () => {};
+
+  constructor(readonly container: HTMLElement, readonly view: RunView, readonly inspect: (id: SteamId) => void) {
+    this.players = new Map(view.scan.players.map((player) => [player.id, player]));
+    // Deterministic disc positions are only an initial condition for the edge-based layout.
+    for (const [index, metric] of view.report.metrics.entries()) {
+      const angle = index * Math.PI * (3 - Math.sqrt(5)); const radius = Math.sqrt(index + 1) * 10;
+      const label = this.players.get(metric.id)?.name ?? metric.id; const size = 2 + Math.min(4, Math.sqrt(metric.degree) * .3);
+      this.graph.addNode(metric.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius,
+        label, search: `${label.toLowerCase()} ${metric.id}`, color: communityColor(metric.community), image: "",
+        community: metric.community, degree: metric.degree, groupDegree: 0, fixed: false, size, baseSize: size });
+      this.communities.set(metric.community, (this.communities.get(metric.community) ?? 0) + 1);
     }
-    groupIndex++;
-  }
-  // Reports always contain the admitted seed, including incomplete runs.
-  // Fit sparse and dense runs to their extent instead of leaving small runs in an empty canvas.
-  const x = [...points.values()].map((point) => point.x); const y = [...points.values()].map((point) => point.y);
-  const left = Math.min(...x) - 50; const top = Math.min(...y) - 50;
-  const width = Math.max(...x) - left + 130; const height = Math.max(...y) - top + 50;
-  return { groups, points, left, top, width, height };
-}
-
-// Each newly loaded or reranked report owns its layout; obsolete reports can be collected.
-const layouts = new WeakMap<RunView["report"], ReturnType<typeof positions>>();
-function layout(view: RunView) {
-  let cached = layouts.get(view.report);
-  if (!cached) { cached = positions(view); layouts.set(view.report, cached); }
-  return cached;
-}
-
-export function setZoom(graph: SVGSVGElement, view: RunView, zoom: number) {
-  const { left, top, width, height } = layout(view);
-  graph.setAttribute("viewBox", `${left + width / 2 - width / (2 * zoom)} ${top + height / 2 - height / (2 * zoom)} ${width / zoom} ${height / zoom}`);
-}
-
-function renderLegend(container: HTMLElement, groups: ReadonlyMap<number, RunView["report"]["metrics"]>) {
-  container.replaceChildren();
-  for (const [community, members] of [...groups].sort(([a], [b]) => a - b)) {
-    const entry = document.createElement("span"); const swatch = svgElement("svg"); const dot = svgElement("circle");
-    swatch.setAttribute("width", "12"); swatch.setAttribute("height", "12"); swatch.setAttribute("aria-hidden", "true");
-    dot.setAttribute("cx", "6"); dot.setAttribute("cy", "6"); dot.setAttribute("r", "5"); dot.setAttribute("fill", color(community));
-    swatch.append(dot); entry.append(swatch, document.createTextNode(`Community ${community + 1} · ${members.length}`)); container.append(entry);
-  }
-}
-
-function renderNodes(graph: SVGSVGElement, view: RunView, selection: Selection, points: ReadonlyMap<SteamId, { x: number; y: number }>, foundIds: ReadonlySet<SteamId>, inspect: (id: SteamId) => void, focused: string | null | undefined) {
-  const query = selection.query.trim();
-  const players = new Map(view.scan.players.map((player) => [player.id, player]));
-  for (const metric of view.report.metrics) {
-    const point = points.get(metric.id); if (!point) continue;
-    const player = players.get(metric.id); const name = player?.name ?? metric.id;
-    const node = svgElement("g"); const circle = svgElement("circle"); const title = svgElement("title");
-    node.setAttribute("role", "button"); node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", `${name}, degree ${metric.degree}${metric.hub ? ", hub" : ""}`);
-    node.setAttribute("data-node-id", metric.id);
-    node.setAttribute("opacity", query && !foundIds.has(metric.id) ? ".25" : "1");
-    circle.setAttribute("cx", String(point.x)); circle.setAttribute("cy", String(point.y)); circle.setAttribute("r", metric.hub ? "13" : "10");
-    circle.setAttribute("fill", color(metric.community)); circle.setAttribute("stroke", metric.id === selection.id ? "#fff" : "#282e22"); circle.setAttribute("stroke-width", "2");
-    title.textContent = `${name} · ${metric.degree} connections${metric.hub ? " · hub" : ""}`; node.append(circle, title);
-    if (view.scan.players.length <= 80 && player?.avatar) {
-      const image = svgElement("image"); image.setAttribute("href", player.avatar); image.setAttribute("x", String(point.x - 7)); image.setAttribute("y", String(point.y - 7)); image.setAttribute("width", "14"); image.setAttribute("height", "14");
-      image.addEventListener("error", () => image.remove()); node.append(image);
+    for (const [index, edge] of view.report.edges.entries()) {
+      this.graph.addUndirectedEdgeWithKey(String(index), edge.source, edge.target,
+        { kind: edge.kind, size: .5, color: edge.kind === "friend" ? "#7c8b68" : "#a89768" });
+      if (edge.kind === "group") {
+        this.graph.setNodeAttribute(edge.source, "groupDegree", this.graph.getNodeAttribute(edge.source, "groupDegree") + 1);
+        this.graph.setNodeAttribute(edge.target, "groupDegree", this.graph.getNodeAttribute(edge.target, "groupDegree") + 1);
+      }
     }
-    if (view.scan.players.length <= 30 || metric.id === selection.id || (query && foundIds.has(metric.id))) {
-      const label = svgElement("text"); label.textContent = name; label.setAttribute("x", String(point.x + 14)); label.setAttribute("y", String(point.y + 4)); node.append(label);
-    }
-    node.addEventListener("click", () => inspect(metric.id));
-    node.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); inspect(metric.id); } }); graph.append(node);
-    if (metric.id === focused) node.focus();
+    this.pictures = new NodePictures();
+    /* oxlint-disable unicorn/no-thenable -- Sigma style conditions require non-callable then values. */
+    const styles: StylesDeclaration<Node, Edge, NodeState, EdgeState> = {
+      nodes: {
+        x: { attribute: "x" }, y: { attribute: "y" }, label: { attribute: "label" },
+        size: { whenState: "focus", then: 14, else: { attribute: "size" } },
+        color: { whenState: "selected", then: "#f3e497", else: { attribute: "color" } },
+        opacity: { whenState: "dim", then: .2, else: 1 }, visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
+        depth: { whenState: "focus", then: "topNodes", else: "nodes" }, labelDepth: { whenState: "focus", then: "topNodes", else: "nodes" },
+        labelColor: "#d8ded3", labelFont: "MotivaSans, Arial, sans-serif",
+        labelVisibility: { whenState: "focus", then: "visible", else: { whenState: "match", then: "visible", else: { whenState: "labels", then: "auto", else: "hidden" } } },
+        backdropVisibility: { whenState: "focus", then: "visible", else: "hidden" },
+        backdropColor: "#3e4637", backdropShadowBlur: 0, backdropCornerRadius: 0, backdropPadding: 4,
+      },
+      edges: {
+        color: { whenState: "active", then: "#d8cc75", else: { attribute: "color" } },
+        opacity: { whenState: "active", then: 1, else: { whenState: "dim", then: .08, else: .25 } },
+        size: { whenState: "active", then: 1.3, else: .5 },
+        visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
+        depth: { whenState: "active", then: "topEdges", else: "edges" },
+      },
+    };
+    /* oxlint-enable unicorn/no-thenable */
+    this.renderer = new Sigma<Node, Edge, {}, NodeState, EdgeState>(this.graph, container, {
+      customNodeState: { dim: false, selected: false, focus: false, match: false, labels: true },
+      customEdgeState: { dim: false, active: false },
+      settings: { allowInvalidContainer: true, enableNodeDrag: true, autoRescale: "once", autoRescaleContent: "nodes", stagePadding: 24,
+        zoomDuration: 0, inertiaDuration: 0, doubleClickZoomingDuration: 0, minCameraRatio: .015, maxCameraRatio: 8,
+        zoomToSizeRatioFunction: Math.sqrt, labelDensity: .3, labelRenderedSizeThreshold: 5, hideLabelsOnMove: true, gestureTarget: "graph" },
+      primitives: { nodes: { variables: { image: { type: "string", default: "" } },
+        layers: [layerFill(), this.pictures.layer, layerBorder({ borders: [
+          { size: 1.5, color: { attribute: "color" }, mode: "pixels", fill: false },
+          { size: 0, color: "#00000000", fill: true },
+        ] })],
+        label: { font: { family: "MotivaSans, Arial, sans-serif", size: 12 } } } },
+      // State declarations let Sigma patch dirty GPU entries instead of re-indexing the graph on hover.
+      styles,
+    });
+    this.pictures.attach(this.renderer, this.players, (images) => {
+      // Sigma's batch handler can patch image attributes without rebuilding node/edge indexes.
+      this.graph.updateEachNodeAttributes((id, node) => {
+        const image = images.get(id); return image === undefined ? node : { ...node, image };
+      }, { attributes: ["image"] });
+    });
+    this.recalculate();
+    this.renderer.on("clickNode", ({ node }) => { this.select(node); });
+    this.renderer.on("doubleClickNode", ({ node, preventSigmaDefault }) => { preventSigmaDefault(); this.details(node); });
+    this.renderer.on("downStage", () => this.pause());
+    this.renderer.on("wheelStage", () => this.pause());
+    this.renderer.on("wheelNode", () => this.pause());
+    this.renderer.on("clickStage", () => { if (this.selected) this.select(null); });
+    this.renderer.on("enterNode", ({ node }) => this.hover(node));
+    this.renderer.on("leaveNode", () => this.hover(null));
+    this.renderer.on("nodeDragStart", ({ node }) => { this.pause(); this.graph.setNodeAttribute(node, "fixed", true); this.onChange(); });
+    this.renderer.getCamera().on("updated", (state) => { container.dataset.ratio = String(state.ratio); });
+    this.renderer.on("webglContextLost", () => { this.pause(); this.layoutStatus = "Graphics context lost. Reload this page to retry."; this.onChange(); });
+    container.dataset.ratio = "1";
+    this.layout();
   }
-}
 
-export interface Selection { readonly id: SteamId | null; readonly zoom: number; readonly query: string; readonly edges: string }
-
-/** All labels are text nodes; avatar URLs have already passed the shared provider schema. */
-export function render(graph: SVGSVGElement, legend: HTMLElement, matches: HTMLElement, count: HTMLElement, view: RunView, selection: Selection, inspect: (id: SteamId) => void) {
-  const focused = document.activeElement?.getAttribute("data-node-id");
-  graph.replaceChildren(); matches.replaceChildren();
-  const { groups, points } = layout(view);
-  renderLegend(legend, groups);
-  const query = selection.query.trim().toLowerCase();
-  const found = view.scan.players.filter((player) => player.name.toLowerCase().includes(query) || player.id.includes(query));
-  const foundIds = new Set(found.map((player) => player.id));
-  if (query) {
-    for (const player of found.slice(0, 20)) {
-      const button = document.createElement("button"); button.type = "button"; button.textContent = player.name;
-      button.dataset.tooltip = player.id; button.addEventListener("click", () => inspect(player.id)); matches.append(button);
+  private edgeVisible(source: string, target: string, kind: string) {
+    return this.visible.has(source) && this.visible.has(target) && (this.filters.kind === "all" || this.filters.kind === kind);
+  }
+  private neighbourhood(id: string, hops: number): Set<string> {
+    const members = new Set([id]); let frontier = [id];
+    for (let hop = 0; hop < hops; hop++) {
+      const next: string[] = [];
+      for (const source of frontier) this.graph.forEachEdge(source, (_key, edge, from, to) => {
+        if (this.filters.kind !== "all" && edge.kind !== this.filters.kind) return;
+        const target = from === source ? to : from;
+        if (!members.has(target)) { members.add(target); next.push(target); }
+      });
+      frontier = next;
     }
-    const status = document.createElement("span"); status.textContent = `${found.length} matching profiles${found.length > 20 ? ", first 20 shown" : ""}`; matches.append(status);
+    return members;
   }
-  const edges = view.report.edges.filter((edge) => selection.edges === "all" || edge.kind === selection.edges);
-  const shown = selection.id ? edges.filter((edge) => edge.source === selection.id || edge.target === selection.id) : edges;
-  for (const edge of shown.slice(0, 1500)) {
-    const from = points.get(edge.source); const to = points.get(edge.target); if (!from || !to) continue;
-    const line = svgElement("line");
-    line.setAttribute("x1", String(from.x)); line.setAttribute("y1", String(from.y)); line.setAttribute("x2", String(to.x)); line.setAttribute("y2", String(to.y));
-    line.setAttribute("stroke", edge.kind === "friend" ? "#879b76" : "#aa9767"); graph.append(line);
+  private recalculate() {
+    const filters = this.filters; const query = filters.query.trim().toLowerCase();
+    const neighbourhood = this.selected && filters.scope !== "all" ? this.neighbourhood(this.selected, filters.scope === "two" ? 2 : 1) : null;
+    this.visible.clear(); this.found.clear(); this.visibleEdges = 0;
+    this.graph.forEachNode((id, node) => {
+      const player = this.players.get(id);
+      if ((filters.community !== "all" && node.community !== Number(filters.community)) || (filters.kind === "group" ? node.groupDegree : filters.kind === "all" ? node.degree + node.groupDegree : node.degree) < filters.minimum
+        || (filters.availability !== "all" && player?.friendsStatus !== filters.availability) || (neighbourhood && !neighbourhood.has(id))) return;
+      this.visible.add(id);
+      if (query && node.search.includes(query)) this.found.add(id);
+    });
+    this.graph.forEachNode((id) => this.renderer.setNodeState(id, { isHidden: !this.visible.has(id), match: this.found.has(id) }));
+    this.graph.forEachEdge((key, edge, from, to) => {
+      const visible = this.edgeVisible(from, to, edge.kind); if (visible) this.visibleEdges++;
+      this.renderer.setEdgeState(key, { isHidden: !visible });
+    });
+    this.container.dataset.nodes = String(this.visible.size); this.container.dataset.edges = String(this.visibleEdges);
+    this.container.dataset.selected = this.selected ?? "";
+    this.pictures.request();
+    this.highlight();
   }
-  renderNodes(graph, view, selection, points, foundIds, inspect, focused);
-  setZoom(graph, view, selection.zoom);
-  count.textContent = `${view.scan.players.length} profiles · ${Math.min(shown.length, 1500)}/${shown.length} edges drawn`;
+  private hover(id: string | null) {
+    this.hovered = id;
+    // Leaving A and entering B happen together. Apply their final state once per frame.
+    if (!this.hoverFrame) this.hoverFrame = requestAnimationFrame(() => { this.hoverFrame = 0; this.highlight(); });
+  }
+  private highlight() {
+    const highlighted: Set<string> = this.hovered ? this.neighbourhood(this.hovered, 1)
+      : this.filters.query.trim() ? new Set(this.found) : this.selected ? this.neighbourhood(this.selected, 1) : new Set();
+    const focus = this.hovered ?? this.selected; const activeEdges = new Set<string>(focus ? this.graph.edges(focus) : []);
+    if (focus) this.pictures.request(focus);
+    const dimChanged = Boolean(highlighted.size) !== Boolean(this.highlighted.size);
+    const nodes = dimChanged ? this.graph.nodes() : new Set([...this.highlighted, ...highlighted]);
+    const edges = dimChanged ? this.graph.edges() : new Set([...this.activeEdges, ...activeEdges]);
+    for (const id of nodes) this.renderer.setNodeState(id, { dim: highlighted.size > 0 && !highlighted.has(id) });
+    for (const key of edges) this.renderer.setEdgeState(key, { dim: highlighted.size > 0, active: activeEdges.has(key) });
+    const focused = new Set<string>(); if (this.hovered) focused.add(this.hovered); if (this.selected) focused.add(this.selected);
+    for (const id of new Set([...this.focused, ...focused])) this.renderer.setNodeState(id, { focus: focused.has(id), selected: id === this.selected });
+    this.highlighted = highlighted; this.activeEdges = activeEdges; this.focused = focused;
+  }
+  update(filters: Partial<Filters>) {
+    const next = { ...this.filters, ...filters };
+    const queryOnly = next.kind === this.filters.kind && next.scope === this.filters.scope && next.community === this.filters.community
+      && next.minimum === this.filters.minimum && next.availability === this.filters.availability;
+    if (queryOnly && next.query === this.filters.query) return;
+    this.filters = next;
+    if (queryOnly) {
+      const previous = this.found; this.found = new Set(); const query = next.query.trim().toLowerCase();
+      if (query) for (const id of this.visible) if (this.graph.getNodeAttribute(id, "search").includes(query)) this.found.add(id);
+      for (const id of new Set([...previous, ...this.found])) this.renderer.setNodeState(id, { match: this.found.has(id) });
+      this.highlight();
+    } else this.recalculate();
+    this.onChange();
+  }
+  select(id: string | null, center = false) {
+    this.selected = id;
+    if (!id && this.filters.scope !== "all") this.filters = { ...this.filters, scope: "all" };
+    if (this.filters.scope !== "all" || this.visible.size !== this.graph.order) this.recalculate();
+    else this.highlight();
+    this.container.dataset.selected = id ?? ""; this.onChange();
+    if (center && id && this.visible.has(id)) {
+      const node = this.renderer.getNodeDisplayData(id);
+      if (node) this.renderer.getCamera().setState({ x: node.x, y: node.y, ratio: Math.min(.3, this.renderer.getCamera().ratio) });
+    }
+  }
+  details(id = this.selected) { const player = id ? this.players.get(id) : undefined; if (player) this.inspect(player.id); }
+  matches() {
+    const ids = this.filters.query.trim() ? this.found : this.visible;
+    return [...ids].map((id) => this.players.get(id)).filter((player) => player !== undefined);
+  }
+  summary() {
+    const filtered = this.visible.size !== this.graph.order || this.visibleEdges !== this.graph.size;
+    return `${this.visible.size.toLocaleString()} profiles · ${this.visibleEdges.toLocaleString()} connections${filtered ? ` shown of ${this.graph.order.toLocaleString()} / ${this.graph.size.toLocaleString()}` : ""}`;
+  }
+  visibleConnections(id: string) {
+    let count = 0;
+    this.graph.forEachEdge(id, (_key, edge, from, to) => { if (this.edgeVisible(from, to, edge.kind)) count++; });
+    return count;
+  }
+  status() { return this.layoutStatus; }
+  isRunning() { return this.worker !== null; }
+  isPinned() { return this.selected ? this.graph.getNodeAttribute(this.selected, "fixed") : false; }
+  pin() { if (this.selected) { this.pause(); this.graph.setNodeAttribute(this.selected, "fixed", !this.isPinned()); this.onChange(); } }
+  zoom(factor: number) { const camera = this.renderer.getCamera(); camera.setState({ ratio: camera.getBoundedRatio(camera.ratio / factor) }); }
+  fit() { this.renderer.getCamera().setState({ x: .5, y: .5, angle: 0, ratio: 1 }); }
+  appearance(labels: boolean, size: number) {
+    if (labels !== this.labels) {
+      this.labels = labels; this.renderer.setNodesState(this.graph.nodes(), { labels });
+    }
+    if (size !== this.size) {
+      this.size = size;
+      this.pictures.request();
+      this.graph.updateEachNodeAttributes((_id, node) => ({ ...node, size: node.baseSize * size }), { attributes: ["size"] });
+    }
+  }
+  pause() { this.worker?.terminate(); this.worker = null; if (!this.settled) this.layoutStatus = "Layout paused"; this.onChange(); }
+  layout() {
+    this.pause(); this.settled = false; this.layoutStatus = "Arranging…";
+    const worker = new Worker("/network-layout.js", { type: "module" }); this.worker = worker;
+    worker.onmessage = (event: MessageEvent<LayoutFrame>) => {
+      if (this.disposed || this.worker !== worker) return;
+      let index = 0;
+      // Safety: this bundled worker emits exactly two coordinates per node, in graph insertion order.
+      this.graph.updateEachNodeAttributes((_id, node) => {
+        const x = event.data.positions[index++]!; const y = event.data.positions[index++]!;
+        return { ...node, x, y };
+      }, { attributes: ["x", "y"] });
+      // One fit after layout, with no reset of the user's camera.
+      this.renderer.setSetting("autoRescale", "once");
+      this.pictures.request();
+      this.settled = true; worker.terminate(); this.worker = null; this.layoutStatus = "Layout settled";
+      this.onChange();
+    };
+    worker.onerror = () => {
+      if (this.disposed || this.worker !== worker) return;
+      this.pause(); this.layoutStatus = "Layout failed. Choose Arrange to retry."; this.onChange();
+    };
+    // Layout follows observed friendships, not the potentially dense shared-group projection.
+    const layoutGraph = new Graph<LayoutNode>({ type: "undirected" });
+    this.graph.forEachNode((id, node) => layoutGraph.addNode(id, { x: node.x, y: node.y, size: node.size, fixed: node.fixed }));
+    this.graph.forEachEdge((_key, edge, from, to) => { if (edge.kind === "friend") layoutGraph.mergeEdge(from, to); });
+    worker.postMessage(layoutGraph.export()); this.onChange();
+  }
+  destroy() { this.disposed = true; this.onChange = () => {}; this.pause(); cancelAnimationFrame(this.hoverFrame); this.pictures.destroy(); this.renderer.kill(); }
 }

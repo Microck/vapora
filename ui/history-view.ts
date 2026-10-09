@@ -157,14 +157,14 @@ export function render(report: History.HistoryReport, selectedScan?: Scan) {
   current = report; scan = selectedScan; page = 0;
   get("history-result").hidden = false; get("history-name").textContent = report.profile.name;
   get("history-asof").textContent = `History as of ${date(report.profile.lastChecked)}`;
-  get("history-asof").dataset.tooltip = report.warning;
+  get("history-asof").dataset.tooltip = History.diagnosticText(report.warning);
   const sources = get("history-sources"); sources.replaceChildren();
   report.sources.forEach((source, index) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = `Original ${index + 1}`;
     button.dataset.tooltip = `Captured ${source.capturedAt}`;
     button.addEventListener("click", () => download(source.contents, `history-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
   });
-  get("history-warnings").textContent = report.warnings.join("\n"); get("history-warnings").hidden = !report.warnings.length;
+  get("history-warnings").textContent = History.diagnosticText(report.warnings.join("\n")); get("history-warnings").hidden = !report.warnings.length;
   renderTable();
 }
 export function initialize() {

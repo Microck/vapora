@@ -3,6 +3,7 @@ import { strToU8, zipSync } from "fflate";
 import type { RunView } from "./contracts.js";
 import type { SteamId } from "./model.js";
 import * as Analysis from "./analysis.js";
+import { diagnosticText } from "./history.js";
 
 export type Observations = Omit<RunView, "report">;
 
@@ -107,7 +108,7 @@ function buildVault(view: RunView): Uint8Array {
   const notes = collect(view); const { names, link } = notes;
   const files: Record<string, Uint8Array> = {};
   const add = (name: string, lines: readonly string[]) => { files[name] = strToU8(lines.join("\n") + "\n"); };
-  const warnings = [...report.warnings, ...(scan.error ? [scan.error] : []), ...(historyError ? [historyError] : [])];
+  const warnings = [...report.warnings, ...(scan.error ? [scan.error] : []), ...(historyError ? [diagnosticText(historyError)] : [])];
   add("Vapora.md", [
     "# Vapora", "", `Target: ${link(scan.seed)}`, `Run: ${scan.id}`, `Collected: ${text(scan.updatedAt)}`,
     `Status: ${scan.status}${scan.truncated ? "; node cap reached" : ""}`, "",
@@ -125,7 +126,7 @@ function buildVault(view: RunView): Uint8Array {
   if (history) {
     add("History.md", [
       "# Account history", "", `Account: ${link(scan.seed)}`, `Source as of: ${date(history.profile.lastChecked)}`, "",
-      ...history.warnings.map((warning) => `- ${text(warning)}`), "", "## Historical friendships", "",
+      ...history.warnings.map((warning) => `- ${text(diagnosticText(warning))}`), "", "## Historical friendships", "",
       ...history.friends.map((friend) => `- ${link(friend.id)}: ${friend.status}; observed ${date(friend.asOf)}; duration ${value(friend.durationSeconds)} seconds`),
       "", "## Captured comments", "", ...history.comments.flatMap((comment) => [
         `### ${date(comment.timestamp)}`, "", `Author: ${comment.author ? link(comment.author) : "Unknown"}`,

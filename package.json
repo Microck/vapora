@@ -1,6 +1,6 @@
 {
   "name": "vapora",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "private": true,
   "description": "Explore public Steam friend networks",
   "type": "module",
@@ -11,6 +11,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "postinstall": "node scripts/fix-sigma-types.mjs",
     "build": "tsc && node scripts/build-ui.mjs",
     "check": "tsc --noEmit",
     "lint": "oxlint",
@@ -25,13 +26,18 @@
     "build:history": "node scripts/build-history.mjs"
   },
   "dependencies": {
+    "@sigma/node-border": "4.0.0",
+    "@sigma/node-image": "4.0.0",
     "effect": "4.0.1",
     "fflate": "0.8.3",
     "graphology": "0.26.0",
     "graphology-communities-louvain": "2.0.2",
-    "graphology-metrics": "2.4.0"
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-metrics": "2.4.0",
+    "sigma": "4.0.0"
   },
   "devDependencies": {
+    "@electron-internal/extract-zip": "1.0.5",
     "@electron/asar": "4.3.1",
     "@oxlint/plugins": "1.87.0",
     "@types/node": "24.0.0",
@@ -40,8 +46,7 @@
     "esbuild": "0.25.11",
     "oxlint": "1.87.0",
     "puppeteer-core": "25.10.0",
-    "typescript": "5.9.3",
-    "@electron-internal/extract-zip": "1.0.5"
+    "typescript": "5.9.3"
   },
   "build": {
     "appId": "dev.micr.vapora",

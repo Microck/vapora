@@ -1,4 +1,4 @@
-import { Cause, Effect } from "effect";
+import { Cause, Clock, Effect } from "effect";
 import { InputError, failureMessage, newPlayer } from "./model.js";
 import type { Player, Scan, Settings } from "./model.js";
 import * as Identifiers from "./ids.js";
@@ -48,10 +48,26 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
   const steam = yield* Steam.Service;
   const store = yield* Storage.Service;
   let scan: Scan = { ...initial, status: "running", error: null };
-  const publish = (phase: string) => Effect.sync(() => observe({
-    id: scan.id, phase, nodes: scan.players.length,
-    scanned: scan.players.filter((p) => p.friendsStatus !== "pending").length, remaining: scan.queue.length,
-  }));
+  const started = yield* Clock.currentTimeMillis;
+  let requests = 0;
+  // Successful logical requests include their pacing and retry time. Resume starts a new sample.
+  const measured = <A, E, R>(request: Effect.Effect<A, E, R>) => request.pipe(Effect.tap(() => Effect.sync(() => { requests++; })));
+  const publish = (phase: string) => Effect.gen(function* () {
+    const elapsed = (yield* Clock.currentTimeMillis) - started;
+    const frontier = new Set(scan.queue);
+    let pendingSummaries = 0; let pendingBans = 0; let optional = 0; let scanned = 0;
+    for (const player of scan.players) {
+      if (frontier.has(player.id) && player.visibility === "pending") pendingSummaries++;
+      if (player.bansStatus === "pending") pendingBans++;
+      if (player.groupsStatus === "pending") optional++;
+      if (player.gamesStatus === "pending") optional++;
+      if (player.friendsStatus !== "pending") scanned++;
+    }
+    const remaining = scan.queue.length + Math.ceil(pendingSummaries / 100) + Math.ceil(pendingBans / 100) + optional;
+    const averageMs = Math.max(elapsed / Math.max(1, requests), scan.settings.requestsPerMinute ? 60000 / scan.settings.requestsPerMinute : 0);
+    observe({ id: scan.id, phase, nodes: scan.players.length, scanned, remaining: scan.queue.length,
+      etaSeconds: requests >= 3 && remaining > 0 ? Math.max(1, Math.ceil(averageMs * remaining / 1000)) : null });
+  });
   const checkpoint = (phase: string) => Effect.gen(function* () {
     scan = { ...scan, updatedAt: new Date().toISOString() };
     yield* store.save(scan);
@@ -60,7 +76,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
   const workflow = Effect.gen(function* () {
     // Resume can use a new credential. Validate it before interpreting privacy or optional-access errors.
     yield* publish("Verifying Steam access");
-    const verified = yield* steam.summaries([scan.seed]);
+    const verified = yield* measured(steam.summaries([scan.seed]));
     const record = verified.find((p) => p.steamid === scan.seed);
     if (!record) return yield* Effect.fail(new InputError({ message: "Steam did not return this account. Check the ID and API key." }));
     scan = { ...scan, players: scan.players.map((p) => p.id === scan.seed ? summary(p, record) : p) };
@@ -71,7 +87,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
       const frontier = new Set(scan.queue);
       const summaryIds = scan.players.filter((p) => frontier.has(p.id) && p.visibility === "pending").slice(0, 100).map((p) => p.id);
       if (summaryIds.length) {
-        const summaries = yield* steam.summaries(summaryIds);
+        const summaries = yield* measured(steam.summaries(summaryIds));
         const records = new Map(summaries.map((record) => [record.steamid, record]));
         scan = { ...scan, players: scan.players.map((p) => summaryIds.includes(p.id) ? summary(p, records.get(p.id)) : p) };
         yield* checkpoint("Checking profile visibility");
@@ -88,7 +104,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
         yield* checkpoint("Skipping private profile");
         continue;
       }
-      const friends = yield* steam.friends(player.id);
+      const friends = yield* measured(steam.friends(player.id));
       const players = scan.players.map((p) => p.id === player.id ? { ...p, friends: friends.values, friendsStatus: friends.status, friendsObservedAt: new Date().toISOString() } : p);
       const known = new Set(players.map((p) => p.id));
       const queue = scan.queue.slice(1);
@@ -109,7 +125,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
     const pending = scan.players.filter((p) => p.bansStatus === "pending").map((p) => p.id);
     for (let offset = 0; offset < pending.length; offset += 100) {
       const batch = pending.slice(offset, offset + 100);
-      const bans = yield* steam.bans(batch);
+      const bans = yield* measured(steam.bans(batch));
       scan = { ...scan, players: scan.players.map((player) => {
         if (!batch.includes(player.id)) return player;
         const ban = bans.find((b) => b.SteamId === player.id);
@@ -123,11 +139,11 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
     for (const player of scan.players) {
       let enriched = player;
       if (player.groupsStatus === "pending") {
-        const groups = yield* steam.groups(player.id);
+        const groups = yield* measured(steam.groups(player.id));
         enriched = { ...enriched, groupsStatus: groups.status, groups: groups.values };
       }
       if (player.gamesStatus === "pending") {
-        const games = yield* steam.games(player.id);
+        const games = yield* measured(steam.games(player.id));
         enriched = { ...enriched, gamesStatus: games.status, games: games.values };
       }
       if (enriched === player) continue;
@@ -144,7 +160,7 @@ export const run = Effect.fn("Scanner.run")(function* (initial: Scan, observe: O
   // This is the lifecycle boundary: save interrupted work, but do not recover the failed scan.
   return yield* workflow.pipe(Effect.onExit((exit) => Effect.gen(function* () {
     if (exit._tag === "Success") return;
-    const cancelled = Cause.hasInterrupts(exit.cause);
+    const cancelled = Cause.hasInterruptsOnly(exit.cause);
     const reason = cancelled ? null : failureMessage(exit.cause);
     scan = { ...scan, status: cancelled ? "cancelled" : "failed", error: reason, updatedAt: new Date().toISOString() };
     yield* store.save(scan);

@@ -1,3 +1,8 @@
+import type { Player, SteamId } from "../src/model.js";
+import type { RunView } from "../src/contracts.js";
+
+const availabilityLabels = { public: "Public", private: "Private", skipped: "Skipped", unavailable: "Unavailable", pending: "Not scanned", disabled: "Off" };
+
 // Independent in-app windows avoid browser popup blockers and work in Electron too.
 let layer = 20;
 let sequence = 0;
@@ -69,3 +74,57 @@ export function record<T>(title: string, value: T, resolveOpener: Opener) {
 window.addEventListener("resize", () => {
   for (const panel of windows) position(panel, panel.offsetLeft, panel.offsetTop);
 });
+
+function rankingFacts(selected: RunView, id: SteamId): readonly (readonly [string, string | number])[] {
+  const rank = selected?.report.friends.find((friend) => friend.id === id);
+  return rank ? [
+    ["Incoming mutuals", rank.incomingMutual], ["Undirected mutuals", rank.mutual],
+    ["Count index / 100", rank.countIndex?.toFixed(2) ?? "Unknown"], ["Reference friends", selected?.report.coverage.directFriends ?? 0],
+    ["Game Jaccard", rank.gameJaccard?.toFixed(4) ?? "Unknown"], ["Group Jaccard", rank.groupJaccard?.toFixed(4) ?? "Unknown"],
+  ] : [];
+}
+function profileFacts(player: Player, metric: RunView["report"]["metrics"][number] | undefined): readonly (readonly [string, string | number])[] {
+  const bans = player.bans;
+  return [
+    ["Friend list as of", player.friendsObservedAt ? new Date(player.friendsObservedAt).toLocaleString() : "Not observed"],
+    ["Bans as of", player.bansObservedAt ? new Date(player.bansObservedAt).toLocaleString() : "Not observed"],
+    ["Depth", player.level], ["Profile", availabilityLabels[player.visibility]], ["Friend list", availabilityLabels[player.friendsStatus]],
+    ["Groups", player.groupsStatus === "public" ? player.groups.length : availabilityLabels[player.groupsStatus]],
+    ["Games", player.gamesStatus === "public" ? player.games.length : availabilityLabels[player.gamesStatus]],
+    ["VAC bans", bans ? bans.vacCount : availabilityLabels[player.bansStatus]],
+    ["Game bans", bans ? bans.game : availabilityLabels[player.bansStatus]], ["Community ban", bans ? bans.community ? "Yes" : "No" : availabilityLabels[player.bansStatus]],
+    ["Degree", metric?.degree ?? "unknown"], ["Betweenness", metric?.betweenness.toFixed(4) ?? "unknown"],
+    ["Community", metric ? metric.community + 1 : "unknown"], ["Hub", metric ? metric.hub ? "Yes" : "No" : "unknown"],
+  ];
+}
+export function profile(selected: RunView, account: SteamId, resolveOpener: Opener) {
+  const player = selected?.scan.players.find((p) => p.id === account);
+  const rank = selected?.report.friends.find((friend) => friend.id === account);
+  const metric = selected?.report.metrics.find((m) => m.id === account);
+  const id = player?.id ?? rank?.id;
+  if (!id) return;
+  const name = player?.name ?? rank?.name ?? id;
+  const contents = document.createElement("div");
+  const identity = document.createElement("div"); identity.className = "details-identity";
+  const text = document.createElement("div"); const heading = document.createElement("h3"); heading.textContent = name;
+  const link = document.createElement("a"); link.href = `https://steamcommunity.com/profiles/${id}/`;
+  link.target = "_blank"; link.rel = "noreferrer"; link.textContent = id; link.dataset.tooltip = "Open Steam profile";
+  text.append(heading, link); identity.append(avatar(player?.avatar ?? null), text);
+  const facts = document.createElement("dl"); facts.className = "details-facts";
+  const fields = player ? profileFacts(player, metric) : [["Collection", "Outside admitted graph"]] as const;
+  for (const [label, value] of [...fields, ...rankingFacts(selected, id)]) {
+    const term = document.createElement("dt"); term.textContent = label;
+    const detail = document.createElement("dd"); detail.textContent = String(value); facts.append(term, detail);
+  }
+  contents.append(identity, facts); open(`Details for ${name}`, contents, resolveOpener, id);
+}
+
+/** A missing or failed Steam image keeps the same square placeholder, without repeated retries. */
+export function setAvatar(image: HTMLImageElement, url: string | null) {
+  image.onerror = url ? () => { image.onerror = null; image.src = "/placeholder.jpg"; } : null;
+  image.referrerPolicy = "no-referrer"; image.alt = ""; image.src = url ?? "/placeholder.jpg";
+}
+export function avatar(url: string | null) {
+  const image = document.createElement("img"); image.className = "profile-avatar"; image.width = 24; image.height = 24;
+  setAvatar(image, url); return image;
+}

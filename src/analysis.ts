@@ -1,7 +1,8 @@
 import { UndirectedGraph } from "graphology";
 import louvain from "graphology-communities-louvain";
 import betweenness from "graphology-metrics/centrality/betweenness.js";
-import { Effect } from "effect";
+import { Worker } from "node:worker_threads";
+import { Effect, Schema } from "effect";
 import type { Player, Scan, SteamId } from "./model.js";
 import { InputError } from "./model.js";
 import type { Ranking } from "./model.js";
@@ -10,6 +11,25 @@ import * as Scoring from "./scoring.js";
 import * as Storage from "./storage.js";
 
 export type { Report } from "./contracts.js";
+
+export class AnalysisError extends Schema.TaggedError<AnalysisError>()("AnalysisError", { message: Schema.String }) {}
+
+/** Own the worker until it exits, including when collection or application shutdown interrupts it. */
+export const calculate = Effect.fn("Analysis.calculate")(function* (scan: Scan) {
+  return yield* Effect.acquireUseRelease(
+    Effect.try({ try: () => new Worker(new URL("./analysis-worker.js", import.meta.url), { workerData: scan }),
+      catch: (error) => new AnalysisError({ message: `Could not start network analysis: ${String(error)}` }) }),
+    (worker) => Effect.tryPromise({
+      try: () => new Promise<Report>((resolve, reject) => {
+        worker.once("message", resolve);
+        worker.once("error", reject);
+        worker.once("exit", (code) => reject(new Error(`Network analysis exited before returning results (${code}).`)));
+      }),
+      catch: (error) => new AnalysisError({ message: `Network analysis failed: ${String(error)}` }),
+    }),
+    (worker) => Effect.promise(() => worker.terminate()),
+  );
+});
 
 const intersection = <T>(left: ReadonlySet<T>, right: ReadonlySet<T>): number => {
   let count = 0;
@@ -157,7 +177,7 @@ export function csv(rows: readonly (readonly (string | number | boolean | null)[
 
 export const exportRun = Effect.fn("Analysis.exportRun")(function* (scan: Scan) {
   const store = yield* Storage.Service;
-  const report = analyze(scan);
+  const report = yield* calculate(scan);
   const players = new Map(scan.players.map((p) => [p.id, p]));
   const nodes = csv([
     ["Id", "Label", "degree", "betweenness", "modularity_class", "is_seed", "is_hub", "is_banned", "vac_bans", "is_public"],

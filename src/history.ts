@@ -64,6 +64,10 @@ const captureTime = (capturedAt: string) => {
   const parsed = Date.parse(capturedAt);
   return Number.isNaN(parsed) ? -Infinity : parsed;
 };
+/** Keep diagnostic copy neutral without changing retained records or original downloads. */
+export function diagnosticText(message: string): string {
+  return message.replace(/\bSteamHistory(?:\.net)?\b/gi, "History");
+}
 export function coverageError(bundle: Bundle): string | null {
   let latest: Bundle["sources"][number] | undefined; let latestDate = -Infinity;
   for (const source of bundle.sources) {
@@ -72,7 +76,7 @@ export function coverageError(bundle: Bundle): string | null {
     if (!latest || date > latestDate) { latest = source; latestDate = date; }
   }
   const issues = latest?.coverage.flatMap((section) => section.error ? [section.error] : []) ?? [];
-  return issues.length ? issues.join("\n") : null;
+  return issues.length ? diagnosticText(issues.join("\n")) : null;
 }
 
 const text = (value: typeof Schema.Json.Type | undefined) => Schema.is(Schema.String)(value) ? value : null;
