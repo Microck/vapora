@@ -547,6 +547,7 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.focus("#mutualWeight"); await page.waitForSelector("#app-tooltip:popover-open");
   assert.equal(await page.$eval("#app-tooltip", (tooltip) => {
     const box = tooltip.getBoundingClientRect();
+    if (!box.width || !box.height) return false;
     return [...document.querySelectorAll("#scan-ranking-form input, #scan-ranking-form select, #scan-ranking-form button")].every((control) => {
       const rect = control.getBoundingClientRect();
       return rect.right <= box.left || rect.left >= box.right || rect.bottom <= box.top || rect.top >= box.bottom;
