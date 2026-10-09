@@ -67,7 +67,7 @@ export class NodePictures {
         next.resolve(source); this.load();
       };
       // A stalled CDN or failed local placeholder must not occupy a request slot forever.
-      this.active.set(image, setTimeout(() => finish("/placeholder.jpg"), 15000));
+      this.active.set(image, setTimeout(() => finish(new URL(image.src).pathname === "/placeholder.jpg" ? "" : "/placeholder.jpg"), 15000));
       image.onerror = () => {
         if (new URL(image.src).pathname === "/placeholder.jpg") finish("");
         else image.src = "/placeholder.jpg";
