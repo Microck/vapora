@@ -5,7 +5,8 @@ export function install(tooltip: HTMLElement) {
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   function findTrigger(target: EventTarget | null) {
     const anchor = target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null;
-    if (!anchor) return null;
+    // A control can replace itself in its click handler before this delegated event arrives.
+    if (!anchor || !anchor.isConnected) return null;
     const modal = document.querySelector("dialog:modal");
     return modal && !modal.contains(anchor) ? null : anchor;
   }

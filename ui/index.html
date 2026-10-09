@@ -84,6 +84,7 @@
           <div class="panel rail-settings">
             <button id="save-settings" class="icon-button" type="button" aria-label="Save settings" data-tooltip="Save settings"><img src="/save.svg" width="22" height="22" alt=""></button>
             <button id="open-settings" class="icon-button" type="button" aria-label="Load settings" data-tooltip="Load settings"><img src="/presets.png" width="22" height="22" alt=""></button>
+            <button id="target-history" class="icon-button" type="button" aria-label="History" data-tooltip="History" aria-controls="history-screen"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5a8 8 0 1 1-2 6M2 3v6h6M11 6v5l3 2" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
           </div>
         </aside>
         <section class="panel target-panel" aria-label="Target profile">
@@ -98,7 +99,7 @@
           <p id="target-id" class="sr-only" hidden></p>
             <img id="target-avatar" class="avatar" src="/placeholder.jpg" width="210" height="210" alt="" referrerpolicy="no-referrer">
           </div>
-          <div class="target-history"><button id="target-history" type="button">History</button><span id="target-history-status" role="status"></span><button id="target-history-retry" type="button" hidden>Retry</button></div>
+          <div class="target-history"><span id="target-history-status" role="status"></span><button id="target-history-retry" type="button" hidden>Retry</button></div>
           <div class="target-actions">
             <button id="scan-button" type="submit" form="scan-form" aria-describedby="key-indicator">Analyze</button>
             <button id="estimate-button" type="button">Estimate</button>
@@ -147,7 +148,7 @@
     </dialog>
 
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
-      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="history">History</button><button type="button" data-screen="scan">New scan</button></div>
+      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="scan">New scan</button></div>
       <section id="run-library" class="panel" aria-label="Saved runs">
         <div class="section-line"><h2>Saved runs</h2><label>Find run<input id="run-search" type="search" placeholder="Name or Steam ID"></label><label>Status<select id="run-status"><option value="all">All</option><option value="complete">Complete</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="running">Unfinished</option></select></label></div>
         <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Created</th><th>Status</th><th>Profiles</th><th>Run</th></tr></thead><tbody id="run-rows"></tbody></table></div>
@@ -215,22 +216,18 @@
             <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required></label>
           </div><button id="save-ranking" type="submit">Save ranking</button></form>
         </section>
-        </div><aside id="profile-inspector" class="panel profile-inspector" aria-label="Profile details" hidden>
-          <div class="inspector-heading"><h2>Profile</h2><button id="close-inspector" type="button" aria-label="Close profile details">×</button></div>
-          <div class="inspector-identity"><img id="inspect-avatar" class="profile-avatar" width="48" height="48" alt="" referrerpolicy="no-referrer"><div><h2 id="inspect-name"></h2><a id="inspect-link" target="_blank" rel="noreferrer">Steam profile ↗</a></div></div>
-          <dl id="inspect-facts"></dl>
-        </aside></div>
+        </div></div>
       </section>
     </section>
 
     <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
-      <div class="page-heading"><h1 id="history-heading">SteamHistory</h1><div class="results-actions"><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button type="button" data-screen="results">Back to Results</button></div></div>
+      <div class="page-heading"><h1 id="history-heading">History</h1><div class="results-actions"><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button type="button" data-screen="results">Back to Results</button></div></div>
       <p id="history-fetch-status" role="status" hidden></p><button id="history-retry" type="button" hidden>Retry history</button>
       <section id="history-section">
-        <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import SteamHistory</h2>
+        <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import History</h2>
           <form id="history-form" class="stack-form">
             <label for="history-file">History file, up to 2 MB</label>
-            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" data-tooltip="SteamHistory JSON, profile snapshots, or the complete data/chunk response" required>
+            <input id="history-file" type="file" accept=".json,.ndjson,.jsonl,application/json" data-tooltip="History JSON, profile snapshots, or the complete data/chunk response" required>
             <label class="check"><input id="attach-history" type="checkbox">Attach to the selected run</label>
             <button type="submit">Analyze history</button>
           </form>
@@ -251,8 +248,6 @@
         </div>
       </section>
     </section>
-
-    <dialog id="history-details" aria-labelledby="history-details-heading"><h2 id="history-details-heading">Captured record</h2><pre id="history-inspect"></pre><div class="dialog-actions"><button id="history-details-close" type="button">Close</button></div></dialog>
 
     <dialog id="key-dialog" aria-labelledby="connection-heading" aria-describedby="key-session-note">
       <form id="key-form">

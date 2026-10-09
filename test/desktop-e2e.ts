@@ -133,6 +133,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   }), seed, "Keyboard entry did not reach the target field");
   await page.click("#lookup-target");
   await page.waitForFunction(() => ["History ready", "History partial", "History unavailable"].includes(document.querySelector("#target-history-status")?.textContent ?? ""), { timeout: 110000 });
+  assert.equal(await page.evaluate(() => document.hasFocus()), true, "Background history must not steal desktop focus");
   const historyState = await page.evaluate(() => ({ status: document.querySelector("#target-history-status")?.textContent,
     error: document.querySelector("#history-fetch-status")?.textContent }));
   assert.equal(historyState.status, "History ready", `Bundled history failed: ${JSON.stringify({ historyState, requests: history.requests() })}`);
@@ -157,7 +158,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     return link.href;
   }));
   await page.waitForFunction(() => !document.querySelector<HTMLElement>("#open-history")?.hidden);
-  assert.equal(downloadLinks.length, 7);
+  assert.equal(downloadLinks.length, 8);
   for (const url of downloadLinks) {
     const response = await fetch(url, { headers: { "user-agent": userAgent } });
     assert.equal(response.status, 200); assert.ok((await response.arrayBuffer()).byteLength);

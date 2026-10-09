@@ -31,7 +31,7 @@ async def serve():
     if not re.fullmatch(r"[0-9]{17}", account) or not 76561197960265728 < int(account) <= 76561202255233023:
         raise ValueError("Invalid Steam account.")
     if origin != "https://steamhistory.net" and not re.fullmatch(r"http://127\.0\.0\.1:\d+", origin):
-        raise ValueError("Only SteamHistory or a loopback test provider is accepted.")
+        raise ValueError("Only History or a loopback test provider is accepted.")
     # Frozen Python adjusts native library lookup. Chromium must use its own libraries.
     if getattr(sys, "frozen", False):
         if sys.platform == "win32":
@@ -46,7 +46,8 @@ async def serve():
     options = ChromiumOptions()
     options.binary_location = browser_path
     options.start_timeout = 20
-    for argument in ["--window-size=900,700",
+    # Windowless Chromium never steals focus or opens a verification popup.
+    for argument in ["--headless=new", "--window-size=900,700",
                      f"--user-agent={USER_AGENT}", f"--user-data-dir={profile_path}"]:
         options.add_argument(argument)
     # The distributed default keeps Chromium's sandbox. CI may explicitly opt out.
@@ -65,12 +66,12 @@ async def serve():
                 state = await evaluate(tab, "({title:document.title,origin:location.origin,status:performance.getEntriesByType('navigation')[0]?.responseStatus})")
                 if state["title"] != "Just a moment..." and state["origin"] == origin:
                     if state.get("status", 200) >= 400:
-                        raise ValueError("SteamHistory did not open the requested profile.")
+                        raise ValueError("History did not open the requested profile.")
                     break
             except RuntimeError:
                 pass
             if asyncio.get_running_loop().time() >= deadline:
-                raise ValueError("SteamHistory verification did not finish. Retry or import a saved capture.")
+                raise ValueError("History verification did not finish. Retry or import a saved capture.")
             await asyncio.sleep(0.5)
         emit({"id": 0, "ready": True})
         while True:
@@ -83,7 +84,7 @@ async def serve():
             path = command.get("path", "")
             allowed = f"/id/{account}/"
             if not path.startswith(allowed) or not re.fullmatch(r"(?:__data\.json|history\?[a-zA-Z0-9=&%-]+)", path[len(allowed):]):
-                raise ValueError("Unsupported SteamHistory request.")
+                raise ValueError("Unsupported History request.")
             try:
                 script = """(async()=>{
                   const response=await fetch(PATH,{credentials:'include',signal:AbortSignal.timeout(20000)});
@@ -104,7 +105,7 @@ async def serve():
                 response["contents"] = base64.b64decode(response["contents"]).decode("utf-8")
                 emit({"id": command["id"], **response})
             except (RuntimeError, asyncio.TimeoutError, UnicodeDecodeError):
-                emit({"id": command["id"], "error": "SteamHistory's response could not be read. Retry the capture."})
+                emit({"id": command["id"], "error": "History's response could not be read. Retry the capture."})
 
 
 if __name__ == "__main__":
@@ -112,5 +113,5 @@ if __name__ == "__main__":
         asyncio.run(serve())
     except Exception:
         # Browser paths, cookies, challenge URLs and private page content stay out of IPC.
-        emit({"id": 0, "error": "SteamHistory's browser could not load the profile. Check the display, close any failed verification window, then retry."})
+        emit({"id": 0, "error": "History's browser could not load the profile. Retry or import a saved capture."})
         sys.exit(1)

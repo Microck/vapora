@@ -5,7 +5,7 @@ description: "Accepted inputs, capture identity, membership and coverage semanti
 
 ## Accepted inputs
 
-Vapora accepts normalized SteamHistory JSON, profile NDJSON and the provider's flattened Svelte data/chunk stream. A capture must identify one account. Mixed accounts, mismatched attachments and malformed recognized sections fail explicitly. Browser imports are limited to 2 MB.
+Vapora accepts normalized account history JSON, profile NDJSON and the provider's flattened Svelte data/chunk stream. A capture must identify one account. Mixed accounts, mismatched attachments and malformed recognized sections fail explicitly. Browser imports are limited to 2 MB.
 
 ```json
 {
@@ -43,4 +43,4 @@ Every distinct original UTF-8 input, capture, provider field and comment version
 
 Automatic fetching records profile and page responses and their URLs. Malformed or repeated pages, empty pages before declared totals, inconsistent totals, request failures and bounded limits produce partial coverage. Profile-summary totals remain separate from accessible endpoint totals. Provider-restricted records are not inferred from a discrepancy.
 
-See [SteamHistory workflow](/docs/guides/history) and the [product contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md#history-restoration-and-analysis).
+See [History workflow](/docs/guides/history) and the [product contract](https://github.com/Microck/vapora/blob/main/docs/product-contract.md#history-restoration-and-analysis).

@@ -9,8 +9,9 @@ import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
+import { unzipSync, strFromU8 } from "fflate";
 import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
-import { defaults, SteamId, Settings } from "../src/model.js";
+import { defaults, SteamId, Settings, newPlayer } from "../src/model.js";
 import * as Steam from "../src/steam.js";
 import * as Storage from "../src/storage.js";
 import * as Scanner from "../src/scanner.js";
@@ -244,10 +245,60 @@ test("local server validates host and origin, protects keys, and runs a complete
     assert.equal(current.runs.find((run) => run.id === current.job.id)?.avatar, `${fixture.url}/avatars/${seed}.svg`);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=gephi%2Fnodes.csv`)).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=..%2F.env`)).status, 404);
-    assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000, historic: { friends: [] } }) }))).status, 200);
+    assert.equal((await request("/api/history", JSON.stringify({ runId: current.job.id, contents: JSON.stringify({ steamID64: seed, lastChecked: 1000,
+      historic: { friends: [{ Friend: fourth, Name: "Known outside friend", FriendDate: 500 }, { Friend: second, Name: "Older Bob", FriendDate: 500 }] } }) }))).status, 200);
     assert.equal((await request(`/api/download?id=${current.job.id}&file=history.json`)).status, 200);
     const attached = Schema.decodeUnknownSync(Contracts.RunView)(await (await request(`/api/runs/${current.job.id}`)).json());
     assert.equal(attached.history?.profile.steamID64, seed);
+    const disabledArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+    assert.match(strFromU8(disabledArchive[`Profiles/${seed}.md`]!), /groups_status: "disabled"/);
+    assert.match(strFromU8(disabledArchive[`Profiles/${seed}.md`]!), /games_status: "disabled"/);
+    const hostileName = '<img src=x> [[Bad]] | # "quoted"\nline';
+    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan, settings: { ...view.scan.settings, includeGroups: true, includeGames: true },
+      players: view.scan.players.map((player) => player.id === seed ? { ...player, name: hostileName, groupsStatus: "unavailable", gamesStatus: "private" } : { ...player, groupsStatus: "public", gamesStatus: "public" }) }));
+    const checkpoint = await readFile(join(root, "outputs", view.scan.id, "scan.json"));
+    const beforeExport = fixture.requests.length;
+    const download = await request(`/api/obsidian?id=${view.scan.id}`);
+    assert.equal(download.status, 200); assert.equal(download.headers.get("content-type"), "application/zip");
+    assert.match(download.headers.get("content-disposition") ?? "", /obsidian.zip/);
+    const notes = unzipSync(new Uint8Array(await download.arrayBuffer()));
+    assert.ok(notes["Vapora.md"]); assert.ok(notes["History.md"]);
+    assert.match(strFromU8(notes[`Profiles/${seed}.md`]!), /steam_id: "765611/);
+    const targetNote = strFromU8(notes[`Profiles/${seed}.md`]!);
+    assert.ok(targetNote.includes(`name: ${JSON.stringify(hostileName)}`));
+    assert.match(targetNote, /groups_status: "unavailable"/); assert.match(targetNote, /games_status: "private"/);
+
+    assert.ok(!targetNote.replace(/^---\n[\s\S]*?\n---\n/, "").includes("<img"));
+    assert.ok(!notes["Bad.md"]);
+
+    const outside = view.report.friends.find((friend) => !view.scan.players.some((player) => player.id === friend.id));
+    assert.ok(outside); assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /Outside admitted graph/);
+    assert.match(strFromU8(notes[`Profiles/${outside.id}.md`]!), /VAC bans: Unknown/);
+    assert.match(strFromU8(notes[`Profiles/${fourth}.md`]!), /name: "Known outside friend"/);
+    assert.match(strFromU8(notes["Vapora.md"]!), new RegExp(`\\[\\[Profiles/${fourth}\\|Known outside friend\\]\\]`));
+    assert.ok(strFromU8(notes[`Profiles/${second}.md`]!).includes(`name: ${JSON.stringify(view.scan.players.find((player) => player.id === second)?.name)}`));
+    for (const bytes of Object.values(notes)) {
+      const contents = strFromU8(bytes); assert.ok(!contents.includes(key));
+      for (const link of contents.replace(/^---\n[\s\S]*?\n---\n/, "").matchAll(/\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/g)) assert.ok(notes[`${link[1]}.md`], `Broken vault link: ${link[1]}`);
+    }
+    assert.equal(fixture.requests.length, beforeExport);
+    assert.deepEqual(await readFile(join(root, "outputs", view.scan.id, "scan.json")), checkpoint);
+    assert.equal((await request("/api/obsidian?id=..%2F.env")).status, 400);
+    for (const visibility of ["pending", "unavailable"] as const) {
+      const partial = { ...view.scan, status: "cancelled", queue: [second],
+        players: view.scan.players.map((player) => player.id === second ? { ...newPlayer(second, player.level, view.scan.settings), visibility } : player) };
+      await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify(partial));
+      const partialArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+      assert.match(strFromU8(partialArchive[`Profiles/${second}.md`]!), /name: "Older Bob"/);
+      assert.ok(strFromU8(partialArchive[`Profiles/${second}.md`]!).includes(`profile: "${visibility}"`));
+    }
+    // An observed persona can legitimately equal its Steam ID; history must not replace it.
+    await writeFile(join(root, "outputs", view.scan.id, "scan.json"), JSON.stringify({ ...view.scan,
+      players: view.scan.players.map((player) => player.id === second ? { ...player, name: second } : player) }));
+    const numericArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
+    assert.ok(strFromU8(numericArchive[`Profiles/${second}.md`]!).includes(`name: "${second}"`));
+    assert.equal(fixture.requests.length, beforeExport);
+
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });
 test("server shutdown closes browser preconnections without waiting for an HTTP request", async () => {

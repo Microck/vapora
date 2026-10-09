@@ -10,6 +10,7 @@ import * as Steam from "./steam.js";
 import * as Storage from "./storage.js";
 import * as Scanner from "./scanner.js";
 import * as Analysis from "./analysis.js";
+import * as Obsidian from "./obsidian.js";
 import * as History from "./history.js";
 import * as HistoryProvider from "./history-provider.js";
 import * as HistoryBrowser from "./history-browser.js";
@@ -143,12 +144,16 @@ export async function start(options: Options) {
     const scan = yield* (yield* Storage.Service).read(id);
     return yield* projectAttachedHistory(scan);
   }));
-  const savedRun = (id: string) => historyGate.withPermit(Effect.gen(function* () {
+  const savedObservations = (id: string) => historyGate.withPermit(Effect.gen(function* () {
     const scan = yield* (yield* Storage.Service).read(id);
     const history = yield* projectAttachedHistory(scan).pipe(Effect.result);
-    return { scan, report: Analysis.analyze(scan), history: history._tag === "Success" ? history.success : null,
-      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies RunView;
+    return { scan, history: history._tag === "Success" ? history.success : null,
+      historyError: history._tag === "Failure" ? history.failure.message : null } satisfies Obsidian.Observations;
   }));
+  const savedRun = (id: string) => Effect.gen(function* () {
+    const saved = yield* savedObservations(id);
+    return { scan: saved.scan, report: Analysis.analyze(saved.scan), history: saved.history, historyError: saved.historyError } satisfies RunView;
+  });
   const busy = () => job.status === "running" || estimating;
   const ensureReady = () => {
     if (busy()) throw new InputError({ message: "A Steam operation is already running. Wait or cancel it first." });
@@ -211,6 +216,10 @@ export async function start(options: Options) {
       json(response, 200, await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).profile(profileMatch[1] ?? ""); })));
       return;
     }
+    if (url.pathname === "/api/obsidian") {
+      await downloadObsidian(url, response);
+      return;
+    }
     if (url.pathname === "/api/download") {
       const artifact = Storage.artifacts.find((name) => name === url.searchParams.get("file"));
       if (!artifact) { json(response, 404, { error: "Unknown export file." }); return; }
@@ -226,6 +235,18 @@ export async function start(options: Options) {
     const contents = await readFile(fileURLToPath(new URL(`../ui/${file.name}`, import.meta.url)));
     response.writeHead(200, { "content-type": file.type });
     response.end(contents);
+  }
+  async function downloadObsidian(url: URL, response: ServerResponse) {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    response.once("close", cancel);
+    try {
+      const view = await runtime.runPromise(savedObservations(url.searchParams.get("id") ?? ""));
+      const contents = await Obsidian.vault(view, controller.signal);
+      response.writeHead(200, { "content-type": "application/zip", "cache-control": "no-store",
+        "content-disposition": `attachment; filename="vapora-${view.scan.id}-obsidian.zip"` });
+      response.end(contents);
+    } finally { response.off("close", cancel); }
   }
   async function updateKey(path: string, contents: string, response: ServerResponse) {
     if (path === "/api/key") {

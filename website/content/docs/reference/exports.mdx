@@ -37,6 +37,16 @@ CSV fields are quoted when needed, and formula-like text is escaped for spreadsh
 
 Optional `history.json` contains merged, reimportable history with original captures. [History format](/docs/reference/history-format) explains identity and date preservation.
 
+## Obsidian vault
+
+Download **Obsidian vault (.zip)** from **Exports**. Extract it and open the folder as a vault, or copy the notes into an existing vault. No plugin is required.
+
+- `Vapora.md` records the target, run status, coverage and limits.
+- `Profiles/<SteamID64>.md` stores profile properties and observed friendship links. Names appear as aliases, so renaming a person does not break the links.
+- `History.md`, when available, keeps dated friendship and comment observations. Shared-group links stay separate from friendships.
+
+Unknown observations stay unknown. Exporting reads the saved run, leaves its checkpoint unchanged and makes no Steam requests.
+
 ## Rebuild
 
 **Exports → Rebuild exports** regenerates reports/CSV for a completed run offline, retaining checkpoint bytes and attached history. `npm start -- analyze RUN_ID` rebuilds from saved observations. No API key is needed. Incomplete runs and concurrent operations reject export rebuilding.

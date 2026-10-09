@@ -5,7 +5,17 @@ import { defaults, Settings } from "../src/model.js";
 import * as Identifiers from "../src/ids.js";
 import * as Analysis from "../src/analysis.js";
 import * as History from "../src/history.js";
+import * as Obsidian from "../src/obsidian.js";
 import { player, scan, seed, second, third, fourth, fifth } from "./fixtures.js";
+
+test("abandoning a vault export terminates its worker and rejects further work", async () => {
+  const observations = { scan: scan([player(seed, [])]), history: null, historyError: null };
+  const controller = new AbortController();
+  const download = Obsidian.vault(observations, controller.signal);
+  controller.abort();
+  await assert.rejects(download, { name: "AbortError" });
+  await assert.rejects(Obsidian.vault(observations, controller.signal), { name: "AbortError" });
+});
 
 test("individual account IDs round-trip without Number precision loss", async () => {
   for (const input of [seed, "STEAM_0:1:0", "[U:1:1]", `https://steamcommunity.com/profiles/${seed}/`, `steamcommunity.com/profiles/${seed}`]) {

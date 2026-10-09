@@ -1,6 +1,6 @@
 # Verification
 
-See [SteamHistory restoration verification](history-restoration-verification.md) for the current local restoration checks and their limits. The observations below describe the earlier UI and release verification.
+See [account history restoration verification](history-restoration-verification.md) for the current local restoration checks and their limits. The observations below describe the earlier UI and release verification.
 
 The Scan workspace uses the supplied 1078 x 599 reference and the original `feature/gui-and-analysis` branch at `9ad203818f65f9716d56611e97ad37cf6a3b8a7f` as its foundation: Parameters above Outputs/Output, a five-slot avatar rail with save/load controls, and Target with stacked actions. Ranking options open in a dialog from Parameters. Results adds run management and analysis tools, including a Ranking tab and Run info dialog. The toolbar has Scan and Results tabs, a key button, and browser exports or a native folder action. The UI has no native disclosure sections or repeated explanatory subtext; coverage failures remain visible.
 

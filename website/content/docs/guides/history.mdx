@@ -1,13 +1,13 @@
 ---
-title: "SteamHistory captures"
+title: "History captures"
 description: "Load, refresh and inspect dated account history."
 ---
 
 ## Load and refresh automatically
 
 1. Verify a target or select a recent avatar. Vapora loads that account's history separately from the Steam scan.
-2. Complete verification in the temporary browser window if prompted.
-3. Open the history viewer. Use **Refresh** to fetch again; saved captures are reused until then.
+2. Loading runs in the background without opening a browser window. A blocked request keeps the last capture and offers Retry.
+3. Use **History**, below **Save settings** and **Load settings**, to open the viewer. Use **Refresh** to fetch again; saved captures are reused until then.
 
 Typing a target does not make requests. A history failure does not block Steam scanning.
 
@@ -23,7 +23,7 @@ Matching captures attach to run results. Historical facts stay separate from cur
 
 Automatic loading uses a fresh public session and requests every comment page, including deleted-comment pages.
 
-- SteamHistory restricts deleted comments to [supporter accounts](https://steamhistory.net/supporter).
+- Some deleted comments require an authenticated supporter session.
 - The profile-summary counter may be stale or include inaccessible records.
 - Vapora records the summary total and accessible endpoint total separately. A gap marks coverage partial; missing comments are not invented.
 - Imported authenticated captures retain the records supplied by the user.
@@ -51,7 +51,7 @@ Use **Import history**, or:
 npm start -- history FILE
 ```
 
-Accepted inputs: normalized JSON, profile NDJSON and complete SteamHistory Svelte data/chunk streams. Browser imports accept up to **2 MB**.
+Accepted inputs: normalized JSON, profile NDJSON and complete provider Svelte data/chunk streams. Browser imports accept up to **2 MB**.
 
 ```json
 {

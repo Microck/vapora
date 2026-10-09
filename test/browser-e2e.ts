@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import puppeteer from "puppeteer-core";
-import type { Page } from "puppeteer-core";
+import type { Page, ScreenshotOptions } from "puppeteer-core";
 import { Schema } from "effect";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
@@ -34,6 +34,104 @@ async function checkUndatedRecords(page: Page) {
     assert.match(await visibleText(page, "#history-rows") ?? "", /Timestamp check Epoch/);
     await fill(page, "#history-from", ""); await fill(page, "#history-to", "");
   }
+}
+async function checkIndependentDetails(page: Page) {
+  const originalButton = await page.$("#history-rows button"); assert.ok(originalButton);
+  const captured = await visibleText(page, ".details-record");
+  await fill(page, "#history-search", "Alice");
+  assert.equal(await originalButton.evaluate((button) => button.isConnected), false);
+  assert.equal(await visibleText(page, ".details-record"), captured);
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+  await page.keyboard.press("Enter");
+  // A second details window keeps the first record intact and leaves the viewer interactive.
+  await page.$eval("#history-rows button", (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected details button"); button.click(); });
+  assert.equal((await page.$$(".details-window")).length, 2);
+  const heading = await page.$eval(".details-window h2", (element) => { const box = element.getBoundingClientRect(); return { x: box.x + 30, y: box.y + 8 }; });
+  await page.mouse.move(heading.x, heading.y); await page.mouse.down(); await page.mouse.move(100, 100); await page.mouse.up();
+  assert.equal(await page.$eval(".details-window", (panel) => panel.getBoundingClientRect().left < 100), true);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-multiple-details.png") });
+
+  const before = await page.$eval(".details-window", (panel) => { if (!(panel instanceof HTMLElement)) throw new Error("Expected details window"); return panel.offsetLeft; });
+  await page.focus(".details-window h2"); await page.keyboard.press("ArrowLeft");
+  assert.equal(await page.$eval(".details-window", (panel) => { if (!(panel instanceof HTMLElement)) throw new Error("Expected details window"); return panel.offsetLeft; }), before - 16);
+  await page.keyboard.press("Escape"); assert.equal((await page.$$(".details-window")).length, 1);
+  assert.match(await visibleText(page, ".details-record"), /Alice Example/);
+  await page.setViewport({ width: 320, height: 800 });
+  await page.waitForFunction(() => { const box = document.querySelector(".details-window")?.getBoundingClientRect(); return box && box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight; });
+  assert.equal(await page.$eval(".details-window", (panel) => { const box = panel.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight; }), true);
+  await page.setViewport({ width: 1078, height: 599 });
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-details.png") });
+}
+async function checkDuplicateHistoryOpeners(page: Page, root: string) {
+  // Identical retained records need separate focus targets within and across captures.
+  const repeated = { steamID64: seed, lastChecked: 1791360000, name: "Duplicate opener fixture", historic: { persona: [{ Name: "Repeated alias", Timestamp: 1791360000 }] } };
+  for (const [filename, contents] of [["duplicates.jsonl", [repeated, repeated].map((profile) => JSON.stringify(profile)).join("\n")],
+    ["duplicate.json", JSON.stringify(repeated, null, 2)]] as const) {
+    const path = join(root, filename); await writeFile(path, contents);
+    await page.click("#open-history-import"); const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(path);
+    await page.click('#history-form button[type="submit"]');
+    await page.waitForFunction(() => !document.querySelector<HTMLDialogElement>("#history-import-dialog")?.open);
+  }
+  for (const [tab, query] of [["profile", "Duplicate opener fixture"], ["persona", "Repeated alias"]] as const) {
+    await page.click(`[data-history="${tab}"]`); await fill(page, "#history-search", query);
+    assert.equal((await page.$$("#history-rows button")).length, 3);
+    const first = await page.$("#history-rows button"); assert.ok(first); await first.click();
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+    await page.keyboard.press("Enter"); await fill(page, "#history-search", query);
+    assert.equal(await first.evaluate((button) => button.isConnected), false);
+    await page.focus(".details-window"); await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
+  }
+}
+async function checkProfileDetails(page: Page) {
+  await page.click('[data-view="friends"]');
+  await page.$$eval("#friend-rows tr button", (buttons) => {
+    for (const button of buttons.slice(0, 2)) if (button instanceof HTMLButtonElement) button.click();
+  });
+  const profiles = await page.$$eval(".details-window", (panels) => panels.map((panel) => {
+    if (!(panel instanceof HTMLElement)) throw new Error("Expected profile window"); return panel.dataset.profile;
+  }));
+  assert.equal(profiles.length, 2); assert.notEqual(profiles[0], profiles[1]);
+  const firstProfile = profiles[0]; assert.ok(firstProfile);
+  const oldFriendButton = await page.$("#friend-rows button"); assert.ok(oldFriendButton);
+  const firstWindow = await page.$(".details-window"); assert.ok(firstWindow);
+  await fill(page, "#friend-search", firstProfile);
+  assert.equal(await oldFriendButton.evaluate((button) => button.isConnected), false);
+  await firstWindow.focus(); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#friend-rows button")), true);
+  await page.keyboard.press("Enter");
+  await page.focus("#friend-search"); await page.keyboard.down("Control"); await page.keyboard.press("a");
+  await page.keyboard.up("Control"); await page.keyboard.press("Backspace");
+  await page.$eval('[data-view="network"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected network tab"); button.click(); });
+  const headings = await page.$$(".details-window h2");
+  for (const [index, left] of [36, 520].entries()) {
+    const title = headings[index]; assert.ok(title);
+    const heading = await title.evaluate((element) => {
+      const box = element.getBoundingClientRect(); const panel = element.closest(".details-window")?.getBoundingClientRect();
+      if (!panel) throw new Error("Expected details window");
+      return { x: box.x + box.width / 2, y: box.y + 8, dx: box.x + box.width / 2 - panel.x, dy: box.y + 8 - panel.y };
+    });
+    await page.mouse.move(heading.x, heading.y); await page.mouse.down(); await page.mouse.move(left + heading.dx, 90 + heading.dy); await page.mouse.up();
+  }
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "profile-details.png") });
+  await page.$$eval(".details-close", (buttons) => { for (const button of buttons) if (button instanceof HTMLButtonElement) button.click(); });
+  const graphNode = `#graph [data-node-id="${seed}"]`;
+  await page.$eval(graphNode, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
+  await page.keyboard.press("Enter");
+  assert.equal((await page.$$(".details-window")).length, 1);
+  const firstDetails = await page.$(".details-window"); assert.ok(firstDetails);
+  await page.$eval(`#graph [data-node-id="${second}"]`, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
+  await page.keyboard.press("Enter");
+  assert.equal((await page.$$(".details-window")).length, 2);
+  await firstDetails.focus();
+  await page.keyboard.press("Escape");
+  assert.equal((await page.$$(".details-window")).length, 1);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), seed);
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal((await page.$$(".details-window")).length, 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), second);
 }
 async function keyForm(page: Page, value: string) {
   await page.click('#open-key'); await fill(page, "#key", value); await page.click('#key-form button[type="submit"]');
@@ -64,7 +162,14 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   const runRequests: string[] = [];
   page.on("request", (request) => { if (new URL(request.url()).pathname.startsWith("/api/runs/")) runRequests.push(request.url()); });
-  const screenshot = async (name: string) => { if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`) }); };
+  const screenshot = async (name: string) => {
+    if (!process.env.VAPORA_BROWSER_SCREENSHOTS) return;
+    if (name === "exports") await page.setViewport({ width: 1078, height: 800 });
+    const screenshotOptions: ScreenshotOptions = { path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, `${name}.png`) };
+    if (name === "exports") screenshotOptions.clip = await page.$eval("body", (body) => ({ x: 0, y: 0, width: innerWidth, height: body.getBoundingClientRect().height }));
+    await page.screenshot(screenshotOptions);
+    if (name === "exports") await page.setViewport({ width: 1078, height: 599 });
+  };
   const state = async () => Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
   await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 599 }); await page.goto(server.origin);
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#scan-button")?.disabled);
@@ -119,7 +224,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.click('[data-screen="scan"]');
   await fill(page, "#target", seed); const held = fixture.hold("/ISteamUser/GetFriendList/v1/", second); await page.click("#scan-button"); await held;
   assert.equal(await page.$eval("#open-key", (element) => element instanceof HTMLButtonElement && element.disabled), true);
-  await page.click('[data-screen="results"]'); await page.click('[data-screen="history"]');
+  await page.click('[data-screen="results"]'); await page.click('[data-screen="scan"]'); await page.click("#target-history");
   assert.equal(await page.$eval("#progress-section", (element) => element instanceof HTMLElement && element.hidden), false);
   await page.click("#cancel-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled").catch(async (error) => {
     console.error("Cancellation failure", { job: (await state()).job, notice: await visibleText(page, "#notice"), report: await visibleText(page, "#report-error"), pageErrors: errors });
@@ -146,6 +251,10 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "4");
   assert.equal(runRequests.length, railRequests);
   assert.equal(fixture.requests.filter((request) => !request.path.startsWith("/avatars/")).length, steamRequests);
+  await page.mouse.move(600, 300);
+  await page.waitForSelector('#app-tooltip:popover-open', { hidden: true });
+  assert.equal(await page.$eval("#app-tooltip", (tooltip) => tooltip.matches(":popover-open")), false);
+  await screenshot("scan");
   await page.click("#estimate-button"); await page.waitForSelector(".estimate-facts");
   assert.equal(await page.$eval(".estimate-facts", (facts) => facts.children.length), 6);
   await screenshot("estimate");
@@ -166,12 +275,23 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.click("#zoom-reset");
   assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("viewBox")), originalZoom);
   assert.equal(await graphNode.evaluate((node) => node.isConnected), true);
-  await page.click('[data-view="ranking"]'); const requestCount = fixture.requests.length; await fill(page, "#ranking-mutual", "3");
+  await screenshot("network"); await checkProfileDetails(page);
+  await page.click('[data-view="locations"]');
+  const oldLocationButton = await page.$("#location-rows button"); assert.ok(oldLocationButton);
+  await oldLocationButton.click(); const capturedLocation = await visibleText(page, ".details-record");
+  await page.$eval('[data-view="ranking"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected ranking tab"); button.click(); });
+  const requestCount = fixture.requests.length; await fill(page, "#ranking-mutual", "3");
   await page.click("#save-ranking"); await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Saved ranking"));
-  assert.equal(fixture.requests.length, requestCount);
+  assert.equal(await oldLocationButton.evaluate((button) => button.isConnected), false);
+  assert.equal(await visibleText(page, ".details-record"), capturedLocation);
+  await page.$eval('[data-view="locations"]', (button) => { if (!(button instanceof HTMLButtonElement)) throw new Error("Expected locations tab"); button.click(); });
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#location-rows button")), true);
+  await page.click('[data-view="ranking"]');
+  assert.equal(fixture.requests.length, requestCount); await screenshot("ranking");
   const history = join(root, "history-current.json"); const now = Math.floor(Date.now() / 1000);
   await writeFile(history, JSON.stringify({ steamID64: seed, name: "Current fixture", lastChecked: now, historic: { friends: [{ Friend: second, FriendDate: now - 1000 }] } }));
-  await page.click('[data-screen="history"]'); await page.click("#open-history-import"); const upload = await page.$("input#history-file"); assert.ok(upload); await upload.uploadFile(history);
+  await page.click('[data-screen="scan"]'); await page.click("#target-history"); await page.click("#open-history-import"); const upload = await page.$("input#history-file"); assert.ok(upload); await upload.uploadFile(history);
   await page.click("#attach-history"); await page.click('#history-form button[type="submit"]');
   await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-download")?.hidden);
   await page.reload(); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
@@ -179,7 +299,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.click('[data-screen="results"]'); await page.click("#toggle-runs"); await page.click("#output-folder");
   assert.equal(await page.$eval("#run-library", (element) => element instanceof HTMLElement && element.hidden), true);
   assert.equal(await page.$eval("#exports-view", (element) => element instanceof HTMLElement && element.hidden), false);
-  const downloads = await page.$$eval("#downloads a", (links) => links.map((link) => { if (!(link instanceof HTMLAnchorElement)) throw new Error("Expected a download link"); return link.href; })); assert.equal(downloads.length, 7);
+  const downloads = await page.$$eval("#downloads a", (links) => links.map((link) => { if (!(link instanceof HTMLAnchorElement)) throw new Error("Expected a download link"); return link.href; })); assert.equal(downloads.length, 8);
   const checkpointPath = join(root, "outputs", id, "scan.json"); const checkpoint = await readFile(checkpointPath);
   const providerCalls = fixture.requests.filter((request) => !request.path.startsWith("/avatars/")).length;
   await writeFile(join(root, "outputs", id, "analysis.json"), "outdated export");
@@ -272,10 +392,11 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await fill(page, "#history-search", "not in this capture"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 0);
   await fill(page, "#history-search", "Alice Example"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-real-names.png") });
-  await page.click("#history-rows button"); assert.match(await visibleText(page, "#history-inspect"), /Alice Example/);
-  await page.click("#history-details-close"); await fill(page, "#history-search", "");
+  await page.click("#history-rows button"); assert.match(await visibleText(page, ".details-record"), /Alice Example/);
+  await checkIndependentDetails(page);
+  await page.click(".details-close"); await fill(page, "#history-search", "");
   await page.click('[data-history="profile"]'); await page.click("#history-rows button");
-  assert.match(await visibleText(page, "#history-inspect") ?? "", /customField/); await page.click("#history-details-close");
+  assert.match(await visibleText(page, ".details-record") ?? "", /customField/); await page.click(".details-close");
   await page.click('[data-history="comments"]'); await fill(page, "#history-search", "Former friend");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "");
   await fill(page, "#history-from", "2026-10-06"); await fill(page, "#history-to", "2026-10-08");
@@ -288,7 +409,7 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click("#history-sources button");
   let original: string | undefined;
   for (let attempt = 0; attempt < 50; attempt++) {
-    try { original = await readFile(join(downloadDirectory, `steamhistory-${seed}-1.json`), "utf8"); break; }
+    try { original = await readFile(join(downloadDirectory, `history-${seed}-1.json`), "utf8"); break; }
     catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; await delay(100); }
   }
   assert.ok(original);
@@ -317,8 +438,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   const attached = await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"); assert.ok(JSON.parse(attached).sources.length);
   await page.click('[data-view="friends"]');
   await page.$$eval("#friend-rows tr", (rows) => rows.find((row) => row.textContent?.includes("Outside graph"))?.querySelector("button")?.click());
-  assert.match(await visibleText(page, "#inspect-facts") ?? "", /Outside admitted graph/);
-  await page.click("#close-inspector");
+  assert.match(await visibleText(page, ".details-facts") ?? "", /Outside admitted graph/);
+  await page.click(".details-close");
   const calls = history.requests(); await page.click('[data-screen="scan"]'); await page.click("#recent button");
   await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History unavailable");
   assert.equal(history.requests(), calls); // A known failed refresh is retried explicitly, not on every navigation.
@@ -382,5 +503,6 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click("#open-history"); await page.click('[data-history="comments"]');
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
   assert.equal(history.requests(), requestsBeforeReopen);
+  await checkDuplicateHistoryOpeners(page, root);
   assert.deepEqual(errors, []);
 });

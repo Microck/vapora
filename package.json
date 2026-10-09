@@ -1,6 +1,6 @@
 {
   "name": "vapora",
-  "version": "2.2.0",
+  "version": "2.2.2",
   "private": true,
   "description": "Explore public Steam friend networks",
   "type": "module",
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "effect": "4.0.1",
+    "fflate": "0.8.3",
     "graphology": "0.26.0",
     "graphology-communities-louvain": "2.0.2",
     "graphology-metrics": "2.4.0"
@@ -84,7 +85,8 @@
     },
     "portable": {
       "artifactName": "vapora-${version}-win-${arch}-portable.${ext}",
-      "unpackDirName": false
+      "unpackDirName": false,
+      "useZip": true
     },
     "extraResources": [
       {

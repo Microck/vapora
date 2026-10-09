@@ -10,7 +10,7 @@
 
 ---
 
-`vapora` is a local app for exploring public Steam friend networks. scan an account, inspect communities and hubs, compare the observations behind friend rankings, browse dated SteamHistory captures, and export JSON or Gephi-ready CSVs. use the desktop app, a local browser, or the CLI — all three share the same scanner and saved runs.
+`vapora` is a local app for exploring public Steam friend networks. scan an account, inspect communities and hubs, compare the observations behind friend rankings, browse dated account history captures, and export JSON, Gephi-ready CSVs or an Obsidian vault. use the desktop app, a local browser, or the CLI. all three share the same scanner and saved runs.
 
 the main setup path is a [desktop download](https://github.com/Microck/vapora/releases/latest) and a [Steam API key](https://steamcommunity.com/dev/apikey). start with a small scan, read its coverage, then expand when you need more context.
 
@@ -42,7 +42,7 @@ get the matching file from the [latest release](https://github.com/Microck/vapor
 | Linux x64 | AppImage | make executable, then open |
 | macOS Apple Silicon | DMG | drag into Applications |
 
-no Node.js or Python installation is needed for desktop downloads. packages include the history runtime. downloads are unsigned and not notarized; compare the file with the release's `SHA256SUMS.txt` before approving an OS warning. Linux without FUSE can use `--appimage-extract-and-run`.
+no Node.js or Python installation is needed for desktop downloads. packages include the history runtime. the portable EXE silently unpacks into Windows TEMP and needs about 1 GB free there, plus room for scan data. downloads are unsigned and not notarized; compare the file with the release's `SHA256SUMS.txt` before approving an OS warning. Linux without FUSE can use `--appimage-extract-and-run`.
 
 1. open Vapora and use the key button to set your Steam API key.
 2. enter a Steam profile URL or SteamID64; use the check button to verify it.
@@ -138,7 +138,7 @@ completed runs can change weights through Ranking → Save ranking without Steam
 
 ## history
 
-verifying an account or selecting a recent avatar can load SteamHistory independently. saved captures are reused until Refresh; failed or blocked requests preserve the last dated capture and do not stop Steam scans.
+verifying an account or selecting a recent avatar can load account history independently. saved captures are reused until Refresh; failed or blocked requests preserve the last dated capture and do not stop Steam scans.
 
 the viewer supports friendship periods, persona and real names, URLs, avatars, profile metadata and comments. imports accept JSON, NDJSON and provider data streams, preserving original inputs and distinct captures. comment ranking is separate from network ranking. partial provider coverage stays explicit.
 
@@ -202,7 +202,7 @@ open an [issue](https://github.com/Microck/vapora/issues) or pull request with r
 
 ## disclaimer
 
-this project is unofficial and not affiliated with or endorsed by Valve, Steam or SteamHistory. public observations and historical captures can be incomplete; the app keeps those limits visible.
+this project is unofficial and not affiliated with or endorsed by Valve or Steam. public observations and historical captures can be incomplete; the app keeps those limits visible.
 
 ## license
 

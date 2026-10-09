@@ -1,5 +1,6 @@
 import { displaySupport } from "../src/scoring.js";
 import * as History from "../src/history.js";
+import * as Details from "./details.js";
 import type { Scan } from "../src/model.js";
 
 const get = (id: string) => {
@@ -19,17 +20,18 @@ let section = "friends";
 let page = 0;
 const pageSize = 100;
 let analyzed: { report: History.HistoryReport; scan: Scan | undefined; from: string; to: string; view: History.HistoryReport } | undefined;
+const recordOpeners = new Map<string, HTMLButtonElement>();
 const date = (value: number | null) => value === null ? "Undated" : new Date(value * 1000).toLocaleDateString();
 const fieldText = (value: History.Record[string] | undefined): string => value === undefined || value === null ? "Not supplied" : String(value);
 const numeric = (value: number | null, digits = 1) => value === null ? "Unknown" : value.toFixed(digits);
 const rowCell = (row: HTMLTableRowElement, value: string | number) => { const cell = document.createElement("td"); cell.textContent = String(value); row.append(cell); return cell; };
-function details(record: History.Record | readonly History.Record[]) {
-  get("history-inspect").textContent = JSON.stringify(record, null, 2);
-  const dialog = get("history-details"); if (dialog instanceof HTMLDialogElement) dialog.showModal();
+function details(record: History.Record | readonly History.Record[], resolveOpener: Details.Opener) {
+  Details.record("Captured record", record, resolveOpener);
 }
-function inspect(row: HTMLTableRowElement, record: History.Record | readonly History.Record[]) {
+function inspect(row: HTMLTableRowElement, record: History.Record | readonly History.Record[], identity: string) {
   const button = document.createElement("button"); button.type = "button"; button.textContent = "Details";
-  button.addEventListener("click", () => details(record)); rowCell(row, "").append(button);
+  const key = JSON.stringify([current?.profile.steamID64, section, identity]); recordOpeners.set(key, button);
+  button.addEventListener("click", () => details(record, () => recordOpeners.get(key) ?? null)); rowCell(row, "").append(button);
 }
 function identity(row: HTMLTableRowElement, id: string | null, name: string, image: string | null) {
   const cell = rowCell(row, "");
@@ -64,7 +66,7 @@ function friendsRows(report: History.HistoryReport, query: string) {
   return paginate(report.friends.filter((friend) => JSON.stringify(friend.metadata).toLowerCase().includes(query) && statusMatches(friend.status)), (friend) => {
       const row = document.createElement("tr"); identity(row, friend.id, friend.name, friend.avatar);
       rowCell(row, friend.status); rowCell(row, date(friend.asOf)); rowCell(row, friend.durationSeconds === null ? "Unknown" : `${Math.floor(friend.durationSeconds / 86400)} days`);
-      rowCell(row, numeric(friend.relativeDuration)); inspect(row, friend.periodSources); return row;
+      rowCell(row, numeric(friend.relativeDuration)); inspect(row, friend.periodSources, friend.id); return row;
   });
 }
 function rankingRows(report: History.HistoryReport, query: string) {
@@ -77,7 +79,7 @@ function rankingRows(report: History.HistoryReport, query: string) {
 function commentsRows(report: History.HistoryReport, query: string) {
   return paginate(report.comments.filter((comment) => `${comment.author ?? ""} ${comment.message}`.toLowerCase().includes(query)), (comment) => {
       const row = document.createElement("tr"); identity(row, comment.author, comment.author ?? "Unknown author", null);
-      rowCell(row, date(comment.timestamp)); rowCell(row, comment.message); rowCell(row, comment.friendAtComment); rowCell(row, comment.estimated ? "Estimated" : "Identified"); inspect(row, comment.versions); return row;
+      rowCell(row, date(comment.timestamp)); rowCell(row, comment.message); rowCell(row, comment.friendAtComment); rowCell(row, comment.estimated ? "Estimated" : "Identified"); inspect(row, comment.versions, comment.key); return row;
   });
 }
 function dateFilter() {
@@ -87,26 +89,31 @@ function dateFilter() {
 }
 function profileRows(report: History.HistoryReport, query: string) {
   const dateMatches = dateFilter();
-  return paginate(report.sources.flatMap((source) => source.snapshots).filter((profile) => JSON.stringify(profile.fields).toLowerCase().includes(query) && dateMatches(profile.lastChecked)), (profile) => {
+  const profiles = report.sources.flatMap((source, sourceIndex) => source.snapshots.map((profile, snapshotIndex) =>
+    ({ profile, sourceIndex, snapshotIndex })));
+  return paginate(profiles.filter(({ profile }) => JSON.stringify(profile.fields).toLowerCase().includes(query) && dateMatches(profile.lastChecked)), ({ profile, sourceIndex, snapshotIndex }) => {
     const row = document.createElement("tr"); const fields = profile.fields;
     rowCell(row, profile.name); rowCell(row, date(profile.lastChecked));
     for (const key of ["creationDate", "vacBanned", "vacCount", "gameBans", "communityBanned", "economyBanned"]) rowCell(row, fieldText(fields[key]));
-    inspect(row, fields); return row;
+    inspect(row, fields, JSON.stringify([sourceIndex, snapshotIndex])); return row;
   });
 }
 function recordRows(report: History.HistoryReport, query: string) {
   const dateMatches = dateFilter();
   const match = (record: History.Record) => JSON.stringify(record).toLowerCase().includes(query);
     // Retain the dated context of each supplied record; generic details expose all fields, including unknown ones.
-    const records = report.sources.flatMap((source) => source.snapshots.flatMap((profile) => (profile.historic[section] ?? []).map((record) => ({ record, observed: profile.lastChecked, event: History.time(record.Timestamp) }))));
-    return paginate(records.filter(({ record, event }) => match(record) && dateMatches(event)), ({ record, observed, event }) => {
+    // Positions belong to the retained source, before filtering or pagination, so identical records keep distinct openers.
+    const records = report.sources.flatMap((source, sourceIndex) => source.snapshots.flatMap((profile, snapshotIndex) => (profile.historic[section] ?? []).map((record, recordIndex) =>
+      ({ record, observed: profile.lastChecked, event: History.time(record.Timestamp), sourceIndex, snapshotIndex, recordIndex }))));
+    return paginate(records.filter(({ record, event }) => match(record) && dateMatches(event)), ({ record, observed, event, sourceIndex, snapshotIndex, recordIndex }) => {
       const row = document.createElement("tr");
       if (section === "pfp") identity(row, null, fieldText(record.AvatarHash), History.avatar(record));
       else rowCell(row, fieldText(record.Name ?? record.URL));
-      rowCell(row, date(event)); rowCell(row, date(observed)); inspect(row, record); return row;
+      rowCell(row, date(event)); rowCell(row, date(observed)); inspect(row, record, JSON.stringify([sourceIndex, snapshotIndex, recordIndex])); return row;
     });
 }
 function renderTable() {
+  recordOpeners.clear();
   const report = filteredReport(); if (!report) return;
   const query = input("history-search").value.trim().toLowerCase();
   get("history-status-label").hidden = !["friends", "ranking"].includes(section);
@@ -120,7 +127,7 @@ function renderTable() {
     const locations = paginate(report.locations.filter((location) => `${location.country}/${location.state}/${location.city}`.toLowerCase().includes(query)), (location) => {
       const row = document.createElement("tr");
       for (const value of [location.country, location.state ?? "Not supplied", location.city, location.contributors, location.zeroContributors, displaySupport(location.support), numeric(location.share), numeric(location.index)]) rowCell(row, value);
-      inspect(row, { ...location, source: "Captured friend comments", coverage: report.locationCoverage }); return row;
+      inspect(row, { ...location, source: "Captured friend comments", coverage: report.locationCoverage }, JSON.stringify([location.country, location.state, location.city])); return row;
     });
     table(["Country", "State", "City", "Contributors", "Zero counts", "Raw support", "Share %", "Index / 100", "Details"], locations);
   } else if (section === "profile") {
@@ -137,13 +144,13 @@ function download(contents: string, filename: string) {
 export function render(report: History.HistoryReport, selectedScan?: Scan) {
   current = report; scan = selectedScan; page = 0;
   get("history-result").hidden = false; get("history-name").textContent = report.profile.name;
-  get("history-asof").textContent = `SteamHistory as of ${date(report.profile.lastChecked)}`;
+  get("history-asof").textContent = `History as of ${date(report.profile.lastChecked)}`;
   get("history-asof").dataset.tooltip = report.warning;
   const sources = get("history-sources"); sources.replaceChildren();
   report.sources.forEach((source, index) => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = `Original ${index + 1}`;
     button.dataset.tooltip = `Captured ${source.capturedAt}`;
-    button.addEventListener("click", () => download(source.contents, `steamhistory-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
+    button.addEventListener("click", () => download(source.contents, `history-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
   });
   get("history-warnings").textContent = report.warnings.join("\n"); get("history-warnings").hidden = !report.warnings.length;
   renderTable();
@@ -158,6 +165,5 @@ export function initialize() {
   get("history-status").addEventListener("change", () => { page = 0; renderTable(); });
   get("history-previous").addEventListener("click", () => { page--; renderTable(); });
   get("history-next").addEventListener("click", () => { page++; renderTable(); });
-  get("history-details-close").addEventListener("click", () => { const dialog = get("history-details"); if (dialog instanceof HTMLDialogElement) dialog.close(); });
   get("history-export").addEventListener("click", () => { if (current) download(JSON.stringify(current, null, 2), "history.json"); });
 }

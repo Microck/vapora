@@ -22,7 +22,7 @@ await mkdir(root, { recursive: true });
 const previous = await readFile(join(root, "build-signature.json"), "utf8").catch(() => "");
 if (previous === signature) {
   await Promise.all([access(join(root, browser)), access(join(root, helper)), access(join(root, "runtime.json"))]);
-  console.info("SteamHistory runtime is built.");
+  console.info("History runtime is built.");
   process.exit(0);
 }
 const run = (command, args) => new Promise((resolve, reject) => {
@@ -58,4 +58,4 @@ await Promise.all([access(join(root, browser)), access(join(root, helper))]);
 await writeFile(join(root, "runtime.json"), JSON.stringify({ browser, helper, platform: process.platform, arch: process.arch, version, pydoll: "3.0.0" }));
 await writeFile(join(root, "build-signature.json"), signature);
 await rm(build, { recursive: true, force: true });
-console.info("Built the self-contained SteamHistory browser runtime.");
+console.info("Built the self-contained History browser runtime.");

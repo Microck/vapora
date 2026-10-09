@@ -22,7 +22,7 @@ const help = `Vapora 2 | Public Steam friend networks
   vapora recent                         List saved runs
   vapora profiles                       List saved configuration profiles
   vapora profile-save NAME              Save current options as a profile
-  vapora history FILE [--run RUN_ID]     Import SteamHistory JSON / data stream
+  vapora history FILE [--run RUN_ID]     Import History JSON / data stream
 
 Options:
   --preset inner|community   --profile NAME   --depth 1..5   --max-nodes 0..1000
