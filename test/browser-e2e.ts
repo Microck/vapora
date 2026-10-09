@@ -587,9 +587,15 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click("#open-settings"); await page.select("#profiles", ""); await page.click("#load-profile");
   await page.waitForSelector("#load-dialog-error:not([hidden])"); assert.match(await visibleText(page, "#load-dialog-error"), /Choose a saved profile/);
   await page.select("#profiles", "ui-audit"); await page.click("#load-profile"); await page.waitForSelector("#load-dialog[open]", { hidden: true });
-  await page.setOfflineMode(true); await page.click("#apply-settings");
+  await page.click("#apply-settings");
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
+  await page.setOfflineMode(true);
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Cannot reach Vapora"));
+  await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Settings were not saved"));
   assert.match(await visibleText(page, "#notice"), /retry/);
+  await page.waitForRequest((request) => request.url().endsWith("/api/state"));
+  await delay(100); assert.match(await visibleText(page, "#notice"), /Settings were not saved/);
   await page.setOfflineMode(false); await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
   await fill(page, "#target", seed); await fill(page, "#maxNodes", "5"); await fill(page, "#rpm", "0");

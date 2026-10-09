@@ -117,8 +117,11 @@ function installTabStrips() {
   }
 }
 
-function notice(message: string) { get("notice").textContent = message; get("notice").hidden = !message; }
-function task(action: () => Promise<void>, reportError: (message: string) => void = notice) {
+function notice(message: string, kind: "status" | "action-error" = "status") {
+  const element = get("notice"); element.textContent = message; element.hidden = !message;
+  element.dataset.kind = message ? kind : "status";
+}
+function task(action: () => Promise<void>, reportError: (message: string) => void = (message) => notice(message, "action-error")) {
   reportError("");
   void action().catch((error) => reportError(error instanceof Error ? error.message : "The action failed. Try again."));
 }
@@ -536,7 +539,7 @@ async function refresh() {
   } catch (error) {
     get("key-indicator").textContent = "Disconnected";
     // A background poll must not replace the explanation of an unsaved action.
-    if (get("notice").hidden) notice(error instanceof Error ? error.message : "Cannot reach Vapora. Make sure the app is running, then retry.");
+    if (get("notice").dataset.kind !== "action-error") notice(error instanceof Error ? error.message : "Cannot reach Vapora. Make sure the app is running, then retry.");
   } finally {
     refreshing = false; clearTimeout(timer); timer = setTimeout(() => void refresh(), currentState?.job.status === "running" ? 1500 : 10000);
   }
@@ -628,7 +631,7 @@ buttons("apply-settings").addEventListener("click", () => task(async () => {
   if (!get("scan-form").querySelector<HTMLInputElement>(":invalid")) {
     await api("/api/profiles", Contracts.Ok, { name: "default", settings: readSettings() }); await refresh(); notice("Saved default settings.");
   } else throw new Error("Check the node limit and request rate.");
-}, (message) => notice(message ? `Settings were not saved. ${message}` : "")));
+}, (message) => notice(message ? `Settings were not saved. ${message}` : "", "action-error")));
 buttons("show-key").addEventListener("click", () => {
   const show = inputs.key.type === "password";
   inputs.key.type = show ? "text" : "password";
