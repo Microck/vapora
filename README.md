@@ -20,7 +20,7 @@ the main setup path is a [desktop download](https://github.com/Microck/vapora/re
 
 ## why
 
-- explore public friendships through searchable graphs, community colors and profile inspectors
+- explore public friendships with profile pictures, community colors, filters and an in-app maximized graph
 - keep private, skipped and unavailable observations visible instead of treating them as empty
 - estimate before collecting; cancel and resume from a saved checkpoint
 - rerank completed runs and rebuild exports offline

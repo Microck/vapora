@@ -46,11 +46,10 @@ export function install(tooltip: HTMLElement) {
     tooltip.showPopover();
     const bounds = anchor.getBoundingClientRect();
     const box = tooltip.getBoundingClientRect();
-    // Prefer beside the trigger. Placing help below a rail or profile link hides its next action.
-    // Viewport edges also offer room when a narrow form fills every adjacent position.
+    // Consider only adjacent positions. Empty space elsewhere in the window must
+    // not pull help away from the control that explains it.
     const placements = [[bounds.right + 7, bounds.top], [bounds.left - box.width - 7, bounds.top],
-      [bounds.left, bounds.top - box.height - 7], [bounds.left, bounds.bottom + 7],
-      [bounds.left, 8], [bounds.left, innerHeight - box.height - 8]] as const;
+      [bounds.left, bounds.top - box.height - 7], [bounds.left, bounds.bottom + 7]] as const;
     const surface = anchor.closest("dialog:modal") ?? document;
     // Focus-only containers such as the workspace are not action hit targets.
     const controls = [...surface.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]

@@ -3,7 +3,7 @@
     "node_modules/**",
     "dist/**",
     "release/**",
-    ".config/oxlint/anti-slop/**",
+    ".config/oxlint/**",
     ".agents/**",
     ".codex/**",
     ".claude/**"
@@ -11,11 +11,11 @@
   "jsPlugins": [
     {
       "name": "anti-slop",
-      "specifier": "./.config/oxlint/anti-slop/index.ts"
+      "specifier": "./.config/oxlint/index.ts"
     },
     {
       "name": "anti-slop-effect",
-      "specifier": "./.config/oxlint/anti-slop/effect/index.ts"
+      "specifier": "./.config/oxlint/effect/index.ts"
     }
   ],
   "rules": {

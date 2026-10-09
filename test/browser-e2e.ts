@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import puppeteer from "puppeteer-core";
@@ -9,7 +9,8 @@ import type { Page, ScreenshotOptions } from "puppeteer-core";
 import { Schema } from "effect";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
-import { steamFixture, historyFixture, seed, second, key } from "./fixtures.js";
+import * as History from "../src/history.js";
+import { steamFixture, historyFixture, seed, second, key, player, scan, checkNodePicture } from "./fixtures.js";
 
 const userAgent = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 async function fill(page: Page, selector: string, value: string) {
@@ -19,9 +20,67 @@ async function fill(page: Page, selector: string, value: string) {
     input.value = ""; return false;
   }, value);
   if (!dateInput) await page.type(selector, value);
+  // Search input is coalesced into a frame; act only after its final update has rendered.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 async function visibleText(page: Page, selector: string) {
   return page.$eval(selector, (element) => element.textContent);
+}
+async function readDownload(path: string): Promise<string> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try { return await readFile(path, "utf8"); }
+    catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; await delay(100); }
+  }
+  throw new Error(`Download did not complete: ${path}; files: ${JSON.stringify(await readdir(dirname(path)))}`);
+}
+async function checkAdjacentHelp(page: Page, selector: string) {
+  await page.waitForSelector("#app-tooltip:popover-open");
+  assert.equal(await page.$eval(selector, (anchor) => {
+    const trigger = anchor.getBoundingClientRect();
+    const box = document.querySelector("#app-tooltip")?.getBoundingClientRect();
+    if (!box?.width || !box.height) return false;
+    const horizontalGap = Math.max(0, box.left - trigger.right, trigger.left - box.right);
+    const verticalGap = Math.max(0, box.top - trigger.bottom, trigger.top - box.bottom);
+    return horizontalGap <= 7 && verticalGap <= 7
+      && box.left >= 8 && box.right <= innerWidth - 8 && box.top >= 8 && box.bottom <= innerHeight - 8;
+  }), true, "Help must stay beside its trigger and inside the viewport");
+}
+async function checkSavedHistoryDiagnostics(page: Page, root: string, downloadDirectory: string) {
+  const runId = await page.evaluate(() => location.hash.slice(1)); assert.ok(runId);
+  const attached = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(join(root, "outputs", runId, "history.json"), "utf8"));
+  const latest = attached.sources.at(-1); assert.ok(latest);
+  const capture = Schema.decodeUnknownSync(Schema.fromJsonString(History.Document))(latest.contents);
+  const comments = capture.coverage.find((section) => section.section === "comments"); assert.ok(comments);
+  const diagnostic = `comments: SteamHistory's profile summary lists 8 comments records; this session returned ${comments.captured}. Deleted comments require SteamHistory supporter access; the summary may also be outdated.`;
+  const contents = JSON.stringify({ ...capture, capturedAt: new Date(Date.parse(capture.capturedAt) + 1000).toISOString(),
+    coverage: capture.coverage.map((section) => section.section === "comments" ? { ...section, status: "partial", expected: 8, error: diagnostic } : section) });
+  const path = join(root, "saved-diagnostic.json"); await writeFile(path, contents);
+  await page.click("#open-history-import");
+  const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(path);
+  await page.click('#history-form button[type="submit"]'); await page.waitForSelector("#history-import-dialog[open]", { hidden: true });
+  assert.doesNotMatch(await visibleText(page, "#history-warnings") ?? "", /steamhistory/i);
+  assert.ok((await visibleText(page, "#history-warnings"))?.includes(`8 comments records; this session returned ${comments.captured}`));
+  const cachePath = join(root, "history", `${seed}.json`);
+  const saved = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(cachePath, "utf8"));
+  await writeFile(cachePath, JSON.stringify({ ...saved, warnings: [diagnostic] }));
+  // Reopen from disk: neutral UI copy must not depend on fetching a fresh capture.
+  await page.reload(); await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#scan-button")?.disabled);
+  await page.click('[data-screen="scan"]');
+  await fill(page, "#target", seed); await page.click("#lookup-target");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History partial");
+  await page.hover("#target-history-status"); await checkAdjacentHelp(page, "#target-history-status");
+  assert.doesNotMatch(await visibleText(page, "#app-tooltip") ?? "", /steamhistory/i);
+  assert.match(await visibleText(page, "#app-tooltip") ?? "", /supporter access/);
+  await page.keyboard.press("Escape"); await page.click("#target-history");
+  await page.waitForSelector("#history-result", { visible: true });
+  assert.doesNotMatch(await visibleText(page, "#history-warnings") ?? "", /steamhistory/i);
+  const index = await page.$$eval("#history-sources button", (buttons) => buttons.length);
+  const downloadPath = join(downloadDirectory, `history-${seed}-${index}.json`);
+  // Earlier steps may have downloaded the same ordinal from a different capture list.
+  await rm(downloadPath, { force: true });
+  await page.click("#history-sources button:last-child");
+  assert.equal(await readDownload(downloadPath), contents);
+  assert.match(await readFile(join(root, "history", `${seed}.json`), "utf8"), /SteamHistory's profile summary/);
 }
 async function checkUndatedRecords(page: Page) {
   for (const tab of ["persona", "realName", "url", "pfp"]) {
@@ -75,7 +134,7 @@ async function checkDuplicateHistoryOpeners(page: Page, root: string) {
   }
   for (const [tab, query] of [["profile", "Duplicate opener fixture"], ["persona", "Repeated alias"]] as const) {
     await page.click(`[data-history="${tab}"]`); await fill(page, "#history-search", query);
-    assert.equal((await page.$$("#history-rows button")).length, 3);
+    assert.equal((await page.$$("#history-rows button")).length, 3, JSON.stringify(await page.evaluate(() => ({ tab: document.querySelector("[data-history][aria-current=page]")?.getAttribute("data-history"), search: document.querySelector<HTMLInputElement>("#history-search")?.value, from: document.querySelector<HTMLInputElement>("#history-from")?.value, to: document.querySelector<HTMLInputElement>("#history-to")?.value, count: document.querySelector("#history-count")?.textContent, notice: document.querySelector("#notice")?.textContent, rows: document.querySelector("#history-rows")?.textContent }))));
     const first = await page.$("#history-rows button"); assert.ok(first); await first.click();
     await page.keyboard.press("Escape");
     assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#history-rows button")), true);
@@ -117,21 +176,23 @@ async function checkProfileDetails(page: Page) {
   }
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "profile-details.png") });
   await page.$$eval(".details-close", (buttons) => { for (const button of buttons) if (button instanceof HTMLButtonElement) button.click(); });
-  const graphNode = `#graph [data-node-id="${seed}"]`;
-  await page.$eval(graphNode, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
-  await page.keyboard.press("Enter");
+  // Canvas profiles remain available through keyboard search, with independent detail windows.
+  await fill(page, "#network-search", seed);
+  await page.focus(`#network-matches [data-node-id="${seed}"]`); await page.keyboard.press("Enter");
   assert.equal((await page.$$(".details-window")).length, 1);
   const firstDetails = await page.$(".details-window"); assert.ok(firstDetails);
-  await page.$eval(`#graph [data-node-id="${second}"]`, (node) => { if (!(node instanceof SVGElement)) throw new Error("Expected graph node"); node.focus(); });
-  await page.keyboard.press("Enter");
+  await page.$eval("#network-search", (input) => { if (input instanceof HTMLInputElement) { input.value = ""; input.dispatchEvent(new Event("input", { bubbles: true })); } });
+  await page.focus("#graph"); await page.keyboard.press("Enter");
   assert.equal((await page.$$(".details-window")).length, 2);
-  await firstDetails.focus();
-  await page.keyboard.press("Escape");
+  await firstDetails.focus(); await page.keyboard.press("Escape");
   assert.equal((await page.$$(".details-window")).length, 1);
-  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), seed);
   await page.focus(".details-window"); await page.keyboard.press("Escape");
   assert.equal((await page.$$(".details-window")).length, 0);
+  await fill(page, "#network-search", second);
+  await page.focus(`#network-matches [data-node-id="${second}"]`); await page.keyboard.press("Enter");
+  await page.focus(".details-window"); await page.keyboard.press("Escape");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-node-id")), second);
+  await fill(page, "#network-search", "");
 }
 async function keyForm(page: Page, value: string) {
   await page.click('#open-key'); await fill(page, "#key", value); await page.click('#key-form button[type="submit"]');
@@ -155,7 +216,7 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   const historyProvider = await historyFixture(); historyProvider.setStatus(403); shutdown.push(() => historyProvider.close());
   root = await mkdtemp(join(tmpdir(), "vapora-browser-e2e-"));
   const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
-  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader"] });
   shutdown.push(() => browser.close());
   let server = await Server.start({ root, key: "b".repeat(32), port: 0, steamBaseUrl: fixture.url, historyBaseUrl: historyProvider.url, historySession: historyProvider.session, retryBaseMs: 1 });
   shutdown.push(() => server.close());
@@ -228,6 +289,11 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.click('[data-screen="scan"]');
   await fill(page, "#target", seed); const held = fixture.hold("/ISteamUser/GetFriendList/v1/", second); await page.click("#scan-button"); await held;
   assert.equal(await page.$eval("#open-key", (element) => element instanceof HTMLButtonElement && element.disabled), true);
+  await page.waitForFunction(() => /ETA ~\d+[smh]/.test(document.querySelector("#progress-text")?.textContent ?? ""));
+  await screenshot("scan-eta");
+  await page.setViewport({ width: 390, height: 844 }); await screenshot("scan-eta-narrow");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.setViewport({ width: 1078, height: 599 });
   await page.click('[data-screen="results"]'); await page.click('[data-screen="scan"]'); await page.click("#target-history");
   assert.equal(await page.$eval("#progress-section", (element) => element instanceof HTMLElement && element.hidden), false);
   await page.click("#cancel-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled").catch(async (error) => {
@@ -269,16 +335,17 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await screenshot("estimate-narrow"); await page.setViewport({ width: 1078, height: 599 });
   await page.click('[data-screen="results"]');
-  await page.click('[data-view="network"]'); await page.waitForSelector("#graph [data-node-id]");
-  const graphNode = await page.$("#graph [data-node-id]"); assert.ok(graphNode);
-  const originalZoom = await page.$eval("#graph", (graph) => graph.getAttribute("viewBox"));
-  await page.click("#zoom-in"); const zoomed = await page.$eval("#graph", (graph) => graph.getAttribute("viewBox"));
+  await page.click('[data-view="network"]'); await page.waitForSelector("#graph canvas");
+  const graphCanvas = await page.$("#graph canvas"); assert.ok(graphCanvas);
+  const originalZoom = await page.$eval("#graph", (graph) => graph.getAttribute("data-ratio"));
+  await page.click("#zoom-in"); const zoomed = await page.$eval("#graph", (graph) => graph.getAttribute("data-ratio"));
+  assert.notEqual(zoomed, originalZoom);
   await page.click('[data-view="friends"]'); await page.click('[data-view="network"]');
-  assert.equal(await graphNode.evaluate((node) => node.isConnected), true);
-  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("viewBox")), zoomed);
+  assert.equal(await graphCanvas.evaluate((node) => node.isConnected), true);
+  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("data-ratio")), zoomed);
   await page.click("#zoom-reset");
-  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("viewBox")), originalZoom);
-  assert.equal(await graphNode.evaluate((node) => node.isConnected), true);
+  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("data-ratio")), originalZoom);
+  assert.equal(await graphCanvas.evaluate((node) => node.isConnected), true);
   await screenshot("network"); await checkProfileDetails(page);
   await page.click('[data-view="locations"]');
   const oldLocationButton = await page.$("#location-rows button"); assert.ok(oldLocationButton);
@@ -371,7 +438,7 @@ test("history account selection, all viewer tabs, filters, original downloads an
   root = await mkdtemp(join(tmpdir(), "vapora-history-browser-")); const downloadDirectory = join(root, "downloads"); await mkdir(downloadDirectory);
   const server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: history.url, historySession: history.session, retryBaseMs: 1 });
   shutdown.push(() => server.close());
-  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloadDirectory }, args: ["--no-sandbox", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader"] });
   shutdown.push(() => browser.close());
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 599 }); await page.goto(server.origin);
@@ -411,12 +478,7 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 0);
   await fill(page, "#history-from", ""); await fill(page, "#history-to", "");
   await page.click("#history-sources button");
-  let original: string | undefined;
-  for (let attempt = 0; attempt < 50; attempt++) {
-    try { original = await readFile(join(downloadDirectory, `history-${seed}-1.json`), "utf8"); break; }
-    catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error; await delay(100); }
-  }
-  assert.ok(original);
+  const original = await readDownload(join(downloadDirectory, `history-${seed}-1.json`));
   const capture = JSON.parse(original);
   assert.equal(capture.type, "SteamHistoryCapture");
   assert.equal(capture.steamID64, seed);
@@ -440,6 +502,9 @@ test("history account selection, all viewer tabs, filters, original downloads an
   const run = Schema.decodeUnknownSync(Contracts.State)(await (await fetch(`${server.origin}/api/state`, { headers: { "user-agent": userAgent } })).json());
   assert.ok(run.job.id);
   const attached = await readFile(join(root, "outputs", run.job.id, "history.json"), "utf8"); assert.ok(JSON.parse(attached).sources.length);
+  await page.click('[data-view="friends"]');
+  // A mounted graph must not prevent inspecting friends excluded by the admission cap.
+  await page.click('[data-view="network"]'); await page.waitForSelector("#graph canvas");
   await page.click('[data-view="friends"]');
   await page.$$eval("#friend-rows tr", (rows) => rows.find((row) => row.textContent?.includes("Outside graph"))?.querySelector("button")?.click());
   assert.match(await visibleText(page, ".details-facts") ?? "", /Outside admitted graph/);
@@ -507,6 +572,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click("#open-history"); await page.click('[data-history="comments"]');
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered from target panel/);
   assert.equal(history.requests(), requestsBeforeReopen);
+  const cachedRequests = history.requests(); await checkSavedHistoryDiagnostics(page, root, downloadDirectory);
+  assert.equal(history.requests(), cachedRequests);
   await checkDuplicateHistoryOpeners(page, root);
   assert.deepEqual(errors, []);
 });
@@ -524,11 +591,17 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   root = await mkdtemp(join(tmpdir(), "vapora-ui-browser-"));
   const server = await Server.start({ root, key, port: 0, steamBaseUrl: fixture.url, historyBaseUrl: history.url, historySession: history.session, retryBaseMs: 1 });
   shutdown.push(() => server.close());
-  const browser = await puppeteer.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const browser = await puppeteer.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader"] });
   shutdown.push(() => browser.close());
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 700 }); await page.goto(server.origin);
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#scan-button")?.disabled);
+  for (const [width, height] of [[1078, 606], [1078, 900], [320, 740]] as const) {
+    await page.setViewport({ width, height });
+    const help = '[aria-label="About request rate"]';
+    await page.mouse.move(0, 0); await page.hover(help); await checkAdjacentHelp(page, help); await page.keyboard.press("Escape");
+  }
+  await page.setViewport({ width: 1078, height: 700 });
   await page.click("#open-scan-ranking");
   for (const width of [1078, 320]) {
     await page.setViewport({ width, height: 740 });
@@ -545,14 +618,7 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   }
   await page.focus("#mutualWeight"); await page.waitForSelector("#app-tooltip:popover-open");
-  assert.equal(await page.$eval("#app-tooltip", (tooltip) => {
-    const box = tooltip.getBoundingClientRect();
-    if (!box.width || !box.height) return false;
-    return [...document.querySelectorAll("#scan-ranking-form input, #scan-ranking-form select, #scan-ranking-form button")].every((control) => {
-      const rect = control.getBoundingClientRect();
-      return rect.right <= box.left || rect.left >= box.right || rect.bottom <= box.top || rect.top >= box.bottom;
-    });
-  }), true);
+  await checkAdjacentHelp(page, "#mutualWeight");
   await page.keyboard.press("Escape"); await page.waitForSelector("#app-tooltip:popover-open", { hidden: true });
   await page.setViewport({ width: 320, height: 100 });
   await page.$eval("#mutualWeight", (input) => {
@@ -629,5 +695,163 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click('#history-form button[type="submit"]'); await page.waitForSelector("#history-import-dialog-error:not([hidden])");
   assert.match(await visibleText(page, "#history-import-dialog-error"), /not valid JSON/);
   assert.equal(await page.evaluate(() => document.activeElement?.id), "history-import-dialog-error");
+  assert.deepEqual(errors, []);
+});
+
+
+test("network preview expands in-app, keeps all connections and supports exploration and image export", { timeout: 120000 }, async (context) => {
+  const executablePath = process.env.VAPORA_BROWSER; assert.ok(executablePath);
+  const root = await mkdtemp(join(tmpdir(), "vapora-network-e2e-"));
+  const fixture = await steamFixture(); const history = await historyFixture();
+  const ids = Array.from({ length: 200 }, (_, index) => Schema.decodeUnknownSync(Contracts.Metric.fields.id)(String(BigInt(seed) + BigInt(index))));
+  const saved = scan(ids.map((id, index) => player(id, Array.from({ length: 10 }, (_, offset) => ids[(index + offset + 1) % ids.length]).filter((id) => id !== undefined),
+    { groups: index < 3 ? ["test-group"] : [], groupsStatus: "public", avatar: index === 1 ? `${fixture.url}/missing-avatar.jpg` : index === 2 ? null : `${fixture.url}/avatars/${id}.svg` })));
+  const directory = join(root, "outputs", saved.id); await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, "scan.json"), JSON.stringify(saved));
+  const downloads = join(root, "downloads"); await mkdir(downloads);
+  const server = await Server.start({ root, key: "", port: 0, steamBaseUrl: fixture.url, historySession: history.session });
+  const browser = await puppeteer.launch({ executablePath, headless: true, downloadBehavior: { policy: "allow", downloadPath: downloads }, args: ["--no-sandbox", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader"] });
+  context.after(async () => { await browser.close(); await server.close(); await fixture.close(); await history.close(); await rm(root, { recursive: true, force: true }); });
+  const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
+  await page.setUserAgent(userAgent); await page.setViewport({ width: 1078, height: 750 });
+  await page.goto(`${server.origin}/#${saved.id}`); await page.waitForSelector("#report-status", { visible: true });
+  assert.equal(await page.$eval("#graph", (element) => element.children.length), 0);
+  await page.click('[data-view="network"]');
+  await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "200");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "2000");
+  assert.ok(await page.$("#graph canvas"));
+  assert.ok(await page.$eval("#graph", (element) => element.clientHeight <= 240));
+  const canvas = await page.$("#graph canvas"); assert.ok(canvas);
+  await page.click("#zoom-in"); const zoom = await page.$eval("#graph", (element) => element.getAttribute("data-ratio"));
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-preview.png") });
+  await page.click("#network-maximize");
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-explorer.png") });
+  assert.equal(await page.$eval("#network-maximize", (element) => element.getAttribute("aria-expanded")), "true");
+  assert.ok(await page.$eval("#graph", (element) => element.clientHeight > 400));
+  assert.equal(await canvas.evaluate((element) => element.isConnected), true);
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-ratio")), zoom);
+  assert.equal((await browser.pages()).length, 2, "Maximizing must not open a new tab");
+  await fill(page, "#network-search", seed);
+  await page.waitForFunction((id) => document.querySelectorAll("#network-profiles button").length === 1
+    && document.querySelector(`#network-profiles [data-node-id="${id}"]`), {}, seed);
+  await page.focus(`#network-profiles [data-node-id="${seed}"]`); await page.keyboard.press("Enter");
+  await page.waitForFunction((id) => document.querySelector<HTMLElement>("#graph")?.dataset.selected === id, {}, seed);
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "2000", "Selection must highlight without removing links");
+  assert.ok(await page.$("#network-selection img"));
+  assert.equal(await page.$eval(".toolbar", (element) => element instanceof HTMLElement && element.inert), true);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-selected.png") });
+  const center = await page.$eval("#graph", (element) => { const box = element.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; });
+  await checkNodePicture(page, `${fixture.url}/avatars/${seed}.svg`);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-selected.png") });
+  await page.mouse.move(center.x, center.y); await page.mouse.down(); await page.mouse.move(center.x + 36, center.y + 12, { steps: 5 }); await page.mouse.up();
+  assert.equal(await page.$eval("#network-selection button:last-child", (element) => element.getAttribute("aria-pressed")), "true", "Dragging a node must pin it");
+  await page.click("#network-selection button:last-child");
+  for (const id of ids.slice(1, 3)) {
+    await fill(page, "#network-search", id);
+    await page.waitForFunction((id) => document.querySelectorAll("#network-profiles button").length === 1
+      && document.querySelector(`#network-profiles [data-node-id="${id}"]`), {}, id);
+    await page.click(`#network-profiles [data-node-id="${id}"]`);
+    await checkNodePicture(page, `${server.origin}/placeholder.jpg`);
+  }
+  await fill(page, "#network-search", seed);
+  await page.waitForFunction((id) => document.querySelectorAll("#network-profiles button").length === 1
+    && document.querySelector(`#network-profiles [data-node-id="${id}"]`), {}, seed);
+  await page.click(`#network-profiles [data-node-id="${seed}"]`);
+  await page.click("#network-selection button"); await page.waitForSelector(".details-window");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval("#network-maximize", (element) => element.getAttribute("aria-expanded")), "true");
+  await fill(page, "#network-search", "");
+  await page.select("#network-scope", "one");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "21");
+  await page.select("#network-scope", "two");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "41");
+  await fill(page, "#network-minimum", "9999");
+  await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "No profiles match these filters.");
+  assert.equal(await visibleText(page, "#network-layout-status"), "No profiles match these filters.");
+  await page.click("#network-clear");
+  await page.select("#network-availability", "private");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "0");
+  await page.click("#network-clear");
+  await page.select("#edge-kind", "group");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "3");
+  await page.select("#edge-kind", "all");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "2003");
+  await page.select("#network-community", "0");
+  assert.ok(Number(await page.$eval("#graph", (element) => element.getAttribute("data-nodes"))) < 200);
+  await page.click("#network-clear");
+  await page.select("#edge-kind", "group");
+  await fill(page, "#network-minimum", "1");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "3");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "3");
+  await fill(page, "#network-search", seed);
+  await page.click(`#network-profiles [data-node-id="${seed}"]`);
+  assert.match(await visibleText(page, "#network-selection") ?? "", /2 visible connections/);
+  await page.select("#edge-kind", "all");
+  assert.match(await visibleText(page, "#network-selection") ?? "", /22 visible connections/);
+  await fill(page, "#network-minimum", "21");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "3");
+  assert.match(await visibleText(page, "#network-selection") ?? "", /4 visible connections/);
+  await page.click("#network-clear");
+  assert.equal((await page.$$("#network-profiles button")).length, 50);
+  await page.click("#network-next"); assert.match(await visibleText(page, "#network-profile-count") ?? "", /51.*100/);
+  await page.click("#network-previous");
+  await page.click("#network-export");
+  const image = join(downloads, `vapora-${saved.id}-network.png`);
+  await readDownload(image); const bytes = await readFile(image);
+  assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a"); assert.ok(bytes.length > 10000);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await copyFile(image, join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-export.png"));
+  await page.click("#network-arrange"); await page.click("#network-pause");
+  assert.equal(await visibleText(page, "#network-layout-status"), "Layout paused");
+  await page.click("#network-arrange");
+  await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
+  await page.setViewport({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.waitForFunction(() => document.querySelector<HTMLElement>("#network-sidebar")?.hidden === true);
+  await page.click("#network-filters"); assert.equal(await page.$eval("#network-sidebar", (element) => element instanceof HTMLElement && element.hidden), false);
+  await page.click("#network-filters");
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-explorer-narrow.png") });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval("#network-maximize", (element) => element.getAttribute("aria-expanded")), "false");
+  assert.equal(await canvas.evaluate((element) => element.isConnected), true);
+  assert.equal(await page.$eval(".toolbar", (element) => element instanceof HTMLElement && element.inert), false);
+  // Perform the tab switch in one event turn, before the real worker can deliver its frame.
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("#network-arrange")?.click();
+    document.querySelector<HTMLButtonElement>('[data-view="friends"]')?.click();
+    document.querySelector<HTMLButtonElement>('[data-view="network"]')?.click();
+  });
+  await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("#network-arrange")?.click();
+    document.querySelector<HTMLButtonElement>("#network-pause")?.click();
+    document.querySelector<HTMLButtonElement>('[data-view="friends"]')?.click();
+    document.querySelector<HTMLButtonElement>('[data-view="network"]')?.click();
+  });
+  assert.equal(await visibleText(page, "#network-layout-status"), "Layout paused");
+  assert.equal(fixture.requests.filter((request) => request.path.startsWith("/ISteamUser/")).length, 0, "Exploration must not fetch new Steam observations");
+  assert.equal(await readFile(join(directory, "scan.json"), "utf8"), JSON.stringify(saved));
+  assert.deepEqual(errors, []);
+});
+
+
+test("unavailable WebGL shows recovery guidance and leaves saved results usable", { timeout: 60000 }, async (context) => {
+  const executablePath = process.env.VAPORA_BROWSER; assert.ok(executablePath);
+  const root = await mkdtemp(join(tmpdir(), "vapora-no-webgl-")); const history = await historyFixture();
+  const saved = scan([player(seed, [])]); const directory = join(root, "outputs", saved.id);
+  await mkdir(directory, { recursive: true }); await writeFile(join(directory, "scan.json"), JSON.stringify(saved));
+  const server = await Server.start({ root, key: "", port: 0, historySession: history.session });
+  const browser = await puppeteer.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-webgl"] });
+  context.after(async () => { await browser.close(); await server.close(); await history.close(); await rm(root, { recursive: true, force: true }); });
+  const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
+  await page.setUserAgent(userAgent); await page.goto(`${server.origin}/#${saved.id}`);
+  await page.waitForSelector("#report-status", { visible: true }); await page.click('[data-view="network"]');
+  assert.equal(await visibleText(page, "#graph-count"), "Graph unavailable");
+  assert.match(await visibleText(page, "#graph") ?? "", /Enable graphics acceleration/);
+  await page.click("#graph button"); assert.equal(await visibleText(page, "#graph-count"), "Graph unavailable");
+  await page.click('[data-view="friends"]');
+  assert.equal(await page.$eval("#friends-view", (element) => element instanceof HTMLElement && element.hidden), false);
+  assert.equal(await readFile(join(directory, "scan.json"), "utf8"), JSON.stringify(saved));
   assert.deepEqual(errors, []);
 });

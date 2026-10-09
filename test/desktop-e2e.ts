@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { Schema } from "effect";
 import { State } from "../src/contracts.js";
 import { listPackage } from "@electron/asar";
 import puppeteer, { type Page } from "puppeteer-core";
-import { key, seed, steamFixture, historyFixture, userAgent } from "./fixtures.js";
+import { key, seed, second, denseScan, steamFixture, historyFixture, userAgent, checkNodePicture } from "./fixtures.js";
 
 // Closing Chromium through DevTools bypasses Electron's native window lifecycle.
 async function closeDesktop(page: Page) {
@@ -27,7 +27,8 @@ async function launchDesktop(shutdown: (() => Promise<void>)[], executable: stri
   const env: NodeJS.ProcessEnv = { ...process.env, STEAM_API_KEY: configuredKey, VAPORA_STEAM_FIXTURE: fixtureUrl, VAPORA_HISTORY_FIXTURE: historyUrl };
   delete env.PORTABLE_EXECUTABLE_DIR;
   if (portable) delete env.VAPORA_ROOT; else env.VAPORA_ROOT = dataRoot;
-  const args = ["--remote-debugging-port=0"];
+  // CI desktops may use a software GPU; this flag applies only to test launches.
+  const args = ["--remote-debugging-port=0", "--enable-unsafe-swiftshader"];
   // Sandbox restrictions on CI hosts must not change the distributed app's defaults.
   if (process.platform === "linux") args.push("--no-sandbox", "--disable-dev-shm-usage");
   if (process.platform === "linux" && process.env.VAPORA_TEST_KEY_BACKEND) args.push(`--password-store=${process.env.VAPORA_TEST_KEY_BACKEND}`);
@@ -79,7 +80,7 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   const archive = process.env.VAPORA_DESKTOP_ASAR;
   assert.ok(executable && archive, "Set VAPORA_DESKTOP and VAPORA_DESKTOP_ASAR to the packaged application.");
   const packagedFiles = listPackage(resolve(archive), { isPack: false }).map((name) => name.replaceAll("\\", "/"));
-  for (const required of ["/scripts/desktop.mjs", "/scripts/desktop-preload.cjs", "/dist/src/server.js", "/dist/ui/index.html", "/dist/ui/vapora.svg", "/dist/ui/placeholder.jpg", "/dist/ui/fonts/motiva-sans-regular.ttf", "/node_modules/effect/package.json"]) {
+  for (const required of ["/scripts/desktop.mjs", "/scripts/desktop-preload.cjs", "/dist/src/server.js", "/dist/src/analysis-worker.js", "/dist/ui/network-layout.js", "/dist/ui/index.html", "/dist/ui/vapora.svg", "/dist/ui/placeholder.jpg", "/dist/ui/fonts/motiva-sans-regular.ttf", "/node_modules/effect/package.json"]) {
     assert.ok(packagedFiles.includes(required), `Missing packaged file: ${required}`);
   }
   assert.ok(!packagedFiles.some((name) => /\/(?:\.env|test|outputs|profiles)(?:\/|$)/.test(name)));
@@ -150,9 +151,37 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
     if (!(input instanceof HTMLInputElement)) throw new Error("Expected node cap field");
     input.value = "5"; input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await page.click("#scan-button");
+  const held = fixture.hold("/ISteamUser/GetFriendList/v1/", second);
+  await page.click("#scan-button"); await held;
+  await page.waitForFunction(() => /ETA ~\d+[smh]/.test(document.querySelector("#progress-text")?.textContent ?? ""));
+  await page.click("#cancel-button");
+  await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "cancelled");
+  Schema.decodeUnknownSync(Schema.Boolean)(await page.evaluate(() => window.vaporaDesktop?.isMaximized()));
+  fixture.release("/ISteamUser/GetFriendList/v1/", second);
+  await page.click("#resume-button");
   await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete", { timeout: 60000 });
-  console.info("Desktop E2E: fixture scan completed");
+  console.info("Desktop E2E: cancelled held request, checked ETA and native IPC, resumed to completion");
+  // Opening cancelled results must not tie up Electron's main thread with centrality work.
+  const dense = { ...denseScan(), status: "cancelled" };
+  const denseDirectory = join(dataRoot, "outputs", dense.id); await mkdir(denseDirectory, { recursive: true });
+  await writeFile(join(denseDirectory, "scan.json"), JSON.stringify(dense));
+  const responsiveness = await page.evaluate(async (id) => {
+    let complete = false; let checks = 0; let longest = 0;
+    const report = fetch(`/api/runs/${id}`).then(async (response) => {
+      if (!response.ok) throw new Error(await response.text());
+      const saved = await response.json(); return saved.report.coverage.nodes;
+    }).finally(() => { complete = true; });
+    while (!complete) {
+      const start = performance.now(); await window.vaporaDesktop?.isMaximized();
+      longest = Math.max(longest, performance.now() - start); checks++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return { nodes: await report, checks, longest };
+  }, dense.id);
+  assert.equal(responsiveness.nodes, 2000); assert.ok(responsiveness.checks >= 10);
+  assert.ok(responsiveness.longest < 1000, `Native IPC stalled during analysis: ${JSON.stringify(responsiveness)}`);
+  await rm(denseDirectory, { recursive: true });
+  console.info(`Desktop E2E: dense cancelled report remained responsive ${JSON.stringify(responsiveness)}`);
   const downloadLinks = await page.$$eval("#downloads a", (links) => links.map((link) => {
     if (!(link instanceof HTMLAnchorElement)) throw new Error("Expected an export link");
     return link.href;
@@ -167,6 +196,25 @@ test("packaged desktop includes its assets and completes a scan with real fixtur
   const saved = Schema.decodeUnknownSync(Schema.fromJsonString(State))(state);
   const run = saved.runs[0]; assert.ok(run);
   assert.equal(run.status, "complete");
+  // Exercise the real packaged WebGL renderer, worker and GPU avatar atlas on every OS.
+  await page.click('[data-view="network"]');
+  await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-nodes")), "5");
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "5");
+  const canvas = await page.$("#graph canvas"); assert.ok(canvas);
+  await page.click("#network-maximize");
+  assert.equal(await canvas.evaluate((element) => element.isConnected), true);
+  await page.type("#network-search", seed);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForFunction((id) => document.querySelectorAll("#network-profiles button").length === 1
+    && document.querySelector(`#network-profiles [data-node-id="${id}"]`), {}, seed);
+  await page.click(`#network-profiles [data-node-id="${seed}"]`);
+  await page.waitForFunction((id) => document.querySelector<HTMLElement>("#graph")?.dataset.selected === id, {}, seed);
+  await checkNodePicture(page, `${fixture.url}/avatars/${seed}.svg`);
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-edges")), "5");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval("#network-maximize", (element) => element.getAttribute("aria-expanded")), "false");
+  console.info("Desktop E2E: packaged layout worker, in-app maximize, selection and GPU avatar checked");
   const checkpoint = await readFile(join(dataRoot, "outputs", run.id, "scan.json"));
   assert.ok(!checkpoint.includes(Buffer.from(key)));
   assert.ok(!state.includes(key)); assert.ok(fixture.requests.length > 0);

@@ -21,7 +21,7 @@ export const Report = Schema.Struct({
   warnings: Schema.Array(Schema.String),
 });
 export interface Report extends Schema.Schema.Type<typeof Report> {}
-export const Progress = Schema.Struct({ id: RunId, phase: Schema.String, nodes: Schema.Number, scanned: Schema.Number, remaining: Schema.Number });
+export const Progress = Schema.Struct({ id: RunId, phase: Schema.String, nodes: Schema.Number, scanned: Schema.Number, remaining: Schema.Number, etaSeconds: Schema.NullOr(Schema.Number) });
 export interface Progress extends Schema.Schema.Type<typeof Progress> {}
 /** operationId identifies one attempt; id identifies its saved run, when one exists. */
 export const Job = Schema.Struct({

@@ -96,7 +96,7 @@ test("byte-identical reimports reuse one source while distinct original captures
 test("profile-date ties and current coverage use capture time independently of import order", async () => {
   const old = await parse({ ...profile(100), name: "Old", vacBanned: false });
   const recent = await parse({ ...profile(100), name: "Recent", vacBanned: true });
-  const older = { ...old.sources[0], capturedAt: "2026-10-08T10:00:00+02:00", coverage: [{ section: "comments", captured: 1, total: 2, expected: 2, status: "partial", error: "Old incomplete capture" }] };
+  const older = { ...old.sources[0], capturedAt: "2026-10-08T10:00:00+02:00", coverage: [{ section: "comments", captured: 1, total: 2, expected: 2, status: "partial", error: "SteamHistory.net: Old incomplete capture" }] };
   const newer = { ...recent.sources[0], capturedAt: "2026-10-08T08:30:00Z", coverage: [{ section: "comments", captured: 2, total: 2, expected: 2, status: "complete", error: null }] };
   const invalidDate = { ...older, capturedAt: "not a date" };
   for (const sources of [[older, newer], [newer, older], [invalidDate, newer], [newer, invalidDate]]) {
@@ -106,7 +106,8 @@ test("profile-date ties and current coverage use capture time independently of i
     assert.equal(bundle.sources.length, 2);
   }
   const latestPartial = Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...older, capturedAt: "2026-10-08T09:00:00Z" }] });
-  assert.equal(History.coverageError(latestPartial), "Old incomplete capture");
+  assert.equal(History.coverageError(latestPartial), "History: Old incomplete capture");
+  assert.equal(latestPartial.sources[1]?.coverage[0]?.error, "SteamHistory.net: Old incomplete capture");
   const laterObservation = await parse({ ...profile(200), name: "Later observation" });
   assert.equal(History.view(Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...laterObservation.sources[0], capturedAt: older.capturedAt }] })).profile.name, "Later observation");
 });

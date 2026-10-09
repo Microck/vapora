@@ -10,7 +10,7 @@ import { connect } from "node:net";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { unzipSync, strFromU8 } from "fflate";
-import { Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, ManagedRuntime, Schema } from "effect";
 import { defaults, SteamId, Settings, newPlayer } from "../src/model.js";
 import * as Steam from "../src/steam.js";
 import * as Storage from "../src/storage.js";
@@ -19,10 +19,36 @@ import * as Analysis from "../src/analysis.js";
 import * as Server from "../src/server.js";
 import * as Contracts from "../src/contracts.js";
 import * as History from "../src/history.js";
-import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, player, scan } from "./fixtures.js";
+import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, player, scan, denseScan } from "./fixtures.js";
 
 const friendPath = "/ISteamUser/GetFriendList/v1/";
 const summaryPath = "/ISteamUser/GetPlayerSummaries/v2/";
+test("network analysis stays interruptible without blocking the server thread or losing a checkpoint", { timeout: 30000 }, async () => {
+  const fixture = await steamFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-analysis-cancel-"));
+  const runtime = ManagedRuntime.make(Layer.mergeAll(Storage.layer(root), Steam.layer({ key, requestsPerMinute: 0, baseUrl: fixture.url })));
+  const observations = denseScan(); let ticks = 0;
+  const heartbeat = setInterval(() => { ticks++; }, 10);
+  try {
+    const report = await runtime.runPromise(Analysis.calculate(observations));
+    assert.equal(report.coverage.nodes, 2000); assert.ok(report.edges.length > 50000);
+    assert.ok(ticks >= 10, "Analysis must let the window/server event loop run");
+    const small = scan([player(seed, [second]), player(second, [seed])]);
+    assert.deepEqual(await runtime.runPromise(Analysis.calculate(small)), Analysis.analyze(small));
+    await runtime.runPromise(Effect.gen(function* () { yield* (yield* Storage.Service).create(observations); }));
+    const analyzing = Deferred.makeUnsafe<void>();
+    const fiber = runtime.runFork(Scanner.run(observations, (progress) => {
+      if (progress.phase === "Analyzing network") Effect.runSync(Deferred.succeed(analyzing, undefined));
+    }));
+    await Effect.runPromise(Deferred.await(analyzing));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(observations.id); }));
+    assert.equal(saved.status, "cancelled"); assert.deepEqual(saved.queue, []);
+    assert.deepEqual(saved.players.map((p) => p.friends), observations.players.map((p) => p.friends));
+    const completed = await runtime.runPromise(Scanner.run(saved));
+    assert.equal(completed.status, "complete");
+    assert.equal(fixture.requests.filter((request) => request.path === friendPath).length, 0, "Resume must not repeat collected lists");
+  } finally { clearInterval(heartbeat); await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
+});
 test("HTTP provider handles private lists, transient retries, denied keys, and malformed data", async () => {
   const fixture = await steamFixture();
   const runtime = ManagedRuntime.make(Steam.layer({ key, requestsPerMinute: 60000, baseUrl: fixture.url, retryBaseMs: 1 }));
@@ -87,11 +113,17 @@ test("zero limits remove the cap and pacing while retaining retries and resumabl
     assert.ok(estimate.estimatedNodes && estimate.estimatedNodes >= 5); assert.equal(estimate.cappedAt, 0);
     fixture.failures.set(friendPath + seed, { status: 429, remaining: 1, retryAfter: "0" });
     const initial = await runtime.runPromise(Scanner.create(seed, settings));
-    const held = fixture.hold(friendPath, second); const fiber = runtime.runFork(Scanner.run(initial)); await held;
+    const progress: Scanner.Progress[] = [];
+    const held = fixture.hold(friendPath, second); const fiber = runtime.runFork(Scanner.run(initial, (update) => progress.push(update))); await held;
+    assert.equal(progress[0]?.etaSeconds, null);
+    assert.ok(progress.some((update) => update.etaSeconds !== null && update.etaSeconds > 0));
     await Effect.runPromise(Fiber.interrupt(fiber)); fixture.release(friendPath, second);
     const saved = await runtime.runPromise(Effect.gen(function* () { return yield* (yield* Storage.Service).read(initial.id); }));
     assert.equal(saved.status, "cancelled"); assert.equal(saved.settings.maxNodes, 0); assert.equal(saved.settings.requestsPerMinute, 0);
-    const completed = await runtime.runPromise(Scanner.run(saved));
+    const resumedProgress: Scanner.Progress[] = [];
+    const completed = await runtime.runPromise(Scanner.run(saved, (update) => resumedProgress.push(update)));
+    assert.equal(resumedProgress[0]?.etaSeconds, null, "Resume must discard the previous attempt's timing");
+    assert.equal(resumedProgress.at(-1)?.etaSeconds, null, "Completed scans have no remaining ETA");
     assert.equal(completed.status, "complete"); assert.equal(completed.players.length, 5); assert.equal(completed.truncated, false);
     assert.equal(fixture.failures.get(friendPath + seed)?.remaining, 0);
   } finally { await runtime.dispose(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
@@ -298,6 +330,17 @@ test("local server validates host and origin, protects keys, and runs a complete
     const numericArchive = unzipSync(new Uint8Array(await (await request(`/api/obsidian?id=${view.scan.id}`)).arrayBuffer()));
     assert.ok(strFromU8(numericArchive[`Profiles/${second}.md`]!).includes(`name: "${second}"`));
     assert.equal(fixture.requests.length, beforeExport);
+
+    // A failed cancellation save must surface its storage error instead of claiming success.
+    const blocked = fixture.hold(friendPath, seed);
+    await request("/api/scan", JSON.stringify({ target: seed, settings })); await blocked;
+    const active = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
+    assert.ok(active.job.id);
+    const blockedCheckpoint = join(root, "outputs", active.job.id, "scan.json");
+    await rm(blockedCheckpoint); await mkdir(blockedCheckpoint);
+    await request("/api/cancel", "{}"); fixture.release(friendPath, seed);
+    const saveFailure = Schema.decodeUnknownSync(Contracts.State)(await (await request("/api/state")).json());
+    assert.equal(saveFailure.job.status, "failed"); assert.match(saveFailure.job.error ?? "", /Could not replace .*scan\.json/);
 
   } finally { await server.close(); await fixture.close(); await rm(root, { recursive: true, force: true }); }
 });

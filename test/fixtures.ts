@@ -1,3 +1,8 @@
+import assert from "node:assert/strict";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import type { Page } from "puppeteer-core";
+import { unzlibSync } from "fflate";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { Effect, Schema } from "effect";
@@ -25,6 +30,13 @@ export function scan(players: readonly Player[], settings: Settings = defaults):
     status: "complete", error: null, settings, players, queue: [], truncated: false };
 }
 
+/** A connected, dense graph makes main-thread centrality stalls visible in lifecycle tests. */
+export function denseScan(): Scan {
+  const ids = Array.from({ length: 2000 }, (_, index) => Schema.decodeUnknownSync(SteamId)(String(BigInt(seed) + BigInt(index))));
+  return scan(ids.map((id, index) => player(id, Array.from({ length: 30 }, (_, offset) => ids[(index + (offset + 1) * 37) % ids.length]).filter((id) => id !== undefined))),
+    { ...defaults, maxNodes: 0, requestsPerMinute: 0 });
+}
+
 /** Distinct sample profile pictures served by the HTTP fixture, not live Steam accounts. */
 export function avatarSvg(id: string): string {
   const pictures = [
@@ -34,7 +46,7 @@ export function avatarSvg(id: string): string {
     '<rect width="64" height="64" fill="#292b4b"/><circle cx="33" cy="31" r="16" fill="#bab2dc"/><path fill="#696285" d="M30 18h10v5H30zM21 30h8v8h-8zM34 37h11v5H34z"/><path fill="none" stroke="#d6bc8c" stroke-width="4" d="M14 33C0 44 13 52 38 37S65 20 51 23"/>',
   ];
   const picture = pictures[(Number(id.slice(-2)) - 29 + pictures.length) % pictures.length];
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${picture}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">${picture}</svg>`;
 }
 
 /** A real HTTP fixture implements Steam's wire formats. No modules or transports are mocked. */
@@ -60,7 +72,7 @@ export async function steamFixture() {
     const id = url.searchParams.get("steamid") ?? "";
     requests.push({ path: url.pathname, id, ids: id || url.searchParams.get("steamids") || url.searchParams.get("input_json") || "", time: Date.now(), agent: request.headers["user-agent"] ?? "" });
     const avatar = /^\/avatars\/(\d{17})\.svg$/.exec(url.pathname);
-    if (avatar?.[1]) { response.setHeader("content-type", "image/svg+xml"); response.end(avatarSvg(avatar[1])); return; }
+    if (avatar?.[1]) { response.setHeader("content-type", "image/svg+xml"); response.setHeader("access-control-allow-origin", "*"); response.end(avatarSvg(avatar[1])); return; }
     response.setHeader("content-type", "application/json");
     if (url.searchParams.get("key") !== key) { response.writeHead(403); response.end("{}"); return; }
     const failure = failures.get(url.pathname + id);
@@ -199,4 +211,37 @@ export async function historyFixture() {
     setStatus: (value: number) => { status = value; },
     close: () => new Promise<void>((resolve, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : resolve()); }),
   };
+}
+
+/** Verify the composited GPU avatar, shared by browser and native packaged-app checks. */
+export async function checkNodePicture(page: Page, source: string) {
+  const center = await page.$eval("#graph", (element) => { const box = element.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; });
+  const expected = await page.evaluate(async (source) => {
+    const image = new Image(); image.crossOrigin = "anonymous"; image.src = source; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = 48; canvas.height = 48;
+    const context = canvas.getContext("2d"); if (!context) throw new Error("Missing image context");
+    context.drawImage(image, 0, 0, 48, 48);
+    // The selected node centre can fall between source texels after GPU scaling.
+    const pixels = context.getImageData(22, 22, 5, 5).data;
+    return Array.from({ length: 25 }, (_, index) => pixels.slice(index * 4, index * 4 + 3));
+  }, source);
+  // Read the composited screenshot, since WebGL's drawing buffer can clear after presentation.
+  let actual: number[] = [];
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const pixel = Buffer.from(await page.screenshot({ type: "png", clip: { x: Math.floor(center.x), y: Math.floor(center.y), width: 1, height: 1 } }));
+    assert.equal(pixel.readUInt32BE(16), 1); assert.equal(pixel.readUInt32BE(20), 1);
+    assert.equal(pixel[24], 8); assert.ok(pixel[25] === 2 || pixel[25] === 6);
+    const chunks: Buffer[] = [];
+    for (let offset = 8; offset < pixel.length;) {
+      const length = pixel.readUInt32BE(offset);
+      if (pixel.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(pixel.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    // A 1x1 RGB/RGBA PNG has no preceding pixel or row, so all PNG filters preserve its RGB bytes.
+    actual = [...unzlibSync(Buffer.concat(chunks)).subarray(1, 4)];
+    if (expected.some((pixel) => actual.every((value, channel) => Math.abs(value - (pixel[channel] ?? 0)) < 25))) return;
+    await delay(100);
+  }
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-avatar-failure.png") });
+  assert.fail(`Node picture did not render: expected ${expected}, got ${actual}`);
 }
