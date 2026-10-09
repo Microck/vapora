@@ -14,6 +14,10 @@
   color: var(--OffWhite); background: #000;
   scrollbar-color: var(--LightGreenBG) var(--DarkGreenBG);
 }
+/* Standard scrollbar colors override WebKit geometry in Chromium. */
+@supports selector(::-webkit-scrollbar) {
+  :root, * { scrollbar-color: auto; }
+}
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 599px; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 body.desktop { height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
@@ -78,8 +82,9 @@ progress::-moz-progress-bar { background: var(--FullGreen); }
 main { min-width: 0; min-height: 502px; margin: 0 10px 15px; padding: 19px 24px 13px; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); overflow-y: scroll; scrollbar-gutter: stable; }
 body.desktop main { flex: 1; min-height: 0; }
 ::-webkit-scrollbar { width: 14px; height: 14px; }
-::-webkit-scrollbar-track { background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
-::-webkit-scrollbar-thumb { background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
+::-webkit-scrollbar-corner { background: var(--DarkGreenBG); }
+::-webkit-scrollbar-track { border-radius: 0; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
+::-webkit-scrollbar-thumb { border-radius: 0; min-height: 24px; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
 .screen { min-width: 0; }
 .scan-grid { display: grid; grid-template-columns: minmax(0, 1fr) 44px 260px; grid-template-areas: 'form rail target'; gap: 16px; align-items: start; }
 #scan-form { grid-area: form; display: grid; grid-template-rows: minmax(192px, auto) minmax(250px, auto); gap: 26px; min-width: 0; }
@@ -95,6 +100,9 @@ body.desktop main { flex: 1; min-height: 0; }
 .info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; min-height: 14px; height: 14px; padding: 0; border: 0; color: var(--GreenBG); background: var(--OffWhite); border-radius: 50%; font: bold 11px/1 Arial, sans-serif; vertical-align: middle; cursor: help; }
 .info::before { content: ''; position: absolute; inset: -5px; }
 .info:hover, .info:active { color: var(--DarkGreenBG); background: var(--Maize); }
+.tooltip-heading { display: block; color: var(--Maize); font-weight: 500; margin-bottom: 5px; }
+.tooltip-lines { margin: 0; padding-left: 16px; }
+.tooltip-lines li + li { margin-top: 4px; }
 .app-tooltip { position: fixed; inset: auto; margin: 0; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow-y: auto; padding: 7px 10px; border: 1px solid; border-color: var(--Outset); background: var(--DarkGreenBG); color: var(--OffWhite); font-size: 13px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; box-shadow: 2px 2px #0006; }
 #apply-settings { position: absolute; right: 16px; bottom: 14px; font-size: 14px; }
 #open-scan-ranking { position: absolute; left: 20px; bottom: 14px; font-size: 14px; }
@@ -185,6 +193,8 @@ dd { margin-top: 2px; color: var(--Maize); font-size: 18px; font-variant-numeric
 .view > h2 { margin-bottom: 8px; }
 .view > .hint { margin-top: 8px; }
 .section-line { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+#friends-view .search-label { display: flex; align-items: center; justify-content: end; gap: 8px; width: auto; font-size: 14px; }
+#friend-search { width: 220px; max-width: 100%; }
 .section-line label { display: grid; gap: 3px; color: var(--Label); }
 .search-label { width: 220px; }
 .table-wrap { max-width: 100%; overflow: auto; background: var(--DarkGreenBG); border: 1px solid; border-color: var(--Inset); }
@@ -272,7 +282,9 @@ tbody tr:hover { background: var(--GreenBG); }
 }
 
 /* Analysis grows beyond the scan reference while retaining the same VGUI controls. */
-.results-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.results-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.action-link { display: inline-block; padding: 3px 14px; min-height: 28px; text-decoration: none; background: var(--GreenBG); border: 1px solid; border-color: var(--Outset); }
+#obsidian-shortcut { margin-left: auto; }
 #run-library { margin-bottom: 12px; }
 #run-library .section-line label { font-size: 14px; }
 #run-library .section-line label:first-of-type { margin-left: auto; }
@@ -306,6 +318,11 @@ tbody tr:hover { background: var(--GreenBG); }
 .target-history { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .target-history button { padding: 2px 8px; }
 .target-history span { font-size: 14px; }
+#history-view .page-heading { margin-bottom: 0; }
+#history-view #history-heading { font-size: 16px; font-weight: 500; }
+#history-view #history-back { display: none; }
+.history-warning { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; }
+.history-warning strong { font-weight: 500; }
 .history-filters { flex-wrap: wrap; }
 .history-scope-line { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
 .history-scope-line .info { flex: none; }

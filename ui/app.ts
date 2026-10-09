@@ -77,6 +77,8 @@ function showScreen(name: typeof Screen.Type) {
     if (tab.dataset.screen === name) tab.setAttribute("aria-current", "page");
     else tab.removeAttribute("aria-current");
   }
+  if (name === "history") get("history-home").append(get("history-content"));
+  else if (name === "results" && !get("history-view").hidden) showAttachedHistory();
   window.scrollTo({ top: 0, behavior: "instant" });
   get("results").scrollTo({ top: 0, behavior: "instant" });
   if (name === "results") renderGraph();
@@ -280,6 +282,7 @@ function renderReport() {
   const obsidian = document.createElement("a"); obsidian.id = "obsidian-export";
   obsidian.textContent = "↓ Obsidian vault (.zip)";
   obsidian.href = `/api/obsidian?${new URLSearchParams({ id: scan.id })}`; exports.append(obsidian);
+  const shortcut = get("obsidian-shortcut"); shortcut.setAttribute("href", obsidian.href); shortcut.hidden = false;
   renderFriends(); renderLocations(); renderGraph(); renderTarget(); renderOutput();
 }
 function renderCoverageNotice() {
@@ -295,6 +298,8 @@ function renderCoverageNotice() {
   const warning = get("coverage-warning"); warning.hidden = !partial;
   warning.textContent = ["Partial results", ...reasons].join(" · ");
   get("open-history").hidden = !selected.history;
+  if (!selected.history && !get("history-view").hidden) document.querySelector<HTMLButtonElement>('[data-view="friends"]')?.click();
+  else if (!get("history-view").hidden && !get("results-screen").hidden) showAttachedHistory();
 }
 function renderRanking() {
   if (!selected) return;
@@ -334,6 +339,7 @@ function toggleRuns(visible: boolean) {
   get("run-library").hidden = !visible; buttons("toggle-runs").setAttribute("aria-expanded", String(visible));
   buttons("toggle-runs").textContent = visible && selected ? "Back to report" : "Saved runs";
   get("report").hidden = visible || !selected; get("empty").hidden = visible || Boolean(selected);
+  get("obsidian-shortcut").hidden = visible || !selected;
   if (!visible) renderGraph();
   else explorer?.hide();
 }
@@ -361,29 +367,44 @@ function renderRuns() {
 let accountHistory: HistoryState | null = null;
 let historyRequest = 0;
 let historyAccount: SteamId | null = null;
+function showAttachedHistory() {
+  if (!selected?.history) return;
+  const content = get("history-content"); const changedContext = content.parentElement !== get("history-view");
+  if (changedContext) { get("history-view").append(content); get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
+  renderHistory(selected.history, selected.scan.id);
+}
 function renderHistory(report: HistoryReport, runId: string | null) {
   const matching = runId && selected?.scan.seed === report.profile.steamID64 ? selected.scan : undefined;
+  get("history-result").hidden = false;
   HistoryUI.render(report, matching); historyAccount = report.profile.steamID64;
   const link = get("history-download"); link.hidden = !runId;
   if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
+}
+function historyMatchesContext(runId?: string) {
+  return get("history-content").parentElement !== get("history-view") || runId === selected?.scan.id;
 }
 function renderAccountHistory(state: HistoryState, runId?: string) {
   accountHistory = state; historyAccount = state.id;
   const message = diagnosticText(state.error ?? "");
   get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
   get("target-history-status").dataset.tooltip = message || "Saved history capture";
-  get("target-history-retry").hidden = !state.error; get("history-retry").hidden = !state.error;
-  get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
+  get("target-history-retry").hidden = !state.error;
+  // The target account can load in the background while another run owns the History tab.
+  if (historyMatchesContext(runId)) {
+    get("history-retry").hidden = !state.error || state.status === "partial" && state.report !== null;
+    get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
+  }
   if (state.report) {
-    renderHistory(state.report, runId ?? null);
+    // Background captures must not replace the saved run's attached History tab.
+    if (historyMatchesContext(runId)) renderHistory(state.report, runId ?? null);
     if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
   }
 }
 async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) {
   const request = ++historyRequest;
-  if (historyAccount !== id) { accountHistory = null; get("history-result").hidden = true; }
+  if (historyAccount !== id) { accountHistory = null; if (historyMatchesContext(runId)) get("history-result").hidden = true; }
   historyAccount = id;
-  get("history-fetch-status").hidden = true; get("history-retry").hidden = true;
+  if (historyMatchesContext(runId)) { get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
   get("target-history-status").textContent = "Loading history";
   try {
     const state = await api("/api/history/account", HistoryState, { id, refresh, runId });
@@ -391,9 +412,10 @@ async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) 
     renderAccountHistory(state, runId);
   } catch (error) {
     if (request !== historyRequest) return;
-    get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false; get("history-retry").hidden = false;
+    get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false;
     const message = diagnosticText(error instanceof Error ? error.message : "History could not be loaded.");
-    get("target-history-status").dataset.tooltip = message; get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = false;
+    get("target-history-status").dataset.tooltip = message;
+    if (historyMatchesContext(runId)) { get("history-retry").hidden = false; get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = false; }
   }
 }
 async function openRun(id: string, navigation = navigationVersion) {
@@ -700,6 +722,7 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-view]")) t
   for (const other of document.querySelectorAll("[data-view]")) other.removeAttribute("aria-current");
   tab.setAttribute("aria-current", "page");
   for (const view of document.querySelectorAll<HTMLElement>(".view")) view.hidden = view.id !== `${tab.dataset.view}-view`;
+  if (tab.dataset.view === "history") showAttachedHistory();
   if (tab.dataset.view === "network") renderGraph();
   else explorer?.hide();
 });
@@ -714,9 +737,6 @@ buttons("rebuild-exports").addEventListener("click", () => task(async () => {
 }));
 inputs.runSearch.addEventListener("input", renderRuns); select("run-status").addEventListener("change", renderRuns);
 buttons("toggle-runs").addEventListener("click", () => toggleRuns(get("run-library").hidden));
-buttons("open-history").addEventListener("click", () => {
-  if (selected?.history) { renderHistory(selected.history, selected.scan.id); showScreen("history"); }
-});
 get("ranking-form").addEventListener("submit", (event) => { event.preventDefault(); task(async () => {
   if (!selected) return;
   const id = selected.scan.id;
@@ -739,21 +759,30 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   // An import supersedes any automatic history response still in flight.
   historyRequest++;
   const error = coverageError(report);
+  if (!runId && get("history-content").parentElement === get("history-view")) showScreen("history");
   renderAccountHistory({ id: report.profile.steamID64, status: error ? "partial" : "ready", error, report }, runId);
   dialog("history-import-dialog").close();
 
 }); });
 window.addEventListener("focus", () => void refresh());
-buttons("open-history-import").addEventListener("click", () => dialog("history-import-dialog").showModal());
+buttons("open-history-import").addEventListener("click", () => {
+  inputs.attach.checked = get("history-content").parentElement === get("history-view");
+  dialog("history-import-dialog").showModal();
+});
 buttons("target-history").addEventListener("click", () => {
-  if (accountHistory?.report) renderHistory(accountHistory.report, null);
   showScreen("history");
+  get("history-result").hidden = !accountHistory?.report;
+  if (accountHistory) renderAccountHistory(accountHistory);
+  else { get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
 });
 function refreshAccountHistory(id: SteamId | null) {
   if (id) void loadAccountHistory(id, true, selected?.scan.seed === id ? selected.scan.id : undefined);
 }
 buttons("target-history-retry").addEventListener("click", () => refreshAccountHistory(preview?.id ?? historyAccount));
-for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => refreshAccountHistory(historyAccount));
+for (const id of ["history-refresh", "history-retry"]) buttons(id).addEventListener("click", () => {
+  const attached = get("history-content").parentElement === get("history-view");
+  refreshAccountHistory(attached ? selected?.scan.seed ?? null : historyAccount);
+});
 HistoryUI.initialize();
 installTabStrips();
 applySettings(defaults);

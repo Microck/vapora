@@ -9,6 +9,8 @@ export class NodePictures {
     size: { mode: "force", value: 48 }, maxTextureSize: 2048, debounceTimeout: 120, crossOrigin: "anonymous",
   } });
   private readonly requested = new Set<string>();
+  private readonly originals = new Map<string, HTMLImageElement>();
+  original(source: string) { return this.originals.get(source); }
   private readonly sources = new Map<string, Promise<string>>();
   private readonly active = new Map<HTMLImageElement, ReturnType<typeof setTimeout>>();
   private readonly queue: { source: string; resolve: (source: string) => void }[] = [];
@@ -64,6 +66,7 @@ export class NodePictures {
       const finish = (source: string) => {
         clearTimeout(this.active.get(image)); this.active.delete(image); image.onload = null; image.onerror = null;
         if (source !== image.src) image.src = "";
+        if (image.complete && image.naturalWidth) this.originals.set(source, image);
         next.resolve(source); this.load();
       };
       // A stalled CDN or failed local placeholder must not occupy a request slot forever.
@@ -81,6 +84,6 @@ export class NodePictures {
     if (this.timer !== null) clearTimeout(this.timer);
     cancelAnimationFrame(this.applyFrame); this.pending.clear();
     for (const [image, timer] of this.active) { clearTimeout(timer); image.onload = null; image.onerror = null; image.src = ""; }
-    this.active.clear(); this.queue.length = 0; this.sources.clear(); this.requested.clear();
+    this.active.clear(); this.originals.clear(); this.queue.length = 0; this.sources.clear(); this.requested.clear();
   }
 }

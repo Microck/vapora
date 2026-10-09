@@ -153,9 +153,33 @@ function download(contents: string, filename: string) {
   const blob = new Blob([contents], { type: "application/json" }); const url = URL.createObjectURL(blob);
   const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+function renderWarnings(report: History.HistoryReport) {
+  const container = get("history-warnings"); container.replaceChildren();
+  const latest = report.sources.filter((source) => source.coverage.length)
+    .sort((a, b) => Date.parse(b.capturedAt) - Date.parse(a.capturedAt))[0];
+  const issues = latest?.coverage.filter((entry) => entry.status !== "complete") ?? [];
+  const labels = { friends: "Friends", comments: "Comments", persona: "Names", realName: "Real names", url: "URLs", pfp: "Avatars" } satisfies Record<History.Section, string>;
+  const add = (summary: string, explanation: string) => {
+    const line = document.createElement("span"); line.className = "history-warning";
+    const text = document.createElement("strong"); text.textContent = summary;
+    const help = document.createElement("button"); help.type = "button"; help.className = "info"; help.textContent = "i";
+    help.setAttribute("aria-label", `About ${summary}`);
+    help.dataset.tooltip = History.diagnosticText(explanation); line.append(text, help); container.append(line);
+  };
+  for (const entry of issues) {
+    const total = entry.expected ?? entry.total;
+    add(`${labels[entry.section]}: ${entry.captured}${total === null ? " captured" : ` / ${total} captured`}`,
+      entry.error ?? "The capture is incomplete. Missing records are not evidence that no records exist.");
+  }
+  const coverage = History.coverageError(report);
+  const other = report.warnings.filter((warning) => History.diagnosticText(warning) !== coverage);
+  if (other.length) add(`${other.length === 1 ? "Capture note" : `${other.length} capture notes`}`, other.join("\n"));
+  container.hidden = !container.childElementCount;
+}
 export function render(report: History.HistoryReport, selectedScan?: Scan) {
+  if (current === report && scan === selectedScan) return;
   current = report; scan = selectedScan; page = 0;
-  get("history-result").hidden = false; get("history-name").textContent = report.profile.name;
+  get("history-name").textContent = report.profile.name;
   get("history-asof").textContent = `History as of ${date(report.profile.lastChecked)}`;
   get("history-asof").dataset.tooltip = History.diagnosticText(report.warning);
   const sources = get("history-sources"); sources.replaceChildren();
@@ -164,7 +188,7 @@ export function render(report: History.HistoryReport, selectedScan?: Scan) {
     button.dataset.tooltip = `Captured ${source.capturedAt}`;
     button.addEventListener("click", () => download(source.contents, `history-${report.profile.steamID64}-${index + 1}.json`)); sources.append(button);
   });
-  get("history-warnings").textContent = History.diagnosticText(report.warnings.join("\n")); get("history-warnings").hidden = !report.warnings.length;
+  renderWarnings(report);
   renderTable();
 }
 export function initialize() {
