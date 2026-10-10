@@ -1,6 +1,6 @@
 {
   "name": "vapora",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "private": true,
   "description": "Explore public Steam friend networks",
   "type": "module",

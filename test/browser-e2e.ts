@@ -42,6 +42,7 @@ async function checkAdjacentHelp(page: Page, selector: string) {
     const horizontalGap = Math.max(0, box.left - trigger.right, trigger.left - box.right);
     const verticalGap = Math.max(0, box.top - trigger.bottom, trigger.top - box.bottom);
     return horizontalGap <= 7 && verticalGap <= 7
+      && (box.right <= trigger.left || box.left >= trigger.right || box.bottom <= trigger.top || box.top >= trigger.bottom)
       && box.left >= 8 && box.right <= innerWidth - 8 && box.top >= 8 && box.bottom <= innerHeight - 8;
   }), true, "Help must stay beside its trigger and inside the viewport");
 }
@@ -59,7 +60,10 @@ async function checkSavedHistoryDiagnostics(page: Page, root: string, downloadDi
   const file = await page.$("input#history-file"); assert.ok(file); await file.uploadFile(path);
   await page.click('#history-form button[type="submit"]'); await page.waitForSelector("#history-import-dialog[open]", { hidden: true });
   assert.doesNotMatch(await visibleText(page, "#history-warnings") ?? "", /steamhistory/i);
-  assert.ok((await visibleText(page, "#history-warnings"))?.includes(`8 comments records; this session returned ${comments.captured}`));
+  assert.match(await visibleText(page, "#history-warnings") ?? "", /Comments:/);
+  const details = await page.$$eval("#history-warnings [data-tooltip]", (items) => items.map((item) => item.getAttribute("data-tooltip")).join("\n"));
+  assert.ok(details.includes(`8 comments records; this session returned ${comments.captured}`));
+  assert.doesNotMatch(details, /steamhistory/i);
   const cachePath = join(root, "history", `${seed}.json`);
   const saved = Schema.decodeUnknownSync(Schema.fromJsonString(History.HistoryReport))(await readFile(cachePath, "utf8"));
   await writeFile(cachePath, JSON.stringify({ ...saved, warnings: [diagnostic] }));
@@ -81,6 +85,8 @@ async function checkSavedHistoryDiagnostics(page: Page, root: string, downloadDi
   await page.click("#history-sources button:last-child");
   assert.equal(await readDownload(downloadPath), contents);
   assert.match(await readFile(join(root, "history", `${seed}.json`), "utf8"), /SteamHistory's profile summary/);
+  // The imported capture is deliberately newer; subsequent refreshes must occur after its timestamp.
+  await delay(Math.max(0, Date.parse(capture.capturedAt) + 1001 - Date.now()));
 }
 async function checkUndatedRecords(page: Page) {
   for (const tab of ["persona", "realName", "url", "pfp"]) {
@@ -367,6 +373,13 @@ test("browser recovers identity after denied keys, cancels/resumes, persists set
   await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-download")?.hidden);
   await page.reload(); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
   await page.click("#open-history"); assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1);
+  assert.equal(await page.$eval("#history-screen", (element) => element.checkVisibility()), false);
+  assert.equal(await page.$eval("#results-screen", (element) => element.checkVisibility()), true);
+  assert.equal(await page.$eval("#open-history", (element) => element.getAttribute("aria-current")), "page");
+  assert.equal(await page.$eval("#history-view #history-content", (element) => element.checkVisibility()), true);
+  const shortcut = await page.$eval("#obsidian-shortcut", (element) => element instanceof HTMLAnchorElement && element.checkVisibility() ? element.href : "");
+  assert.match(shortcut, /api\/obsidian\?id=/);
+  assert.equal(shortcut, await page.$eval("#obsidian-export", (element) => element instanceof HTMLAnchorElement ? element.href : ""));
   await page.click('[data-screen="results"]'); await page.click("#toggle-runs"); await page.click("#output-folder");
   assert.equal(await page.$eval("#run-library", (element) => element instanceof HTMLElement && element.hidden), true);
   assert.equal(await page.$eval("#exports-view", (element) => element instanceof HTMLElement && element.hidden), false);
@@ -486,11 +499,18 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.match(capture.profile.contents, /customField/);
   history.counts.set("comments", 8); await page.click("#history-refresh");
   await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History partial");
-  assert.match(await visibleText(page, "#history-warnings") ?? "", /supporter access/);
+  assert.match(await visibleText(page, "#history-warnings") ?? "", /Comments: 4 \/ 8 captured/);
+  assert.doesNotMatch(await visibleText(page, "#history-warnings") ?? "", /supporter access/);
+  await page.hover("#history-warnings .info"); await checkAdjacentHelp(page, "#history-warnings .info");
+  assert.match(await visibleText(page, "#app-tooltip") ?? "", /supporter access/);
+  assert.equal(await page.$$eval("#app-tooltip li", (items) => items.length >= 2), true);
+  await page.keyboard.press("Escape");
   assert.equal(await page.$eval("#history-warnings", (element) => element.getBoundingClientRect().bottom <= innerHeight), true);
   assert.equal(await page.$eval("#history-fetch-status", (element) => element instanceof HTMLElement && element.hidden), true);
   await page.click('[data-history="comments"]');
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 4);
+  // Account metadata and actions fit one toolbar at the normal desktop width.
+  assert.equal(await page.$eval(".history-header", (header) => header.getBoundingClientRect().height <= 36), true);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-partial-comments.png") });
   history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
   assert.equal(await page.$eval("#history-result", (element) => element instanceof HTMLElement && element.hidden), false);
@@ -574,6 +594,19 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(history.requests(), requestsBeforeReopen);
   const cachedRequests = history.requests(); await checkSavedHistoryDiagnostics(page, root, downloadDirectory);
   assert.equal(history.requests(), cachedRequests);
+  history.setStatus(200); history.counts.clear(); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  // A transport failure retains the capture and its error when the viewer reopens.
+  await page.setOfflineMode(true); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History unavailable");
+  const refreshError = await visibleText(page, "#history-fetch-status"); assert.ok(refreshError);
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await visibleText(page, "#history-fetch-status"), refreshError);
+  assert.equal(await page.$eval("#history-retry", (button) => button.checkVisibility()), true);
+  assert.equal(await page.$eval("#history-result", (report) => report.checkVisibility()), true);
+  await page.setOfflineMode(false); await page.click("#history-retry");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.checkVisibility()), false);
   await checkDuplicateHistoryOpeners(page, root);
   assert.deepEqual(errors, []);
 });
@@ -669,6 +702,15 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click("#scan-button"); await page.waitForFunction(() => document.querySelector("#report-status")?.textContent === "complete");
   const help = '[aria-label="About evidence / 100"]'; await page.focus(help);
   await page.waitForSelector("#app-tooltip:popover-open"); assert.match(await visibleText(page, "#app-tooltip"), /not a friendship probability/);
+  assert.match(await visibleText(page, "#app-tooltip .tooltip-heading"), /evidence/);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "friends-filter.png") });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval("#friend-search", (input) => {
+    const box = input.getBoundingClientRect(); const label = input.parentElement?.getBoundingClientRect(); const table = document.querySelector("#friends-view .table-wrap")?.getBoundingClientRect();
+    return label && table && Math.abs(box.top - label.top) < 2 && table.top - box.bottom >= 0 && table.top - box.bottom <= 10;
+  }), true);
+  assert.equal(await page.$eval("#results", (element) => getComputedStyle(element).scrollbarColor), "auto");
+  assert.equal(await page.$eval("#results", (element) => getComputedStyle(element, "::-webkit-scrollbar-thumb").borderRadius), "0px");
   await page.keyboard.press("Escape");
   assert.match(await page.$eval(help, (button) => (button.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent).join(" ")), /not a friendship probability/);
   await page.focus("#friend-rows .player-link"); await page.click("#friend-rows button");
@@ -680,6 +722,16 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   assert.equal(await page.$eval('[data-view="ranking"]', (tab) => { const box = tab.getBoundingClientRect(); const strip = tab.parentElement?.getBoundingClientRect(); return strip && box.left >= strip.left - 1 && box.right <= strip.right + 1; }), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await page.setViewport({ width: 1078, height: 700 }); await page.click("#open-history"); await page.click('[data-history="comments"]');
+  assert.equal(await page.$eval("#results-screen", (element) => element.checkVisibility()), true);
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "attached-history.png") });
+  // A real held history response updates the report after the library has opened.
+  const pendingHistory = history.hold(`/id/${seed}/__data.json`);
+  await page.click("#history-refresh"); await pendingHistory;
+  await page.click("#toggle-runs"); history.release(`/id/${seed}/__data.json`);
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  assert.equal(await page.$eval("#run-library", (element) => element.checkVisibility()), true);
+  assert.equal(await page.$eval("#obsidian-shortcut", (element) => element.checkVisibility()), false);
+  await page.click("#toggle-runs");
   assert.match(await visibleText(page, "#history-rows"), /Bob/); await fill(page, "#history-search", "Bob");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "Undated unknown author");
   assert.equal(await page.$$eval("#history-rows tr", (rows) => rows.some((row) => row.textContent?.includes("Undated unknown author") && row.cells[0]?.textContent === "Unknown author")), true);
@@ -695,6 +747,88 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click('#history-form button[type="submit"]'); await page.waitForSelector("#history-import-dialog-error:not([hidden])");
   assert.match(await visibleText(page, "#history-import-dialog-error"), /not valid JSON/);
   assert.equal(await page.evaluate(() => document.activeElement?.id), "history-import-dialog-error");
+  await page.keyboard.press("Escape");
+  // A failed lookup for another target must not hide or contaminate the saved attachment.
+  history.setStatus(403); await page.click('[data-screen="scan"]');
+  await fill(page, "#target", second); await page.click("#lookup-target");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History unavailable");
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), true);
+  assert.equal(await visibleText(page, "#history-name"), "Alice");
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.hasAttribute("hidden")), true);
+  assert.equal(await page.$eval("#history-retry", (element) => element.hasAttribute("hidden")), true);
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), false);
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.checkVisibility()), true);
+  assert.match(await visibleText(page, "#history-fetch-status"), /blocked/);
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), true);
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.hasAttribute("hidden")), true);
+  // Refreshing Alice's attachment must preserve Bob's independent target state.
+  history.setStatus(200);
+  history.rows.set("comments", [...history.document.historic.comments,
+    { ID: "isolated-refresh", Commenter: second, Message: "Alice attachment refreshed", Timestamp: 1791360000 }]);
+  const attachedRefresh = history.hold(`/id/${seed}/__data.json`);
+  await page.click("#history-refresh"); await attachedRefresh;
+  assert.equal(await visibleText(page, "#target-history-status"), "History unavailable");
+  history.release(`/id/${seed}/__data.json`);
+  await page.click('[data-history="comments"]');
+  await page.waitForFunction(() => document.querySelector("#history-rows")?.textContent?.includes("Alice attachment refreshed"));
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), false);
+  assert.match(await visibleText(page, "#history-fetch-status"), /blocked/);
+  assert.equal(await visibleText(page, "#target-history-status"), "History unavailable");
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.equal(await visibleText(page, "#history-name"), "Alice");
+  // A new ranking projection must replace the attachment shown by the cached refresh state.
+  await page.click('[data-history="ranking"]');
+  const previousIndices = await page.$$eval("#history-rows tr", (rows) => rows.map((row) => row.lastElementChild?.textContent));
+  await page.click('[data-view="ranking"]'); await fill(page, "#ranking-countBaseline", "1");
+  await page.click("#save-ranking");
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Saved ranking"));
+  await page.click("#open-history"); await page.click('[data-history="ranking"]');
+  const rebuiltIndices = await page.$$eval("#history-rows tr", (rows) => rows.map((row) => row.lastElementChild?.textContent));
+  assert.notDeepEqual(rebuiltIndices, previousIndices);
+  const historyUrl = await page.$eval("#history-download", (link) => link instanceof HTMLAnchorElement ? link.href : "");
+  const projected = Schema.decodeUnknownSync(History.HistoryReport)(await (await fetch(historyUrl, { headers: { "user-agent": userAgent } })).json());
+  assert.deepEqual(rebuiltIndices, projected.commenters.map((author) => author.inReference ? author.index?.toFixed(1) ?? "Unknown" : "Outside reference"));
+  // Switching linked saved runs must also switch the standalone target's History owner.
+  const firstRun = await page.evaluate(() => location.hash.slice(1));
+  const bobRun = { ...scan([player(second, [])]), seed: second };
+  const bobDirectory = join(root, "outputs", bobRun.id); await mkdir(bobDirectory);
+  await writeFile(join(bobDirectory, "scan.json"), JSON.stringify(bobRun));
+  const importedBob = await fetch(`${server.origin}/api/history`, { method: "POST",
+    headers: { "content-type": "application/json", origin: server.origin, "user-agent": userAgent },
+    body: JSON.stringify({ runId: bobRun.id, contents: JSON.stringify({ ...history.document, steamID64: second, name: "Bob" }) }) });
+  assert.equal(importedBob.status, 200);
+  await page.click('[data-screen="scan"]'); await fill(page, "#target", "");
+  await page.click('[data-screen="results"]'); await page.click("#toggle-runs");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction((id) => document.querySelector("#run-rows")?.textContent?.includes(id), {}, bobRun.id);
+  for (const id of [firstRun, bobRun.id]) {
+    await page.$$eval("#run-rows tr", (rows, id) => rows.find((row) => row.lastElementChild?.textContent === id)?.querySelector("button")?.click(), id);
+    await page.waitForFunction((id) => location.hash === `#${id}` && document.querySelector("#target-history-status")?.textContent === "History ready", {}, id)
+      .catch(async (error: Error) => { throw new Error(`Saved-run History switch failed: ${JSON.stringify(await page.evaluate(() => ({
+        run: location.hash, target: document.querySelector<HTMLInputElement>("#target")?.value,
+        status: document.querySelector("#target-history-status")?.textContent, notice: document.querySelector("#notice")?.textContent,
+      })))}`, { cause: error }); });
+    if (id === firstRun) await page.click("#toggle-runs");
+  }
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await visibleText(page, "#history-name"), "Bob");
+  // A cancelled run cannot inherit another attachment's failed-refresh message.
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  await page.setOfflineMode(true); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("Cannot reach Vapora"));
+  await page.setOfflineMode(false);
+  const firstPath = join(root, "outputs", firstRun, "scan.json");
+  const savedFirst = Schema.decodeUnknownSync(Contracts.RunView.fields.scan)(JSON.parse(await readFile(firstPath, "utf8")));
+  await writeFile(firstPath, JSON.stringify({ ...savedFirst, status: "cancelled" }));
+  await page.click("#toggle-runs");
+  await page.$$eval("#run-rows tr", (rows, id) => rows.find((row) => row.lastElementChild?.textContent === id)?.querySelector("button")?.click(), firstRun);
+  await page.waitForFunction((id) => location.hash === `#${id}` && document.querySelector("#history-name")?.textContent === "Alice", {}, firstRun);
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.checkVisibility()), false);
+  assert.equal(await page.$eval("#history-retry", (element) => element.checkVisibility()), false);
   assert.deepEqual(errors, []);
 });
 
@@ -797,14 +931,46 @@ test("network preview expands in-app, keeps all connections and supports explora
   assert.equal((await page.$$("#network-profiles button")).length, 50);
   await page.click("#network-next"); assert.match(await visibleText(page, "#network-profile-count") ?? "", /51.*100/);
   await page.click("#network-previous");
+  await page.setViewport({ width: 1078, height: 599 });
+  await page.hover("#network-export"); await checkAdjacentHelp(page, "#network-export");
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-export-help.png") });
+  const statusBeforeExport = await visibleText(page, "#network-layout-status");
+  const cameraBeforeExport = await page.$eval("#graph", (element) => element.getAttribute("data-ratio"));
   await page.click("#network-export");
+  // Encoding the 4K image precedes the download and has its own visible Saving state.
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#network-export")?.disabled);
   const image = join(downloads, `vapora-${saved.id}-network.png`);
   await readDownload(image); const bytes = await readFile(image);
   assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a"); assert.ok(bytes.length > 10000);
+  const width = bytes.readUInt32BE(16); const height = bytes.readUInt32BE(20);
+  assert.equal(Math.max(width, height), 4096);
+  assert.equal(await page.$eval("#graph", (element) => element.getAttribute("data-ratio")), cameraBeforeExport);
+  assert.equal(await visibleText(page, "#network-layout-status"), statusBeforeExport);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await copyFile(image, join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-export.png"));
-  await page.click("#network-arrange"); await page.click("#network-pause");
+  await page.setViewport({ width: 1078, height: 700 });
+  assert.equal(await page.$("#network-arrange"), null);
+  // A stationary pointer and small movements within a circle must not oscillate its hit target.
+  await page.click(`#network-profiles [data-node-id="${seed}"]`);
+  const bounds = await page.$eval("#graph", (graph) => { const box = graph.getBoundingClientRect(); return { x: box.x, y: box.y, width: box.width, height: box.height }; });
+  await page.mouse.click(bounds.x + bounds.width - 3, bounds.y + bounds.height - 3);
+  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("data-selected")), "");
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.waitForFunction((id) => document.querySelector<HTMLElement>("#graph")?.dataset.hovered === id, {}, seed);
+  const hoverChanges = page.$eval("#graph", (graph) => new Promise<string[]>((resolve) => {
+    const changes: string[] = []; const observer = new MutationObserver(() => changes.push(graph.getAttribute("data-hovered") ?? ""));
+    observer.observe(graph, { attributes: true, attributeFilter: ["data-hovered"] });
+    setTimeout(() => { observer.disconnect(); resolve(changes); }, 700);
+  }));
+  for (const offset of [1, -1, 2, -2, 0]) await page.mouse.move(bounds.x + bounds.width / 2 + offset, bounds.y + bounds.height / 2);
+  assert.equal((await hoverChanges).some((id) => id !== seed), false, "Hover must stay on the circle without flickering");
+  assert.equal(await page.$eval("#graph", (graph) => graph.getAttribute("data-selected")), "", "Hover must not select a profile");
+  if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "network-hover.png") });
+  // Pinning makes the current layout resumable; Pause/Resume is the only layout action.
+  await page.click(`#network-profiles [data-node-id="${seed}"]`);
+  await page.click("#network-selection button:last-child");
+  await page.evaluate(() => { document.querySelector<HTMLButtonElement>("#network-pause")?.click(); document.querySelector<HTMLButtonElement>("#network-pause")?.click(); });
   assert.equal(await visibleText(page, "#network-layout-status"), "Layout paused");
-  await page.click("#network-arrange");
+  await page.click("#network-pause");
   await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
   await page.setViewport({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -818,13 +984,15 @@ test("network preview expands in-app, keeps all connections and supports explora
   assert.equal(await page.$eval(".toolbar", (element) => element instanceof HTMLElement && element.inert), false);
   // Perform the tab switch in one event turn, before the real worker can deliver its frame.
   await page.evaluate(() => {
-    document.querySelector<HTMLButtonElement>("#network-arrange")?.click();
+    document.querySelector<HTMLButtonElement>("#network-selection button:last-child")?.click();
+    document.querySelector<HTMLButtonElement>("#network-pause")?.click();
     document.querySelector<HTMLButtonElement>('[data-view="friends"]')?.click();
     document.querySelector<HTMLButtonElement>('[data-view="network"]')?.click();
   });
   await page.waitForFunction(() => document.querySelector("#network-layout-status")?.textContent === "Layout settled");
   await page.evaluate(() => {
-    document.querySelector<HTMLButtonElement>("#network-arrange")?.click();
+    document.querySelector<HTMLButtonElement>("#network-selection button:last-child")?.click();
+    document.querySelector<HTMLButtonElement>("#network-pause")?.click();
     document.querySelector<HTMLButtonElement>("#network-pause")?.click();
     document.querySelector<HTMLButtonElement>('[data-view="friends"]')?.click();
     document.querySelector<HTMLButtonElement>('[data-view="network"]')?.click();
@@ -866,7 +1034,9 @@ test("unavailable WebGL shows recovery guidance and leaves saved results usable"
   context.after(async () => { await browser.close(); await server.close(); await history.close(); await rm(root, { recursive: true, force: true }); });
   const page = await browser.newPage(); const errors: string[] = []; page.on("pageerror", (error) => errors.push(String(error)));
   await page.setUserAgent(userAgent); await page.goto(`${server.origin}/#${saved.id}`);
-  await page.waitForSelector("#report-status", { visible: true }); await page.click('[data-view="network"]');
+  await page.waitForSelector("#report-status", { visible: true });
+  // Finish the automatic attachment before exercising recovery controls; it re-renders the report.
+  await page.waitForSelector("#open-history", { visible: true }); await page.click('[data-view="network"]');
   assert.equal(await visibleText(page, "#graph-count"), "Graph unavailable");
   assert.match(await visibleText(page, "#graph") ?? "", /Enable graphics acceleration/);
   await page.click("#graph button"); assert.equal(await visibleText(page, "#graph-count"), "Graph unavailable");

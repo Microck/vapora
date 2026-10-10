@@ -37,8 +37,7 @@ export class Explorer {
     this.click("zoom-out", () => { this.viewer.pause(); this.viewer.zoom(1 / 1.5); });
     this.click("zoom-reset", () => this.viewer.fit());
     this.click("network-filters", () => { this.filtersOpen = !this.filtersOpen; this.resize(); });
-    this.click("network-arrange", () => this.viewer.layout());
-    this.click("network-pause", () => this.viewer.pause());
+    this.click("network-pause", () => { if (this.viewer.isRunning()) this.viewer.pause(); else this.viewer.layout(); });
     this.click("network-clear", () => this.reset());
     this.click("network-export", () => this.exportImage());
     this.click("network-previous", () => { this.page--; this.renderProfiles(); });
@@ -97,7 +96,8 @@ export class Explorer {
   private render() {
     this.get("graph-count").textContent = this.viewer.summary();
     this.get("network-layout-status").textContent = this.viewer.container.dataset.nodes === "0" ? "No profiles match these filters." : this.viewer.status();
-    this.button("network-pause").disabled = !this.viewer.isRunning();
+    this.button("network-pause").disabled = this.viewer.isSettled();
+    this.button("network-pause").textContent = this.viewer.isRunning() || this.viewer.isSettled() ? "Pause" : "Resume";
     this.select("network-scope").disabled = !this.viewer.selected;
     this.select("network-scope").value = this.viewer.filters.scope;
     this.renderSelection(); this.renderProfiles();
@@ -188,19 +188,18 @@ export class Explorer {
   hide() { if (this.expanded) this.maximize(false); this.suspendLayout(); }
   destroy() { this.hide(); cancelAnimationFrame(this.updateFrame); this.events.abort(); this.viewer.destroy(); this.get("graph").replaceChildren(); }
   private exportImage() {
-    this.viewer.pause();
-    // Composite the actual WebGL layers without adding a second graph renderer or remote service.
+    const button = this.button("network-export"); button.disabled = true; button.textContent = "Saving…";
+    const fail = () => { this.get("network-layout-status").textContent = "Could not save the image. Try Save image again."; };
+    const finish = () => { button.disabled = false; button.textContent = "Save image"; };
+    // Resolve pending styles before reading display geometry. Export never changes the camera or layout.
     this.viewer.renderer.once("afterRender", () => {
-      const graph = this.get("graph"); const canvas = document.createElement("canvas"); const ratio = devicePixelRatio;
-      canvas.width = Math.round(graph.clientWidth * ratio); canvas.height = Math.round(graph.clientHeight * ratio);
-      const context = canvas.getContext("2d"); if (!context) return;
-      context.fillStyle = "#3e4637"; context.fillRect(0, 0, canvas.width, canvas.height);
-      for (const layer of graph.querySelectorAll("canvas")) if (layer.style.display !== "none") context.drawImage(layer, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url;
-        link.download = `vapora-${this.view.scan.id}-network.png`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      });
+      try {
+        this.viewer.image().toBlob((blob) => {
+          if (!blob) { fail(); finish(); return; }
+          const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url;
+          link.download = `vapora-${this.view.scan.id}-network.png`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); finish();
+        });
+      } catch { fail(); finish(); }
     });
     this.viewer.renderer.scheduleRender();
   }

@@ -103,6 +103,7 @@ test("profile-date ties and current coverage use capture time independently of i
     const bundle = Schema.decodeUnknownSync(History.Bundle)({ sources });
     assert.equal(History.view(bundle).profile.name, "Recent"); assert.equal(History.view(bundle).profile.fields.vacBanned, true);
     assert.equal(History.coverageError(bundle), null);
+    assert.equal(History.latestCoverageSource(bundle)?.capturedAt, newer.capturedAt);
     assert.equal(bundle.sources.length, 2);
   }
   const latestPartial = Schema.decodeUnknownSync(History.Bundle)({ sources: [newer, { ...older, capturedAt: "2026-10-08T09:00:00Z" }] });

@@ -111,7 +111,8 @@ async def serve():
 if __name__ == "__main__":
     try:
         asyncio.run(serve())
-    except Exception:
+    except Exception as error:
         # Browser paths, cookies, challenge URLs and private page content stay out of IPC.
-        emit({"id": 0, "error": "History's browser could not load the profile. Retry or import a saved capture."})
+        # The exception class gives support a safe failure code without exposing the provider response.
+        emit({"id": 0, "error": f"History's browser could not load the profile ({type(error).__name__}). Retry or import a saved capture."})
         sys.exit(1)

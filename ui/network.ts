@@ -67,10 +67,10 @@ export class Viewer {
     const styles: StylesDeclaration<Node, Edge, NodeState, EdgeState> = {
       nodes: {
         x: { attribute: "x" }, y: { attribute: "y" }, label: { attribute: "label" },
-        size: { whenState: "focus", then: 14, else: { attribute: "size" } },
+        size: { whenState: "selected", then: 14, else: { attribute: "size" } },
         color: { whenState: "selected", then: "#f3e497", else: { attribute: "color" } },
         opacity: { whenState: "dim", then: .2, else: 1 }, visibility: { whenState: "isHidden", then: "hidden", else: "visible" },
-        depth: { whenState: "focus", then: "topNodes", else: "nodes" }, labelDepth: { whenState: "focus", then: "topNodes", else: "nodes" },
+        depth: { whenState: "selected", then: "topNodes", else: "nodes" }, labelDepth: { whenState: "focus", then: "topNodes", else: "nodes" },
         labelColor: "#d8ded3", labelFont: "MotivaSans, Arial, sans-serif",
         labelVisibility: { whenState: "focus", then: "visible", else: { whenState: "match", then: "visible", else: { whenState: "labels", then: "auto", else: "hidden" } } },
         backdropVisibility: { whenState: "focus", then: "visible", else: "hidden" },
@@ -88,7 +88,7 @@ export class Viewer {
     this.renderer = new Sigma<Node, Edge, {}, NodeState, EdgeState>(this.graph, container, {
       customNodeState: { dim: false, selected: false, focus: false, match: false, labels: true },
       customEdgeState: { dim: false, active: false },
-      settings: { allowInvalidContainer: true, enableNodeDrag: true, autoRescale: "once", autoRescaleContent: "nodes", stagePadding: 24,
+      settings: { allowInvalidContainer: true, nodeLabelEvents: false, enableNodeDrag: true, autoRescale: "once", autoRescaleContent: "nodes", stagePadding: 24,
         zoomDuration: 0, inertiaDuration: 0, doubleClickZoomingDuration: 0, minCameraRatio: .015, maxCameraRatio: 8,
         zoomToSizeRatioFunction: Math.sqrt, labelDensity: .3, labelRenderedSizeThreshold: 5, hideLabelsOnMove: true, gestureTarget: "graph" },
       primitives: { nodes: { variables: { image: { type: "string", default: "" } },
@@ -115,7 +115,7 @@ export class Viewer {
     this.renderer.on("clickStage", () => { if (this.selected) this.select(null); });
     this.renderer.on("enterNode", ({ node }) => this.hover(node));
     this.renderer.on("leaveNode", () => this.hover(null));
-    this.renderer.on("nodeDragStart", ({ node }) => { this.pause(); this.graph.setNodeAttribute(node, "fixed", true); this.onChange(); });
+    this.renderer.on("nodeDragStart", ({ node }) => { this.settled = false; this.pause(); this.graph.setNodeAttribute(node, "fixed", true); this.onChange(); });
     this.renderer.getCamera().on("updated", (state) => { container.dataset.ratio = String(state.ratio); });
     this.renderer.on("webglContextLost", () => { this.pause(); this.layoutStatus = "Graphics context lost. Reload this page to retry."; this.onChange(); });
     container.dataset.ratio = "1";
@@ -160,7 +160,7 @@ export class Viewer {
     this.highlight();
   }
   private hover(id: string | null) {
-    this.hovered = id;
+    this.hovered = id; this.container.dataset.hovered = id ?? "";
     // Leaving A and entering B happen together. Apply their final state once per frame.
     if (!this.hoverFrame) this.hoverFrame = requestAnimationFrame(() => { this.hoverFrame = 0; this.highlight(); });
   }
@@ -219,8 +219,9 @@ export class Viewer {
   }
   status() { return this.layoutStatus; }
   isRunning() { return this.worker !== null; }
+  isSettled() { return this.settled; }
   isPinned() { return this.selected ? this.graph.getNodeAttribute(this.selected, "fixed") : false; }
-  pin() { if (this.selected) { this.pause(); this.graph.setNodeAttribute(this.selected, "fixed", !this.isPinned()); this.onChange(); } }
+  pin() { if (this.selected) { this.settled = false; this.pause(); this.graph.setNodeAttribute(this.selected, "fixed", !this.isPinned()); this.onChange(); } }
   zoom(factor: number) { const camera = this.renderer.getCamera(); camera.setState({ ratio: camera.getBoundedRatio(camera.ratio / factor) }); }
   fit() { this.renderer.getCamera().setState({ x: .5, y: .5, angle: 0, ratio: 1 }); }
   appearance(labels: boolean, size: number) {
@@ -253,13 +254,66 @@ export class Viewer {
     };
     worker.onerror = () => {
       if (this.disposed || this.worker !== worker) return;
-      this.pause(); this.layoutStatus = "Layout failed. Choose Arrange to retry."; this.onChange();
+      this.pause(); this.layoutStatus = "Layout failed. Choose Resume to retry."; this.onChange();
     };
     // Layout follows observed friendships, not the potentially dense shared-group projection.
     const layoutGraph = new Graph<LayoutNode>({ type: "undirected" });
     this.graph.forEachNode((id, node) => layoutGraph.addNode(id, { x: node.x, y: node.y, size: node.size, fixed: node.fixed }));
     this.graph.forEachEdge((_key, edge, from, to) => { if (edge.kind === "friend") layoutGraph.mergeEdge(from, to); });
     worker.postMessage(layoutGraph.export()); this.onChange();
+  }
+  /** Draw retained display geometry at export resolution, without a second GPU context or viewport bitmap. */
+  image() {
+    const { width, height } = this.renderer.getDimensions();
+    const scale = 4096 / Math.max(width, height);
+    const canvas = document.createElement("canvas"); canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
+    const context = canvas.getContext("2d"); if (!context) throw new Error("Could not create the image. Try Save image again.");
+    context.fillStyle = "#3e4637"; context.fillRect(0, 0, canvas.width, canvas.height); context.scale(scale, scale);
+    const nodes = new Map([...this.visible].flatMap((id) => {
+      const data = this.renderer.getNodeDisplayData(id);
+      return data ? [[id, { data, point: this.renderer.framedGraphToViewport(data), radius: this.renderer.scaleSize(data.size) }] as const] : [];
+    }));
+    // Batch paths by their resolved visual style instead of issuing one stroke per connection.
+    const paths = new Map<string, { path: Path2D; color: string; opacity: number; size: number; depth: string }>();
+    this.graph.forEachEdge((key, _edge, from, to) => {
+      const data = this.renderer.getEdgeDisplayData(key); const source = nodes.get(from); const target = nodes.get(to);
+      if (!data || data.visibility === "hidden" || !source || !target) return;
+      const style = JSON.stringify([data.color, data.opacity, data.size, data.depth]);
+      let batch = paths.get(style);
+      if (!batch) { batch = { path: new Path2D(), color: data.color, opacity: data.opacity, size: data.size, depth: data.depth }; paths.set(style, batch); }
+      batch.path.moveTo(source.point.x, source.point.y); batch.path.lineTo(target.point.x, target.point.y);
+    });
+    for (const batch of [...paths.values()].sort((a, b) => Number(a.depth === "topEdges") - Number(b.depth === "topEdges"))) {
+      context.strokeStyle = batch.color; context.globalAlpha = batch.opacity;
+      context.lineWidth = Math.max(.5, this.renderer.scaleSize(batch.size)); context.stroke(batch.path);
+    }
+    const labels = this.renderer.getNodeDisplayedLabels();
+    const ordered = [...nodes].sort(([a], [b]) => Number(a === this.selected) - Number(b === this.selected));
+    for (const [id, { data, point, radius }] of ordered) {
+      if (point.x + radius < 0 || point.x - radius > width || point.y + radius < 0 || point.y - radius > height) continue;
+      context.globalAlpha = data.opacity; context.fillStyle = data.color;
+      context.beginPath(); context.arc(point.x, point.y, radius, 0, Math.PI * 2); context.fill();
+      const original = this.pictures.original(this.graph.getNodeAttribute(id, "image"));
+      if (original) {
+        // Use original loaded image pixels, not the small live GPU atlas thumbnail.
+        context.save(); context.clip();
+        const side = Math.min(original.naturalWidth, original.naturalHeight);
+        context.drawImage(original, (original.naturalWidth - side) / 2, (original.naturalHeight - side) / 2, side, side,
+          point.x - radius, point.y - radius, radius * 2, radius * 2); context.restore();
+      }
+      context.strokeStyle = this.graph.getNodeAttribute(id, "color"); context.lineWidth = 1.5; context.stroke();
+    }
+    // Text is painted after circles so labels remain legible at every export scale.
+    context.font = "12px MotivaSans, Arial, sans-serif"; context.textBaseline = "middle";
+    for (const [id, { data, point, radius }] of ordered) {
+      if (!labels.has(id) || !data.label) continue;
+      context.globalAlpha = data.opacity;
+      if (data.backdropVisibility === "visible") {
+        context.fillStyle = "#3e4637"; context.fillRect(point.x + radius, point.y - 10, context.measureText(data.label).width + 8, 20);
+      }
+      context.fillStyle = data.labelColor; context.fillText(data.label, point.x + radius + 4, point.y);
+    }
+    return canvas;
   }
   destroy() { this.disposed = true; this.onChange = () => {}; this.pause(); cancelAnimationFrame(this.hoverFrame); this.pictures.destroy(); this.renderer.kill(); }
 }

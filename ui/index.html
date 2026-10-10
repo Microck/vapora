@@ -151,7 +151,7 @@
     </dialog>
 
     <section id="results-screen" class="screen" aria-label="Scan results" hidden>
-      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="scan">New scan</button></div>
+      <div class="results-actions"><button id="toggle-runs" type="button" aria-expanded="true" aria-controls="run-library">Saved runs</button><button type="button" data-screen="scan">New scan</button><a id="obsidian-shortcut" class="action-link" hidden>Export to Obsidian</a></div>
       <section id="run-library" class="panel" aria-label="Saved runs">
         <div class="section-line"><h2>Saved runs</h2><label>Find run<input id="run-search" type="search" placeholder="Name or Steam ID"></label><label>Status<select id="run-status"><option value="all">All</option><option value="complete">Complete</option><option value="cancelled">Cancelled</option><option value="failed">Failed</option><option value="running">Unfinished</option></select></label></div>
         <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Created</th><th>Status</th><th>Profiles</th><th>Run</th></tr></thead><tbody id="run-rows"></tbody></table></div>
@@ -179,7 +179,7 @@
           <button type="button" data-view="locations">Locations</button>
           <button type="button" data-view="exports">Exports</button>
           <button type="button" data-view="ranking">Ranking</button>
-          <button id="open-history" type="button" hidden>Attached history</button>
+          <button id="open-history" type="button" data-view="history" hidden>Attached history</button>
         </nav>
         <div class="report-workspace"><div class="report-views">
         <section id="friends-view" class="view">
@@ -195,9 +195,14 @@
                 <label class="network-search-label"><span class="sr-only">Find profile</span><input id="network-search" type="search" placeholder="Find profile or Steam ID" aria-controls="network-matches"></label>
                 <button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-reset" type="button">Fit</button>
                 <button id="network-filters" class="explorer-control" type="button" aria-expanded="true" aria-controls="network-sidebar">Filters</button>
-                <button id="network-arrange" class="explorer-control" type="button">Arrange</button><button id="network-pause" class="explorer-control" type="button">Pause</button>
-                <button id="network-export" class="explorer-control" type="button">Save image</button>
-                <button class="info" type="button" aria-label="About graph controls" data-tooltip="Drag the background to pan; scroll to zoom. Drag a profile to pin it. Click to highlight its connections, double-click for Details. Search and the profile list also work by keyboard. Escape restores a maximized view.">i</button>
+                <button id="network-pause" class="explorer-control" type="button">Pause</button>
+                <button id="network-export" class="explorer-control" type="button" data-tooltip-heading="Save image" data-tooltip="PNG with a 4,096-pixel long edge.
+Uses the current camera, filters and selection.
+Draws geometry and text at full export resolution.">Save image</button>
+                <button class="info" type="button" aria-label="About graph controls" data-tooltip-heading="Explore the network" data-tooltip="Pan: drag the background. Zoom: scroll or use + / −.
+Select: click a profile. Details: double-click.
+Pin: drag a profile.
+Keyboard: search or choose from Profiles. Escape restores the preview.">i</button>
               </div>
               <div id="graph" tabindex="0" role="img" aria-label="Friendship network. Search for a profile to explore it by keyboard."></div>
               <div id="network-matches" class="network-matches"></div>
@@ -244,12 +249,17 @@
             <label>Game weight<input id="ranking-games" type="number" min="0" max="100" step="0.1" required data-tooltip="Relative influence of game-library overlap: shared games divided by all unique games across both profiles. Increase it to favor similar libraries; 0 ignores it. Missing libraries contribute 0."></label>
           </div><button id="save-ranking" type="submit">Save ranking</button></form>
         </section>
+        <section id="history-view" class="view" aria-label="Attached history" hidden></section>
         </div></div>
       </section>
     </section>
 
     <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
-      <div class="page-heading"><h1 id="history-heading">History</h1><div class="results-actions"><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button type="button" data-screen="results">Back to Results</button></div></div>
+      <div id="history-home"><div id="history-content">
+      <header class="page-heading history-header">
+        <div class="history-identity"><h1 id="history-heading">History</h1><h2 id="history-name" class="history-data"></h2><span id="history-asof" class="history-data" tabindex="0"></span></div>
+        <div class="history-actions"><button id="history-refresh" class="history-data" type="button">Refresh</button><button id="history-export" class="history-data" type="button">Export history</button><a id="history-download" class="history-data" hidden>Run history.json</a><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button id="history-back" type="button" data-screen="results">Back to Results</button></div>
+      </header>
       <p id="history-fetch-status" role="status" hidden></p><button id="history-retry" type="button" hidden>Retry history</button>
       <section id="history-section">
         <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import History</h2>
@@ -263,8 +273,7 @@
           <div class="dialog-actions"><button type="button" data-close="history-import-dialog">Cancel</button></div>
         </dialog>
         <div id="history-result" hidden>
-          <div class="section-line"><h2 id="history-name"></h2><span id="history-asof" tabindex="0"></span><button id="history-refresh" type="button">Refresh</button><button id="history-export" type="button">Export history</button><a id="history-download" hidden>Run history.json</a></div>
-          <p id="history-warnings" role="status" hidden></p>
+          <div id="history-warnings" role="status" hidden></div>
           <nav class="tabs" aria-label="History views">
             <button type="button" data-history="friends" aria-current="page">Friends</button><button type="button" data-history="ranking">Comment ranking</button><button type="button" data-history="comments">Comments</button><button type="button" data-history="persona">Names</button><button type="button" data-history="realName">Real names</button><button type="button" data-history="url">URLs</button><button type="button" data-history="pfp">Avatars</button><button type="button" data-history="profile">Profile / bans</button><button type="button" data-history="locations">Comment locations</button>
           </nav>
@@ -275,7 +284,7 @@
           <div id="history-sources" class="file-list"></div></div>
 
         </div>
-      </section>
+      </section></div></div>
     </section>
 
     <dialog id="key-dialog" aria-labelledby="connection-heading" aria-describedby="key-session-note">

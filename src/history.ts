@@ -68,14 +68,18 @@ const captureTime = (capturedAt: string) => {
 export function diagnosticText(message: string): string {
   return message.replace(/\bSteamHistory(?:\.net)?\b/gi, "History");
 }
-export function coverageError(bundle: Bundle): string | null {
+/** Select coverage by parsed capture time, keeping undated sources behind dated captures. */
+export function latestCoverageSource(bundle: Bundle) {
   let latest: Bundle["sources"][number] | undefined; let latestDate = -Infinity;
   for (const source of bundle.sources) {
     if (!source.coverage.length) continue;
     const date = captureTime(source.capturedAt);
     if (!latest || date > latestDate) { latest = source; latestDate = date; }
   }
-  const issues = latest?.coverage.flatMap((section) => section.error ? [section.error] : []) ?? [];
+  return latest;
+}
+export function coverageError(bundle: Bundle): string | null {
+  const issues = latestCoverageSource(bundle)?.coverage.flatMap((section) => section.error ? [section.error] : []) ?? [];
   return issues.length ? diagnosticText(issues.join("\n")) : null;
 }
 

@@ -30,6 +30,20 @@ export function install(tooltip: HTMLElement) {
     trigger = null; pinned = false;
   }
 
+  function contents(anchor: HTMLElement) {
+    const heading = document.createElement("strong"); heading.className = "tooltip-heading";
+    const label = anchor instanceof HTMLInputElement || anchor instanceof HTMLSelectElement ? anchor.labels?.[0]?.textContent : null;
+    heading.textContent = anchor.dataset.tooltipHeading ?? anchor.getAttribute("aria-label")?.replace(/^About /, "")
+      ?? label?.trim() ?? anchor.textContent?.trim() ?? "Details";
+    const lines = (anchor.dataset.tooltip ?? "").split(/\n|(?<=[.!?])\s+(?=[A-Z0-9])/).filter(Boolean);
+    const body = document.createElement(lines.length > 1 ? "ul" : "p");
+    if (lines.length > 1) {
+      body.className = "tooltip-lines";
+      for (const line of lines) { const item = document.createElement("li"); item.textContent = line; body.append(item); }
+    } else body.textContent = lines[0] ?? "";
+    return [heading, body];
+  }
+
   function show(anchor: HTMLElement) {
     clearTimeout(hideTimer);
     if (anchor === trigger) return;
@@ -38,14 +52,21 @@ export function install(tooltip: HTMLElement) {
     // Keep help inside its dialog so hovering and scrolling remain usable.
     const container = anchor.closest("dialog:modal") ?? document.body;
     if (tooltip.parentElement !== container) container.append(tooltip);
-    tooltip.textContent = anchor.dataset.tooltip ?? "";
+    tooltip.replaceChildren(...contents(anchor));
     const descriptions = anchor.getAttribute("aria-describedby");
     if (!anchor.classList.contains("info") || !descriptions) {
       anchor.setAttribute("aria-describedby", descriptions ? `${descriptions} ${tooltip.id}` : tooltip.id);
     }
     tooltip.showPopover();
     const bounds = anchor.getBoundingClientRect();
-    const box = tooltip.getBoundingClientRect();
+    tooltip.style.removeProperty("max-height");
+    let box = tooltip.getBoundingClientRect();
+    const verticalSpace = Math.max(bounds.top - 15, innerHeight - bounds.bottom - 15);
+    const horizontalSpace = Math.max(bounds.left - 15, innerWidth - bounds.right - 15);
+    // Long help scrolls within the available side rather than covering its own control.
+    if (box.width > horizontalSpace && box.height > verticalSpace) {
+      tooltip.style.maxHeight = `${verticalSpace}px`; box = tooltip.getBoundingClientRect();
+    }
     // Consider only adjacent positions. Empty space elsewhere in the window must
     // not pull help away from the control that explains it.
     const placements = [[bounds.right + 7, bounds.top], [bounds.left - box.width - 7, bounds.top],
@@ -59,6 +80,7 @@ export function install(tooltip: HTMLElement) {
     for (const [x, y] of placements) {
       const left = Math.max(8, Math.min(x, innerWidth - box.width - 8));
       const top = Math.max(8, Math.min(y, innerHeight - box.height - 8));
+      if (left < bounds.right && left + box.width > bounds.left && top < bounds.bottom && top + box.height > bounds.top) continue;
       const overlap = controls.reduce((total, rect) => total
         + Math.max(0, Math.min(left + box.width, rect.right) - Math.max(left, rect.left))
         * Math.max(0, Math.min(top + box.height, rect.bottom) - Math.max(top, rect.top)), 0);

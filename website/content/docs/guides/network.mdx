@@ -33,15 +33,15 @@ Community colors describe detected clusters; they do not identify real-world gro
 | Show | Inspect the selected account's direct neighbours or two hops |
 | Min. connections | Keep profiles with at least this many links of the selected type in the collected graph |
 | Node size / Show labels | Adjust how profiles appear |
-| Arrange / Pause | Run or stop the layout worker |
-| Save image | Download the current view as a PNG |
+| Pause / Resume | Stop or resume the automatic layout |
+| Save image | Download the current view as a PNG with a 4,096-pixel long edge |
 | Nodes CSV / Edges CSV | Download graph data for [Gephi](/docs/guides/gephi) |
 
 Search highlights matches without hiding other profiles. Selection highlights its connections; the footer counts links visible under the current filters. Group links stay separate from friendship centrality.
 
 Drag a node to pin its position. Choose **Unpin** to let it move during the next arrangement. Drag empty space to pan, use the wheel or **+ / −** to zoom, and choose **Fit** to reset the camera. The **Profiles** list supports keyboard selection; with the graph focused, use arrow keys to pan and **Enter** for Details.
 
-Layout pauses while Network is hidden and resumes when you return if it was still running. A manual pause stays paused. Large or dense graphs can still render slowly; hide labels, use filters or pause layout. Pictures load only when their circles are large enough to read. Exploration uses saved observations and makes no new Steam API requests.
+Layout starts automatically when Network opens and stops when settled. It pauses while Network is hidden and resumes when you return if it was still running. A manual pause stays paused. Large or dense graphs can still render slowly; hide labels, use filters or pause layout. Pictures load only when their circles are large enough to read. Exploration uses saved observations and makes no new Steam API requests.
 
 ## Compare coverage first
 
