@@ -232,8 +232,8 @@ tbody tr:hover { background: var(--GreenBG); }
 .key-footer .dialog-actions { margin: 0; }
 .key-footer a { white-space: nowrap; }
 .key-footer button { padding-inline: 10px; white-space: nowrap; }
-#history-result { margin-top: 12px; }
-#history-download { display: inline-block; margin: 4px 0 8px; color: var(--Maize); }
+#history-result { margin-top: 0; }
+#history-download { display: inline-block; color: var(--Maize); }
 
 
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -318,8 +318,15 @@ tbody tr:hover { background: var(--GreenBG); }
 .target-history { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .target-history button { padding: 2px 8px; }
 .target-history span { font-size: 14px; }
-#history-view .page-heading { margin-bottom: 0; }
-#history-view #history-heading { font-size: 16px; font-weight: 500; }
+.history-header { flex-wrap: wrap; justify-content: start; gap: 8px 16px; margin-bottom: 8px; }
+.history-identity { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+#history-heading { font-size: 16px; font-weight: 500; }
+#history-name { font-weight: 700; overflow-wrap: anywhere; }
+.history-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.history-actions button { padding-inline: 8px; font-size: 14px; }
+.history-actions a { font-size: 13px; }
+/* The toolbar shares the report's visibility without keeping a second state flag. */
+#history-content:has(#history-result[hidden]) .history-data { display: none; }
 #history-view #history-back { display: none; }
 .history-warning { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; }
 .history-warning strong { font-weight: 500; }

@@ -255,7 +255,11 @@ Keyboard: search or choose from Profiles. Escape restores the preview.">i</butto
     </section>
 
     <section id="history-screen" class="screen" aria-labelledby="history-heading" hidden>
-      <div id="history-home"><div id="history-content"><div class="page-heading"><h1 id="history-heading">History</h1><div class="results-actions"><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button id="history-back" type="button" data-screen="results">Back to Results</button></div></div>
+      <div id="history-home"><div id="history-content">
+      <header class="page-heading history-header">
+        <div class="history-identity"><h1 id="history-heading">History</h1><h2 id="history-name" class="history-data"></h2><span id="history-asof" class="history-data" tabindex="0"></span></div>
+        <div class="history-actions"><button id="history-refresh" class="history-data" type="button">Refresh</button><button id="history-export" class="history-data" type="button">Export history</button><a id="history-download" class="history-data" hidden>Run history.json</a><button id="open-history-import" type="button" aria-haspopup="dialog">Import file</button><button id="history-back" type="button" data-screen="results">Back to Results</button></div>
+      </header>
       <p id="history-fetch-status" role="status" hidden></p><button id="history-retry" type="button" hidden>Retry history</button>
       <section id="history-section">
         <dialog id="history-import-dialog" aria-labelledby="history-import-heading"><h2 id="history-import-heading">Import History</h2>
@@ -269,7 +273,6 @@ Keyboard: search or choose from Profiles. Escape restores the preview.">i</butto
           <div class="dialog-actions"><button type="button" data-close="history-import-dialog">Cancel</button></div>
         </dialog>
         <div id="history-result" hidden>
-          <div class="section-line"><h2 id="history-name"></h2><span id="history-asof" tabindex="0"></span><button id="history-refresh" type="button">Refresh</button><button id="history-export" type="button">Export history</button><a id="history-download" hidden>Run history.json</a></div>
           <div id="history-warnings" role="status" hidden></div>
           <nav class="tabs" aria-label="History views">
             <button type="button" data-history="friends" aria-current="page">Friends</button><button type="button" data-history="ranking">Comment ranking</button><button type="button" data-history="comments">Comments</button><button type="button" data-history="persona">Names</button><button type="button" data-history="realName">Real names</button><button type="button" data-history="url">URLs</button><button type="button" data-history="pfp">Avatars</button><button type="button" data-history="profile">Profile / bans</button><button type="button" data-history="locations">Comment locations</button>

@@ -4,7 +4,7 @@ This runbook covers desktop downloads and source archives on GitHub. The package
 
 ## release candidate
 
-The candidate is **2.2.4**, with [release notes](releases/2.2.4.md). It adds the in-app network explorer, profile pictures, nearby help, scan ETA and responsive cancellation. **2.2.3** remains the published release until this candidate passes review and native package checks. **2.2.1** was withdrawn; its tag remains fixed. Do not reuse either tag.
+The candidate is **2.2.5**, with [release notes](releases/2.2.5.md). It improves graph image quality, hover stability, contextual help and Results navigation, and compacts the History toolbar. **2.2.4** remains the published release until this candidate passes review and native package checks. **2.2.1** was withdrawn; its tag remains fixed. Do not reuse either tag.
 
 Use the existing tag convention without a `v` prefix. Desktop installers start at `2.0.1`; `2.0.0` contains source archives only, and `1.0.2` contains the legacy Python executable. Publish only after authorization, resolved review findings and green CI on the pinned main commit.
 
@@ -27,8 +27,8 @@ Use the existing tag convention without a `v` prefix. Desktop installers start a
 5. Confirm that the intended tag does not already exist locally or remotely. Never move an existing release tag.
 
    ```sh
-   git tag --list 2.2.4
-   git ls-remote --tags origin refs/tags/2.2.4
+   git tag --list 2.2.5
+   git ls-remote --tags origin refs/tags/2.2.5
    gh release list --repo Microck/vapora
    ```
 
@@ -43,8 +43,8 @@ For a committed candidate, create an archive from its exact commit:
 ```sh
 VAPORA_RELEASE_COMMIT=REPLACE_WITH_REVIEWED_MAIN_COMMIT
 
-git archive --format=tar.gz --prefix=vapora-2.2.4/ \
-  --output=/tmp/vapora-2.2.4-source.tar.gz "$VAPORA_RELEASE_COMMIT"
+git archive --format=tar.gz --prefix=vapora-2.2.5/ \
+  --output=/tmp/vapora-2.2.5-source.tar.gz "$VAPORA_RELEASE_COMMIT"
 ```
 
 Extract it into a fresh directory and run:
@@ -81,21 +81,21 @@ Proceed only after explicit approval of the tag and notes, all findings are reso
 4. Create an annotated tag at the pinned commit. Git is used here because Jujutsu does not create annotated tags:
 
    ```sh
-   git -c user.name=Microck -c user.email=contact@micr.dev tag -a 2.2.4 \
-     "$VAPORA_RELEASE_COMMIT" -F docs/releases/2.2.4.md
-   git push origin refs/tags/2.2.4
+   git -c user.name=Microck -c user.email=contact@micr.dev tag -a 2.2.5 \
+     "$VAPORA_RELEASE_COMMIT" -F docs/releases/2.2.5.md
+   git push origin refs/tags/2.2.5
    ```
 
 5. Wait for core CI and Desktop packages CI triggered by the new tag to pass on the pinned commit. Download that tag run's verified artifacts into `/tmp/vapora-desktop-downloads`. Compute `SHA256SUMS.txt` from the exact EXE, AppImage and DMG bytes, using their basenames. Confirm there are four tested downloads: Windows x64 installer and portable EXEs, Linux x64 AppImage, and macOS ARM64 DMG. Publish a normal GitHub release with those files attached from the start:
 
    ```sh
-   gh release create 2.2.4 \
+   gh release create 2.2.5 \
      /tmp/vapora-desktop-downloads/*/*.exe \
      /tmp/vapora-desktop-downloads/*/*.AppImage \
      /tmp/vapora-desktop-downloads/*/*.dmg \
      /tmp/vapora-desktop-downloads/SHA256SUMS.txt \
      --repo Microck/vapora --verify-tag \
-     --title 'vapora 2.2.4' --notes-file docs/releases/2.2.4.md --latest
+     --title 'vapora 2.2.5' --notes-file docs/releases/2.2.5.md --latest
    ```
 
 6. GitHub also provides the source ZIP and tar.gz. Do not publish an empty source-only release while waiting for desktop builds. Do not attach the legacy executable, replace existing public assets with `--clobber`, publish to npm or mark the release as a prerelease.
@@ -105,15 +105,15 @@ Proceed only after explicit approval of the tag and notes, all findings are reso
 1. Confirm the release is published, not a draft, and points to the intended tag:
 
    ```sh
-   gh release view 2.2.4 --repo Microck/vapora \
+   gh release view 2.2.5 --repo Microck/vapora \
      --json url,tagName,isDraft,isPrerelease,publishedAt,assets
-   git ls-remote --tags origin refs/tags/2.2.4 'refs/tags/2.2.4^{}'
+   git ls-remote --tags origin refs/tags/2.2.5 'refs/tags/2.2.5^{}'
    ```
 
 2. Verify the annotated tag's peeled commit equals `VAPORA_RELEASE_COMMIT`.
 3. Download a public source archive for the tag into a fresh directory. Repeat the source checks above against the actual public download.
 4. Confirm both core and desktop tag CI passed. Download each attached installer and verify its checksum against `SHA256SUMS.txt` and the tested CI artifact. Check the release has both installer and portable EXEs, an AppImage and a DMG before calling it complete. Report a failed or incomplete platform check honestly.
-5. Verify main and the historical `legacy`, `feature/gui-and-analysis` and `rewrite/typescript-effect` branches remain at their expected commits.
+5. Verify main points to the released commit and the protected historical `legacy` branch remains at `a42279957cebe997a609f19da77bc13167be7205`. Previously removed feature branches must not be recreated.
 6. Report the release URL, tagged commit, completed checks and outstanding platform limits.
 
 ## recover from a publishing problem

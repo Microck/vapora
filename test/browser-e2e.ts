@@ -507,6 +507,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(await page.$eval("#history-fetch-status", (element) => element instanceof HTMLElement && element.hidden), true);
   await page.click('[data-history="comments"]');
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 4);
+  // Account metadata and actions fit one toolbar at the normal desktop width.
+  assert.equal(await page.$eval(".history-header", (header) => header.getBoundingClientRect().height <= 36), true);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-partial-comments.png") });
   history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
   assert.equal(await page.$eval("#history-result", (element) => element instanceof HTMLElement && element.hidden), false);

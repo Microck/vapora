@@ -180,7 +180,7 @@ export function render(report: History.HistoryReport, selectedScan?: Scan) {
   if (current === report && scan === selectedScan) return;
   current = report; scan = selectedScan; page = 0;
   get("history-name").textContent = report.profile.name;
-  get("history-asof").textContent = `History as of ${date(report.profile.lastChecked)}`;
+  get("history-asof").textContent = `As of ${date(report.profile.lastChecked)}`;
   get("history-asof").dataset.tooltip = History.diagnosticText(report.warning);
   const sources = get("history-sources"); sources.replaceChildren();
   report.sources.forEach((source, index) => {
