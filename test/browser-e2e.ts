@@ -592,6 +592,19 @@ test("history account selection, all viewer tabs, filters, original downloads an
   assert.equal(history.requests(), requestsBeforeReopen);
   const cachedRequests = history.requests(); await checkSavedHistoryDiagnostics(page, root, downloadDirectory);
   assert.equal(history.requests(), cachedRequests);
+  history.setStatus(200); history.counts.clear(); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  // A transport failure retains the capture and its error when the viewer reopens.
+  await page.setOfflineMode(true); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History unavailable");
+  const refreshError = await visibleText(page, "#history-fetch-status"); assert.ok(refreshError);
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await visibleText(page, "#history-fetch-status"), refreshError);
+  assert.equal(await page.$eval("#history-retry", (button) => button.checkVisibility()), true);
+  assert.equal(await page.$eval("#history-result", (report) => report.checkVisibility()), true);
+  await page.setOfflineMode(false); await page.click("#history-retry");
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.checkVisibility()), false);
   await checkDuplicateHistoryOpeners(page, root);
   assert.deepEqual(errors, []);
 });
@@ -709,6 +722,14 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.setViewport({ width: 1078, height: 700 }); await page.click("#open-history"); await page.click('[data-history="comments"]');
   assert.equal(await page.$eval("#results-screen", (element) => element.checkVisibility()), true);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "attached-history.png") });
+  // A real held history response updates the report after the library has opened.
+  const pendingHistory = history.hold(`/id/${seed}/__data.json`);
+  await page.click("#history-refresh"); await pendingHistory;
+  await page.click("#toggle-runs"); history.release(`/id/${seed}/__data.json`);
+  await page.waitForFunction(() => document.querySelector("#target-history-status")?.textContent === "History ready");
+  assert.equal(await page.$eval("#run-library", (element) => element.checkVisibility()), true);
+  assert.equal(await page.$eval("#obsidian-shortcut", (element) => element.checkVisibility()), false);
+  await page.click("#toggle-runs");
   assert.match(await visibleText(page, "#history-rows"), /Bob/); await fill(page, "#history-search", "Bob");
   assert.equal(await page.$eval("#history-rows", (rows) => rows.children.length), 1); await fill(page, "#history-search", "Undated unknown author");
   assert.equal(await page.$$eval("#history-rows tr", (rows) => rows.some((row) => row.textContent?.includes("Undated unknown author") && row.cells[0]?.textContent === "Unknown author")), true);

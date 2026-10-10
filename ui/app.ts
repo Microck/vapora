@@ -282,7 +282,7 @@ function renderReport() {
   const obsidian = document.createElement("a"); obsidian.id = "obsidian-export";
   obsidian.textContent = "↓ Obsidian vault (.zip)";
   obsidian.href = `/api/obsidian?${new URLSearchParams({ id: scan.id })}`; exports.append(obsidian);
-  const shortcut = get("obsidian-shortcut"); shortcut.setAttribute("href", obsidian.href); shortcut.hidden = false;
+  const shortcut = get("obsidian-shortcut"); shortcut.setAttribute("href", obsidian.href); shortcut.hidden = !get("run-library").hidden;
   renderFriends(); renderLocations(); renderGraph(); renderTarget(); renderOutput();
 }
 function renderCoverageNotice() {
@@ -397,7 +397,7 @@ function renderAccountHistory(state: HistoryState, runId?: string) {
   if (state.report) {
     // Background captures must not replace the saved run's attached History tab.
     if (historyMatchesContext(runId)) renderHistory(state.report, runId ?? null);
-    if (runId && selected?.scan.id === runId) { selected = { ...selected, history: state.report }; renderReport(); }
+    if (runId && selected?.scan.id === runId && selected.history !== state.report) { selected = { ...selected, history: state.report }; renderReport(); }
   }
 }
 async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) {
@@ -412,10 +412,9 @@ async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) 
     renderAccountHistory(state, runId);
   } catch (error) {
     if (request !== historyRequest) return;
-    get("target-history-status").textContent = "History unavailable"; get("target-history-retry").hidden = false;
-    const message = diagnosticText(error instanceof Error ? error.message : "History could not be loaded.");
-    get("target-history-status").dataset.tooltip = message;
-    if (historyMatchesContext(runId)) { get("history-retry").hidden = false; get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = false; }
+    const message = error instanceof Error ? error.message : "History could not be loaded.";
+    renderAccountHistory({ id, status: "unavailable", error: message,
+      report: accountHistory?.id === id ? accountHistory.report : null }, runId);
   }
 }
 async function openRun(id: string, navigation = navigationVersion) {

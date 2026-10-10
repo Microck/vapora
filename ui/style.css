@@ -14,8 +14,8 @@
   color: var(--OffWhite); background: #000;
   scrollbar-color: var(--LightGreenBG) var(--DarkGreenBG);
 }
-/* Standard scrollbar colors override WebKit geometry in Chromium. */
-@supports selector(::-webkit-scrollbar) {
+/* Reset standard colors only when the browser supports the full scrollbar skin. */
+@supports selector(::-webkit-scrollbar-thumb) {
   :root, * { scrollbar-color: auto; }
 }
 * { box-sizing: border-box; }

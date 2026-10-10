@@ -155,8 +155,7 @@ function download(contents: string, filename: string) {
 }
 function renderWarnings(report: History.HistoryReport) {
   const container = get("history-warnings"); container.replaceChildren();
-  const latest = report.sources.filter((source) => source.coverage.length)
-    .sort((a, b) => Date.parse(b.capturedAt) - Date.parse(a.capturedAt))[0];
+  const latest = History.latestCoverageSource(report);
   const issues = latest?.coverage.filter((entry) => entry.status !== "complete") ?? [];
   const labels = { friends: "Friends", comments: "Comments", persona: "Names", realName: "Real names", url: "URLs", pfp: "Avatars" } satisfies Record<History.Section, string>;
   const add = (summary: string, explanation: string) => {
