@@ -762,6 +762,22 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), true);
   assert.equal(await page.$eval("#history-fetch-status", (element) => element.hasAttribute("hidden")), true);
+  // Refreshing Alice's attachment must preserve Bob's independent target state.
+  history.setStatus(200);
+  history.rows.set("comments", [...history.document.historic.comments,
+    { ID: "isolated-refresh", Commenter: second, Message: "Alice attachment refreshed", Timestamp: 1791360000 }]);
+  const attachedRefresh = history.hold(`/id/${seed}/__data.json`);
+  await page.click("#history-refresh"); await attachedRefresh;
+  assert.equal(await visibleText(page, "#target-history-status"), "History unavailable");
+  history.release(`/id/${seed}/__data.json`);
+  await page.click('[data-history="comments"]');
+  await page.waitForFunction(() => document.querySelector("#history-rows")?.textContent?.includes("Alice attachment refreshed"));
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await page.$eval("#history-result", (element) => element.checkVisibility()), false);
+  assert.match(await visibleText(page, "#history-fetch-status"), /blocked/);
+  assert.equal(await visibleText(page, "#target-history-status"), "History unavailable");
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  assert.equal(await visibleText(page, "#history-name"), "Alice");
   assert.deepEqual(errors, []);
 });
 

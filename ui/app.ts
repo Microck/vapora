@@ -367,54 +367,68 @@ function renderRuns() {
 let accountHistory: HistoryState | null = null;
 let historyRequest = 0;
 let historyAccount: SteamId | null = null;
+let attachedHistory: { runId: string; state: HistoryState } | null = null;
+let attachedHistoryRequest = 0;
+function ownsTargetHistory(id: SteamId, runId?: string) {
+  return !runId || historyAccount === id || historyAccount === null && inputs.target.value.trim() === id;
+}
 function showAttachedHistory() {
   if (!selected?.history) return;
   const content = get("history-content"); const changedContext = content.parentElement !== get("history-view");
   if (changedContext) { get("history-view").append(content); get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
-  renderHistory(selected.history, selected.scan.id);
+  if (attachedHistory?.runId === selected.scan.id) renderAccountHistory(attachedHistory.state, attachedHistory.runId, false);
+  else renderHistory(selected.history, selected.scan.id);
 }
 function renderHistory(report: HistoryReport, runId: string | null) {
   const matching = runId && selected?.scan.seed === report.profile.steamID64 ? selected.scan : undefined;
   get("history-result").hidden = false;
-  HistoryUI.render(report, matching); historyAccount = report.profile.steamID64;
+  HistoryUI.render(report, matching);
   const link = get("history-download"); link.hidden = !runId;
   if (runId) link.setAttribute("href", downloadLink(runId, "history.json").href);
 }
-function historyMatchesContext(runId?: string) {
-  return get("history-content").parentElement !== get("history-view") || runId === selected?.scan.id;
+function historyMatchesContext(id: SteamId, runId?: string, target = ownsTargetHistory(id, runId)) {
+  return get("history-content").parentElement === get("history-view") ? runId === selected?.scan.id : target;
 }
-function renderAccountHistory(state: HistoryState, runId?: string) {
-  accountHistory = state; historyAccount = state.id;
+function renderAccountHistory(state: HistoryState, runId?: string, target = ownsTargetHistory(state.id, runId)) {
   const message = diagnosticText(state.error ?? "");
-  get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
-  get("target-history-status").dataset.tooltip = message || "Saved history capture";
-  get("target-history-retry").hidden = !state.error;
+  if (runId) attachedHistory = { runId, state };
+  if (target) {
+    accountHistory = state; historyAccount = state.id;
+    get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";
+    get("target-history-status").dataset.tooltip = message || "Saved history capture";
+    get("target-history-retry").hidden = !state.error;
+  }
   // The target account can load in the background while another run owns the History tab.
-  if (historyMatchesContext(runId)) {
+  if (historyMatchesContext(state.id, runId, target)) {
     get("history-retry").hidden = !state.error || state.status === "partial" && state.report !== null;
     get("history-fetch-status").textContent = message; get("history-fetch-status").hidden = !state.error || state.status === "partial" && state.report !== null;
   }
   if (state.report) {
     // Background captures must not replace the saved run's attached History tab.
-    if (historyMatchesContext(runId)) renderHistory(state.report, runId ?? null);
+    if (historyMatchesContext(state.id, runId, target)) renderHistory(state.report, runId ?? null);
     if (runId && selected?.scan.id === runId && selected.history !== state.report) { selected = { ...selected, history: state.report }; renderReport(); }
   }
 }
 async function loadAccountHistory(id: SteamId, refresh = false, runId?: string) {
-  const request = ++historyRequest;
-  if (historyAccount !== id) { accountHistory = null; if (historyMatchesContext(runId)) get("history-result").hidden = true; }
-  historyAccount = id;
-  if (historyMatchesContext(runId)) { get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
-  get("target-history-status").textContent = "Loading history";
+  // Freeze ownership for this request: a later target lookup must not inherit an older attachment response.
+  const target = ownsTargetHistory(id, runId);
+  const request = target ? ++historyRequest : ++attachedHistoryRequest;
+  if (target) {
+    if (historyAccount !== id) { accountHistory = null; if (historyMatchesContext(id, runId)) get("history-result").hidden = true; }
+    historyAccount = id;
+    get("target-history-status").textContent = "Loading history";
+  }
+  if (historyMatchesContext(id, runId)) { get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
+  const current = () => target ? request === historyRequest : request === attachedHistoryRequest && runId === selected?.scan.id;
   try {
     const state = await api("/api/history/account", HistoryState, { id, refresh, runId });
-    if (request !== historyRequest) return;
-    renderAccountHistory(state, runId);
+    if (!current()) return;
+    renderAccountHistory(state, runId, target);
   } catch (error) {
-    if (request !== historyRequest) return;
+    if (!current()) return;
     const message = error instanceof Error ? error.message : "History could not be loaded.";
     renderAccountHistory({ id, status: "unavailable", error: message,
-      report: accountHistory?.id === id ? accountHistory.report : null }, runId);
+      report: target ? accountHistory?.id === id ? accountHistory.report : null : selected?.history ?? null }, runId, target);
   }
 }
 async function openRun(id: string, navigation = navigationVersion) {
@@ -757,6 +771,7 @@ get("history-form").addEventListener("submit", (event) => { event.preventDefault
   const report = await api("/api/history", HistoryReport, { contents: new TextDecoder("utf-8", { ignoreBOM: true, fatal: true }).decode(await file.arrayBuffer()), runId });
   // An import supersedes any automatic history response still in flight.
   historyRequest++;
+  attachedHistoryRequest++;
   const error = coverageError(report);
   if (!runId && get("history-content").parentElement === get("history-view")) showScreen("history");
   renderAccountHistory({ id: report.profile.steamID64, status: error ? "partial" : "ready", error, report }, runId);
