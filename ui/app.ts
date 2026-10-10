@@ -378,7 +378,10 @@ function showAttachedHistory() {
   if (changedContext) { get("history-view").append(content); get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
   if (attachedHistory?.runId === selected.scan.id) renderAccountHistory({ id: selected.scan.seed,
     status: attachedHistory.status, error: attachedHistory.error, report: selected.history }, attachedHistory.runId, false);
-  else renderHistory(selected.history, selected.scan.id);
+  else {
+    get("history-fetch-status").hidden = true; get("history-retry").hidden = true;
+    renderHistory(selected.history, selected.scan.id);
+  }
 }
 function renderHistory(report: HistoryReport, runId: string | null) {
   const matching = runId && selected?.scan.seed === report.profile.steamID64 ? selected.scan : undefined;

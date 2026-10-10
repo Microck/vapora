@@ -816,6 +816,19 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   }
   await page.click('[data-screen="scan"]'); await page.click("#target-history");
   assert.equal(await visibleText(page, "#history-name"), "Bob");
+  // A cancelled run cannot inherit another attachment's failed-refresh message.
+  await page.click('[data-screen="results"]'); await page.click("#open-history");
+  await page.setOfflineMode(true); await page.click("#history-refresh");
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("Cannot reach Vapora"));
+  await page.setOfflineMode(false);
+  const firstPath = join(root, "outputs", firstRun, "scan.json");
+  const savedFirst = Schema.decodeUnknownSync(Contracts.RunView.fields.scan)(JSON.parse(await readFile(firstPath, "utf8")));
+  await writeFile(firstPath, JSON.stringify({ ...savedFirst, status: "cancelled" }));
+  await page.click("#toggle-runs");
+  await page.$$eval("#run-rows tr", (rows, id) => rows.find((row) => row.lastElementChild?.textContent === id)?.querySelector("button")?.click(), firstRun);
+  await page.waitForFunction((id) => location.hash === `#${id}` && document.querySelector("#history-name")?.textContent === "Alice", {}, firstRun);
+  assert.equal(await page.$eval("#history-fetch-status", (element) => element.checkVisibility()), false);
+  assert.equal(await page.$eval("#history-retry", (element) => element.checkVisibility()), false);
   assert.deepEqual(errors, []);
 });
 
