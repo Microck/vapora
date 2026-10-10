@@ -792,6 +792,30 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   const historyUrl = await page.$eval("#history-download", (link) => link instanceof HTMLAnchorElement ? link.href : "");
   const projected = Schema.decodeUnknownSync(History.HistoryReport)(await (await fetch(historyUrl, { headers: { "user-agent": userAgent } })).json());
   assert.deepEqual(rebuiltIndices, projected.commenters.map((author) => author.inReference ? author.index?.toFixed(1) ?? "Unknown" : "Outside reference"));
+  // Switching linked saved runs must also switch the standalone target's History owner.
+  const firstRun = await page.evaluate(() => location.hash.slice(1));
+  const bobRun = { ...scan([player(second, [])]), seed: second };
+  const bobDirectory = join(root, "outputs", bobRun.id); await mkdir(bobDirectory);
+  await writeFile(join(bobDirectory, "scan.json"), JSON.stringify(bobRun));
+  const importedBob = await fetch(`${server.origin}/api/history`, { method: "POST",
+    headers: { "content-type": "application/json", "user-agent": userAgent },
+    body: JSON.stringify({ runId: bobRun.id, contents: JSON.stringify({ ...history.document, steamID64: second, name: "Bob" }) }) });
+  assert.equal(importedBob.status, 200);
+  await page.click('[data-screen="scan"]'); await fill(page, "#target", "");
+  await page.click('[data-screen="results"]'); await page.click("#toggle-runs");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction((id) => document.querySelector("#run-rows")?.textContent?.includes(id), {}, bobRun.id);
+  for (const id of [firstRun, bobRun.id]) {
+    await page.$$eval("#run-rows tr", (rows, id) => rows.find((row) => row.lastElementChild?.textContent === id)?.querySelector("button")?.click(), id);
+    await page.waitForFunction((id) => location.hash === `#${id}` && document.querySelector("#target-history-status")?.textContent === "History ready", {}, id)
+      .catch(async (error: Error) => { throw new Error(`Saved-run History switch failed: ${JSON.stringify(await page.evaluate(() => ({
+        run: location.hash, target: document.querySelector<HTMLInputElement>("#target")?.value,
+        status: document.querySelector("#target-history-status")?.textContent, notice: document.querySelector("#notice")?.textContent,
+      })))}`, { cause: error }); });
+    if (id === firstRun) await page.click("#toggle-runs");
+  }
+  await page.click('[data-screen="scan"]'); await page.click("#target-history");
+  assert.equal(await visibleText(page, "#history-name"), "Bob");
   assert.deepEqual(errors, []);
 });
 

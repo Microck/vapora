@@ -370,7 +370,7 @@ let historyAccount: SteamId | null = null;
 let attachedHistory: { runId: string; status: HistoryState["status"]; error: string | null } | null = null;
 let attachedHistoryRequest = 0;
 function ownsTargetHistory(id: SteamId, runId?: string) {
-  return !runId || historyAccount === id || historyAccount === null && inputs.target.value.trim() === id;
+  return !runId || inputs.target.value.trim() === id || historyAccount === id;
 }
 function showAttachedHistory() {
   if (!selected?.history) return;
