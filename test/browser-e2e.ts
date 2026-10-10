@@ -798,7 +798,7 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   const bobDirectory = join(root, "outputs", bobRun.id); await mkdir(bobDirectory);
   await writeFile(join(bobDirectory, "scan.json"), JSON.stringify(bobRun));
   const importedBob = await fetch(`${server.origin}/api/history`, { method: "POST",
-    headers: { "content-type": "application/json", "user-agent": userAgent },
+    headers: { "content-type": "application/json", origin: server.origin, "user-agent": userAgent },
     body: JSON.stringify({ runId: bobRun.id, contents: JSON.stringify({ ...history.document, steamID64: second, name: "Bob" }) }) });
   assert.equal(importedBob.status, 200);
   await page.click('[data-screen="scan"]'); await fill(page, "#target", "");
