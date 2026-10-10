@@ -367,7 +367,7 @@ function renderRuns() {
 let accountHistory: HistoryState | null = null;
 let historyRequest = 0;
 let historyAccount: SteamId | null = null;
-let attachedHistory: { runId: string; state: HistoryState } | null = null;
+let attachedHistory: { runId: string; status: HistoryState["status"]; error: string | null } | null = null;
 let attachedHistoryRequest = 0;
 function ownsTargetHistory(id: SteamId, runId?: string) {
   return !runId || historyAccount === id || historyAccount === null && inputs.target.value.trim() === id;
@@ -376,7 +376,8 @@ function showAttachedHistory() {
   if (!selected?.history) return;
   const content = get("history-content"); const changedContext = content.parentElement !== get("history-view");
   if (changedContext) { get("history-view").append(content); get("history-fetch-status").hidden = true; get("history-retry").hidden = true; }
-  if (attachedHistory?.runId === selected.scan.id) renderAccountHistory(attachedHistory.state, attachedHistory.runId, false);
+  if (attachedHistory?.runId === selected.scan.id) renderAccountHistory({ id: selected.scan.seed,
+    status: attachedHistory.status, error: attachedHistory.error, report: selected.history }, attachedHistory.runId, false);
   else renderHistory(selected.history, selected.scan.id);
 }
 function renderHistory(report: HistoryReport, runId: string | null) {
@@ -391,7 +392,8 @@ function historyMatchesContext(id: SteamId, runId?: string, target = ownsTargetH
 }
 function renderAccountHistory(state: HistoryState, runId?: string, target = ownsTargetHistory(state.id, runId)) {
   const message = diagnosticText(state.error ?? "");
-  if (runId) attachedHistory = { runId, state };
+  // Keep only refresh diagnostics here. The selected run owns the current projected report.
+  if (runId) attachedHistory = { runId, status: state.status, error: state.error };
   if (target) {
     accountHistory = state; historyAccount = state.id;
     get("target-history-status").textContent = state.status === "partial" ? "History partial" : state.error ? "History unavailable" : "History ready";

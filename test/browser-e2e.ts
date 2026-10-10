@@ -85,6 +85,8 @@ async function checkSavedHistoryDiagnostics(page: Page, root: string, downloadDi
   await page.click("#history-sources button:last-child");
   assert.equal(await readDownload(downloadPath), contents);
   assert.match(await readFile(join(root, "history", `${seed}.json`), "utf8"), /SteamHistory's profile summary/);
+  // The imported capture is deliberately newer; subsequent refreshes must occur after its timestamp.
+  await delay(Math.max(0, Date.parse(capture.capturedAt) + 1001 - Date.now()));
 }
 async function checkUndatedRecords(page: Page) {
   for (const tab of ["persona", "realName", "url", "pfp"]) {
@@ -778,6 +780,18 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   assert.equal(await visibleText(page, "#target-history-status"), "History unavailable");
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.equal(await visibleText(page, "#history-name"), "Alice");
+  // A new ranking projection must replace the attachment shown by the cached refresh state.
+  await page.click('[data-history="ranking"]');
+  const previousIndices = await page.$$eval("#history-rows tr", (rows) => rows.map((row) => row.lastElementChild?.textContent));
+  await page.click('[data-view="ranking"]'); await fill(page, "#ranking-countBaseline", "1");
+  await page.click("#save-ranking");
+  await page.waitForFunction(() => document.querySelector("#notice")?.textContent?.includes("Saved ranking"));
+  await page.click("#open-history"); await page.click('[data-history="ranking"]');
+  const rebuiltIndices = await page.$$eval("#history-rows tr", (rows) => rows.map((row) => row.lastElementChild?.textContent));
+  assert.notDeepEqual(rebuiltIndices, previousIndices);
+  const historyUrl = await page.$eval("#history-download", (link) => link instanceof HTMLAnchorElement ? link.href : "");
+  const projected = Schema.decodeUnknownSync(History.HistoryReport)(await (await fetch(historyUrl, { headers: { "user-agent": userAgent } })).json());
+  assert.deepEqual(rebuiltIndices, projected.commenters.map((author) => author.inReference ? author.index?.toFixed(1) ?? "Unknown" : "Outside reference"));
   assert.deepEqual(errors, []);
 });
 
@@ -886,6 +900,8 @@ test("network preview expands in-app, keeps all connections and supports explora
   const statusBeforeExport = await visibleText(page, "#network-layout-status");
   const cameraBeforeExport = await page.$eval("#graph", (element) => element.getAttribute("data-ratio"));
   await page.click("#network-export");
+  // Encoding the 4K image precedes the download and has its own visible Saving state.
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#network-export")?.disabled);
   const image = join(downloads, `vapora-${saved.id}-network.png`);
   await readDownload(image); const bytes = await readFile(image);
   assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a"); assert.ok(bytes.length > 10000);
