@@ -23,7 +23,8 @@
     "test:e2e": "npm run build && node --test dist/test/browser-e2e.js",
     "package": "npm run build && npm run build:history && electron-builder --publish never",
     "test:desktop": "node --test --test-reporter=tap dist/test/desktop-e2e.js",
-    "build:history": "node scripts/build-history.mjs"
+    "build:history": "node scripts/build-history.mjs",
+    "test:e2e:deterministic": "E2E_TELEMETRY_DISABLED=1 e2e run"
   },
   "dependencies": {
     "@sigma/node-border": "4.0.0",
@@ -37,10 +38,12 @@
     "sigma": "4.0.0"
   },
   "devDependencies": {
+    "@e2e-dev/web": "0.15.2",
     "@electron-internal/extract-zip": "1.0.5",
     "@electron/asar": "4.3.1",
     "@oxlint/plugins": "1.87.0",
     "@types/node": "24.0.0",
+    "e2e": "0.21.2",
     "electron": "44.5.1",
     "electron-builder": "26.15.3",
     "esbuild": "0.25.11",

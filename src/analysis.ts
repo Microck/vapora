@@ -33,7 +33,8 @@ export const calculate = Effect.fn("Analysis.calculate")(function* (scan: Scan) 
 
 const intersection = <T>(left: ReadonlySet<T>, right: ReadonlySet<T>): number => {
   let count = 0;
-  for (const value of left) if (right.has(value)) count++;
+  const [smaller, larger] = left.size <= right.size ? [left, right] : [right, left];
+  for (const value of smaller) if (larger.has(value)) count++;
   return count;
 };
 
@@ -92,16 +93,21 @@ function graphMetrics(graph: UndirectedGraph, sorted: readonly SteamId[], percen
   return metrics;
 }
 
-function compareLists<T>(left: readonly T[], right: readonly T[] | undefined, leftStatus: string, rightStatus: string | undefined) {
+function compareLists<T>(left: ReadonlySet<T>, right: readonly T[] | undefined, leftStatus: string, rightStatus: string | undefined) {
   if (leftStatus !== "public" || rightStatus !== "public" || !right) return null;
-  const l = new Set(left); const r = new Set(right); const shared = intersection(l, r);
+  const l = left; const r = new Set(right); const shared = intersection(l, r);
   return { shared, jaccard: shared / Math.max(1, l.size + r.size - shared) };
 }
 
-function friendSignals(seed: Player, player: Player | undefined) {
-  const friends = compareLists(seed.friends, player?.friends, seed.friendsStatus, player?.friendsStatus);
-  const groups = compareLists(seed.groups, player?.groups, seed.groupsStatus, player?.groupsStatus);
-  const games = compareLists(seed.games, player?.games, seed.gamesStatus, player?.gamesStatus);
+type SeedLists = {
+  friends: ReadonlySet<Player["friends"][number]>;
+  groups: ReadonlySet<Player["groups"][number]>;
+  games: ReadonlySet<Player["games"][number]>;
+};
+function friendSignals(seed: Player, player: Player | undefined, lists: SeedLists) {
+  const friends = compareLists(lists.friends, player?.friends, seed.friendsStatus, player?.friendsStatus);
+  const groups = compareLists(lists.groups, player?.groups, seed.groupsStatus, player?.groupsStatus);
+  const games = compareLists(lists.games, player?.games, seed.gamesStatus, player?.gamesStatus);
   return { jaccard: friends?.jaccard ?? null, sharedGroups: groups?.shared ?? null, sharedGames: games?.shared ?? null,
     groupJaccard: groups?.jaccard ?? null, gameJaccard: games?.jaccard ?? null };
 }
@@ -112,6 +118,9 @@ function combinedScore(index: number | null, signals: ReturnType<typeof friendSi
 }
 
 function rankFriends(scan: Scan, players: ReadonlyMap<SteamId, Player>, seed: Player): FriendRank[] {
+  // The seed lists do not change during one analysis. Reuse their membership
+  // indexes instead of rebuilding a large game library for every friend.
+  const lists: SeedLists = { friends: new Set(seed.friends), groups: new Set(seed.groups), games: new Set(seed.games) };
   const seedFriends = new Set(seed.friends.filter((id) => id !== scan.seed));
   const neighbors = new Map(scan.players.filter((p) => p.friendsStatus === "public").map((p) => [p.id, new Set(p.friends)]));
   const incoming = new Map<SteamId, Set<SteamId>>();
@@ -127,7 +136,7 @@ function rankFriends(scan: Scan, players: ReadonlyMap<SteamId, Player>, seed: Pl
     const player = players.get(id);
     const mutuals = new Set(incoming.get(id));
     for (const friend of neighbors.get(id) ?? []) if (seedFriends.has(friend) && friend !== id) mutuals.add(friend);
-    const signals = friendSignals(seed, player);
+    const signals = friendSignals(seed, player, lists);
     const incomingMutual = incoming.get(id)?.size ?? 0;
     const index = counts(incomingMutual);
     const score = combinedScore(index, signals, weights);
