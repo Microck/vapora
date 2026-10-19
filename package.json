@@ -24,7 +24,7 @@
     "package": "npm run build && npm run build:history && electron-builder --publish never",
     "test:desktop": "node --test --test-reporter=tap dist/test/desktop-e2e.js",
     "build:history": "node scripts/build-history.mjs",
-    "test:e2e:deterministic": "e2e run"
+    "test:e2e:deterministic": "node e2e-runner.mjs"
   },
   "dependencies": {
     "@sigma/node-border": "4.0.0",
