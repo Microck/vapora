@@ -207,3 +207,16 @@ this project is unofficial and not affiliated with or endorsed by Valve or Steam
 ## license
 
 mit © microck. see [LICENSE](LICENSE).
+
+### Deterministic browser smoke flows
+
+`npm run build`, `npx e2e-web install chromium`, then
+`npm run test:e2e:deterministic` use tester-army/e2e without AI calls.
+A disposable local server talks only to the existing synthetic Steam and history
+fixtures. The suite covers API-key validation/recovery and a scan-to-results-to-
+exports flow. The broader existing `test:e2e` Puppeteer suite remains intact;
+neither fixture suite proves a real Steam account or native desktop installation.
+
+`node tools/benchmark-analysis.mjs --record /tmp/baseline.json` records the
+synthetic ranking result and seven timing samples. After a change, use
+`--compare /tmp/baseline.json` to assert identical output before timing.

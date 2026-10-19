@@ -8,3 +8,4 @@ profiles/
 *.log
 
 .history-runtime/
+.e2e/

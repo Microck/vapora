@@ -96,3 +96,22 @@ test("history merges overlapping periods and selects the latest NDJSON snapshot"
   const inconsistent = await Effect.runPromise(History.parse(JSON.stringify({ ...profile, historic: { friends: [{ Friend: second, FriendDate: 1200 }] } })));
   assert.equal(History.view(inconsistent).friends[0]?.durationSeconds, null);
 });
+
+test("ranking reuses seed indexes without changing duplicate or private signal semantics", () => {
+  const network = scan([
+    player(seed, [second, third], { gamesStatus: "public", games: [1, 2, 2, 3], groupsStatus: "public", groups: ["g", "g"] }),
+    player(second, [seed], { gamesStatus: "public", games: [2, 2, 4], groupsStatus: "public", groups: ["g", "h"] }),
+    player(third, [seed], { gamesStatus: "private", games: [2], groupsStatus: "private", groups: ["g"] }),
+  ]);
+  const original = structuredClone(network);
+  const report = Analysis.analyze(network);
+  const publicFriend = report.friends.find(friend => friend.id === second)!;
+  const privateFriend = report.friends.find(friend => friend.id === third)!;
+  assert.equal(publicFriend.sharedGames, 1);
+  assert.equal(publicFriend.gameJaccard, 0.25);
+  assert.equal(publicFriend.sharedGroups, 1);
+  assert.equal(publicFriend.groupJaccard, 0.5);
+  assert.equal(privateFriend.sharedGames, null);
+  assert.equal(privateFriend.sharedGroups, null);
+  assert.deepEqual(network, original);
+});
