@@ -4,7 +4,7 @@ import { expect } from "e2e";
 test("invalid key is recoverable without changing the working fixture key", async ({ app, screen }) => {
  await app.open("/");
  await screen.getByRole("button", "Steam API key").click();
- await screen.getByLabel("Steam API key").fill("invalid");
+ await screen.getByRole("textbox", { name: "Steam API key", exact: true }).fill("invalid");
  await screen.getByRole("button", "Use key").click();
  await expect(screen.getByText("Enter the 32-character key from Steam's API key page.")).toBeVisible();
  await screen.getByRole("button", "Cancel", {exact:true}).click();
