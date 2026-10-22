@@ -213,6 +213,15 @@ export const parse = Effect.fn("History.parse")(function* (contents: string) {
     const whole = Schema.decodeUnknownResult(json)(contents.trim());
     if (whole._tag === "Success") lines = [whole.success];
     else lines = contents.split(/\r?\n/).filter((line) => line.trim()).map((line) => Schema.decodeUnknownSync(json)(line.trim()));
+    const exported = lines.length === 1 ? object(lines[0]) : null;
+    if (exported && "sources" in exported && "profile" in exported) {
+      const report = Schema.decodeUnknownSync(HistoryReport)(exported);
+      if (!report.sources.length || report.sources.some((source) => !source.snapshots.length)) {
+        throw new InputError({ message: "The exported history report must retain its original snapshots." });
+      }
+      // Recompute derived rankings from validated observations, not exported scores.
+      return { sources: report.sources } satisfies Bundle;
+    }
     const document = lines.length === 1 && object(lines[0])?.type === "SteamHistoryCapture"
       ? Schema.decodeUnknownSync(Document)(lines[0]) : null;
     if (document) return { sources: [{ provider: "SteamHistory", capturedAt: document.capturedAt, contents,
