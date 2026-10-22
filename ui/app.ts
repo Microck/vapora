@@ -65,6 +65,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let settingsVersion = 0;
 let profileLoadRequest = 0;
+let profileLoadsPending = 0;
 const Screen = Schema.Literals(["scan", "results", "history"]);
 let navigationVersion = 0;
 let explorer: Explorer | null = null;
@@ -689,12 +690,18 @@ buttons("load-profile").addEventListener("click", () => dialogTask("load-dialog"
   if (!profiles.value) throw new Error("Choose a saved profile, then click Load.");
   const name = profiles.value; const request = ++profileLoadRequest; const version = settingsVersion;
   const current = () => request === profileLoadRequest && version === settingsVersion && dialog("load-dialog").open && profiles.value === name;
-  const settings = await api(`/api/profiles/${encodeURIComponent(name)}`, Settings).catch((error) => {
-    if (current()) throw error;
-    return null;
-  });
-  if (!settings || !current()) return;
-  applySettings(settings); dialog("load-dialog").close();
+  profileLoadsPending++; dialog("load-dialog").setAttribute("aria-busy", "true");
+  try {
+    const settings = await api(`/api/profiles/${encodeURIComponent(name)}`, Settings).catch((error) => {
+      if (current()) throw error;
+      return null;
+    });
+    if (!settings || !current()) return;
+    applySettings(settings); dialog("load-dialog").close();
+  } finally {
+    profileLoadsPending--;
+    dialog("load-dialog").setAttribute("aria-busy", String(profileLoadsPending > 0));
+  }
 }));
 inputs.name.addEventListener("input", () => inputs.name.removeAttribute("aria-invalid"));
 profiles.addEventListener("change", () => { profileLoadRequest++; profiles.removeAttribute("aria-invalid"); });

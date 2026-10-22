@@ -705,7 +705,7 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   const receivedProfile = page.waitForResponse((response) => response.url().endsWith("/api/profiles/ui-audit"));
   await pendingProfile.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 777 }) });
   await receivedProfile;
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForFunction(() => document.querySelector("#load-dialog")?.getAttribute("aria-busy") === "false");
   assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "456");
   assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), true);
   page.off("request", interceptProfile); await page.setRequestInterception(false);
