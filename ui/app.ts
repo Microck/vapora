@@ -535,8 +535,12 @@ async function refresh() {
     currentState = await api("/api/state", Contracts.State);
     if (lastJob === null && currentState.profiles.includes("default")) {
       const version = settingsVersion;
-      const settings = await api("/api/profiles/default", Settings);
-      if (version === settingsVersion) applySettings(settings);
+      try {
+        const settings = await api("/api/profiles/default", Settings);
+        if (version === settingsVersion) applySettings(settings);
+      } catch (error) {
+        notice(`Saved default settings were not loaded. ${error instanceof Error ? error.message : "Check the saved profile and try again."}`, "action-error");
+      }
     }
     renderProgress(currentState);
     renderRecent(); renderRuns();

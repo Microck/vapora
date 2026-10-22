@@ -710,6 +710,14 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), true);
   page.off("request", interceptProfile); await page.setRequestInterception(false);
   await page.keyboard.press("Escape");
+  // A damaged optional default profile must not poison every startup state poll.
+  const damagedDefault = "{invalid default settings";
+  await writeFile(join(root, "profiles", "default.json"), damagedDefault);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#key-indicator")?.textContent === "Key ready"
+    && document.querySelector("#notice")?.textContent?.includes("Saved default settings were not loaded"));
+  assert.equal(await readFile(join(root, "profiles", "default.json"), "utf8"), damagedDefault);
+  assert.doesNotMatch(await visibleText(page, "#notice") ?? "", /Disconnected/);
   await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
   await page.setOfflineMode(true);
