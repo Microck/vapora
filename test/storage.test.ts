@@ -71,7 +71,13 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
     assert.match(blocked.failure.message, /then retry/);
     assert.deepEqual(await readFile(checkpoint), lastGood);
     assert.ok(!(await readdir(join(root, "outputs", original.id))).some((name) => name.endsWith(".tmp")));
-  } finally { await lock?.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
+    } finally {
+      try { await lock?.close(); }
+      finally {
+        try { await runtime.dispose(); }
+        finally { await rm(root, { recursive: true, force: true }); }
+      }
+    }
 });
 
 test("permanent filesystem errors retain their cause and leave the valid checkpoint intact", async () => {
