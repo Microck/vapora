@@ -512,7 +512,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   // Account metadata and actions fit one toolbar at the normal desktop width.
   assert.equal(await page.$eval(".history-header", (header) => header.getBoundingClientRect().height <= 36), true);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-partial-comments.png") });
-  history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   assert.equal(await page.$eval("#history-result", (element) => element instanceof HTMLElement && element.hidden), false);
   await page.click("#history-retry"); await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-retry")?.hidden);
   await page.setViewport({ width: 320, height: 800 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
@@ -561,7 +562,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   // A recovered refresh must update the open run, its attachment and its download without reopening it.
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   await page.click("#history-refresh");
-  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   history.rows.set("comments", [...history.document.historic.comments, { ID: "recovered", Commenter: second, Message: "Recovered attached comment", Timestamp: 1791360000 }]);
   history.counts.set("comments", 5); history.setStatus(200);
   await fill(page, "#history-search", ""); await page.click('[data-history="comments"]');
@@ -577,7 +579,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered attached comment/);
   history.setStatus(403); await page.click("#history-refresh");
-  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   await page.click('[data-screen="scan"]');
   history.rows.set("comments", [...history.document.historic.comments, { ID: "target-recovered", Commenter: second, Message: "Recovered from target panel", Timestamp: 1791360000 }]);
   history.setStatus(200); await page.click("#target-history-retry");
