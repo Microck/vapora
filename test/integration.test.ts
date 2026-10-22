@@ -613,6 +613,11 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
   try {
     const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
     assert.match((await execute(process.execPath, [cli, "--help"])).stdout, /resume RUN_ID/);
+    const untouched = join(root, "must-not-exist");
+    for (const args of [["profile-save", "extra", "unexpected"], ["recent", "unexpected"], ["profiles", "unexpected"], ["serve", "unexpected"], ["scan", seed, second]]) {
+      await assert.rejects(execute(process.execPath, [cli, ...args, "--root", untouched], { timeout: 5000 }), /accepts .*arguments?/);
+    }
+    await assert.rejects(readFile(join(untouched, "profiles", "extra.json")), { code: "ENOENT" });
     assert.match((await execute(process.execPath, [cli, "profile-save", "tiny", "--root", root, "--max-nodes", "1", "--depth", "5", "--skip-private"])).stdout, /Saved profile tiny/);
     const settings = Schema.decodeUnknownSync(Schema.fromJsonString(Settings))(await readFile(join(root, "profiles", "tiny.json"), "utf8"));
     assert.equal(settings.depth, 5); assert.equal(settings.skipPrivate, true);

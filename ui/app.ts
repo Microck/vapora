@@ -64,6 +64,7 @@ let runSignature = "";
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshing = false;
 let settingsVersion = 0;
+let profileLoadRequest = 0;
 const Screen = Schema.Literals(["scan", "results", "history"]);
 let navigationVersion = 0;
 let explorer: Explorer | null = null;
@@ -155,6 +156,7 @@ const readSettings = () => Schema.decodeUnknownSync(Settings)({
   weights: { mutual: inputs.mutual.valueAsNumber, jaccard: inputs.jaccard.valueAsNumber, groups: inputs.groupWeight.valueAsNumber, games: inputs.gameWeight.valueAsNumber },
 });
 function applySettings(settings: Settings) {
+  settingsVersion++;
   get("estimate-result").textContent = "";
   inputs.depth.value = String(settings.depth); inputs.nodes.value = String(settings.maxNodes); inputs.rpm.value = String(settings.requestsPerMinute);
   inputs.groups.checked = settings.includeGroups; inputs.games.checked = settings.includeGames; inputs.hub.value = String(settings.hubPercentile);
@@ -685,10 +687,18 @@ get("profile-form").addEventListener("submit", (event) => { event.preventDefault
 buttons("load-profile").addEventListener("click", () => dialogTask("load-dialog", async () => {
   profiles.setAttribute("aria-invalid", String(!profiles.value));
   if (!profiles.value) throw new Error("Choose a saved profile, then click Load.");
-  applySettings(await api(`/api/profiles/${encodeURIComponent(profiles.value)}`, Settings)); dialog("load-dialog").close();
+  const name = profiles.value; const request = ++profileLoadRequest; const version = settingsVersion;
+  const current = () => request === profileLoadRequest && version === settingsVersion && dialog("load-dialog").open && profiles.value === name;
+  const settings = await api(`/api/profiles/${encodeURIComponent(name)}`, Settings).catch((error) => {
+    if (current()) throw error;
+    return null;
+  });
+  if (!settings || !current()) return;
+  applySettings(settings); dialog("load-dialog").close();
 }));
 inputs.name.addEventListener("input", () => inputs.name.removeAttribute("aria-invalid"));
-profiles.addEventListener("change", () => profiles.removeAttribute("aria-invalid"));
+profiles.addEventListener("change", () => { profileLoadRequest++; profiles.removeAttribute("aria-invalid"); });
+dialog("load-dialog").addEventListener("close", () => { profileLoadRequest++; });
 for (const id of ["save-dialog", "load-dialog", "history-import-dialog"]) dialog(id).addEventListener("close", () => {
   get(`${id}-error`).hidden = true; get(`${id}-error`).textContent = "";
 });

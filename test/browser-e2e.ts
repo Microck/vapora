@@ -686,6 +686,30 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click("#open-settings"); await page.select("#profiles", ""); await page.click("#load-profile");
   await page.waitForSelector("#load-dialog-error:not([hidden])"); assert.match(await visibleText(page, "#load-dialog-error"), /Choose a saved profile/);
   await page.select("#profiles", "ui-audit"); await page.click("#load-profile"); await page.waitForSelector("#load-dialog[open]", { hidden: true });
+  // A cancelled profile load must not overwrite subsequent edits or close a reopened dialog.
+  await fill(page, "#maxNodes", "123");
+  let captureProfile!: (request: HTTPRequest) => void;
+  const delayedProfile = new Promise<HTTPRequest>((resolve) => { captureProfile = resolve; });
+  let interceptedProfile = false;
+  const interceptProfile = (request: HTTPRequest) => {
+    if (!interceptedProfile && request.url().endsWith("/api/profiles/ui-audit")) {
+      interceptedProfile = true; captureProfile(request);
+    } else void request.continue();
+  };
+  await page.setRequestInterception(true); page.on("request", interceptProfile);
+  await page.click("#open-settings"); await page.select("#profiles", "ui-audit"); await page.click("#load-profile");
+  const pendingProfile = await delayedProfile;
+  await page.keyboard.press("Escape");
+  await fill(page, "#maxNodes", "456"); await page.click("#open-settings");
+  const loadedProfile = JSON.parse(await readFile(join(root, "profiles", "ui-audit.json"), "utf8"));
+  const receivedProfile = page.waitForResponse((response) => response.url().endsWith("/api/profiles/ui-audit"));
+  await pendingProfile.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 777 }) });
+  await receivedProfile;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "456");
+  assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), true);
+  page.off("request", interceptProfile); await page.setRequestInterception(false);
+  await page.keyboard.press("Escape");
   await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
   await page.setOfflineMode(true);

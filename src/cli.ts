@@ -59,6 +59,13 @@ export async function main(args = process.argv.slice(2)) {
       if (["scan", "estimate"].includes(command)) argument = await readline.question("Steam profile URL or ID: ");
     } finally { readline.close(); }
   }
+  const commands = ["serve", "recent", "profiles", "scan", "estimate", "resume", "analyze", "profile-save", "history"];
+  if (!commands.includes(command)) throw new InputError({ message: `Unknown command: ${command}. Run --help.` });
+  const takesArgument = !["serve", "recent", "profiles"].includes(command);
+  if (parsed.positionals.length > (takesArgument ? 2 : 1)) {
+    throw new InputError({ message: `${command} accepts ${takesArgument ? "exactly one argument" : "no arguments"}. Run --help.` });
+  }
+  if (takesArgument && !argument) throw new InputError({ message: `${command} requires ${command === "history" ? "a file" : command === "resume" || command === "analyze" ? "a run ID" : "a target or profile name"}. Run --help.` });
   const root = parsed.values.root ?? process.cwd();
   const key = Redacted.value(await Effect.runPromise(Config.Redacted("STEAM_API_KEY").pipe(Config.withDefault(Redacted.make("")))));
   if (command === "serve") {
