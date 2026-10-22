@@ -61,6 +61,21 @@ test("all captures, unknown fields and original UTF-8 formatting survive the rep
   assert.deepEqual(reopened.profile.fields.unknown, { keep: ["é", null] });
   assert.equal(reopened.profile.fields.vacBanned, true);
 });
+test("exported history round-trips retained sources and recomputes derived results", async () => {
+  const first = await parse(profile(100));
+  const secondCapture = await parse(profile(200, [], [{ Commenter: second, Message: "Retained comment", Timestamp: 150 }]));
+  const original = History.merge(first, secondCapture);
+  const report = History.view(original);
+  const imported = await Effect.runPromise(History.parse(JSON.stringify({ ...report, referenceSize: 999, comments: [] })));
+  assert.deepEqual(imported, original);
+  assert.deepEqual(History.view(imported), report);
+  assert.deepEqual(History.merge(original, imported), original);
+  for (const invalid of [
+    { ...report, sources: [] },
+    { ...report, sources: report.sources.map((source) => ({ ...source, snapshots: [] })) },
+    { ...report, profile: { ...report.profile, steamID64: third } },
+  ]) await assert.rejects(Effect.runPromise(History.parse(JSON.stringify(invalid))));
+});
 test("recognized real-name history rejects malformed records rather than hiding them", async () => {
   for (const invalid of [null, "not records", { Name: "Alice" }, [null]]) {
     await assert.rejects(parse({ ...profile(100), historic: { realName: invalid } }), /History section realName must contain records/);

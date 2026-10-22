@@ -23,6 +23,34 @@ import { seed, second, third, fourth, fifth, key, userAgent, steamFixture, playe
 
 const friendPath = "/ISteamUser/GetFriendList/v1/";
 const summaryPath = "/ISteamUser/GetPlayerSummaries/v2/";
+test("optional Steam observations distinguish incomplete payloads from public empty lists", async () => {
+  const fixture = await steamFixture();
+  const runtime = ManagedRuntime.make(Steam.layer({ key, requestsPerMinute: 0, baseUrl: fixture.url }));
+  const groupsPath = "/ISteamUser/GetUserGroupList/v1/";
+  const gamesPath = "/IPlayerService/GetOwnedGames/v1/";
+  const groups = () => runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).groups(seed); }));
+  const games = () => runtime.runPromise(Effect.gen(function* () { return yield* (yield* Steam.Service).games(seed); }));
+  try {
+    fixture.malformed.set(groupsPath, JSON.stringify({ response: {} }));
+    assert.deepEqual(await groups(), { status: "unavailable", values: [] });
+    fixture.malformed.set(groupsPath, JSON.stringify({ response: { success: true, groups: [] } }));
+    assert.deepEqual(await groups(), { status: "public", values: [] });
+    fixture.malformed.set(groupsPath, JSON.stringify({ response: { success: false, groups: [{ gid: "stale" }] } }));
+    assert.deepEqual(await groups(), { status: "unavailable", values: [] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: 2 } }));
+    assert.deepEqual(await games(), { status: "unavailable", values: [] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: 2, games: [{ appid: 10 }] } }));
+    assert.deepEqual(await games(), { status: "unavailable", values: [10] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { games: [{ appid: 10 }, { appid: 10 }] } }));
+    assert.deepEqual(await games(), { status: "unavailable", values: [10] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: 0 } }));
+    assert.deepEqual(await games(), { status: "public", values: [] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: {} }));
+    assert.deepEqual(await games(), { status: "private", values: [] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: -1 } }));
+    await assert.rejects(games(), /unexpected response/);
+  } finally { await runtime.dispose(); await fixture.close(); }
+});
 test("network analysis stays interruptible without blocking the server thread or losing a checkpoint", { timeout: 30000 }, async () => {
   const fixture = await steamFixture(); const root = await mkdtemp(join(tmpdir(), "vapora-analysis-cancel-"));
   const runtime = ManagedRuntime.make(Layer.mergeAll(Storage.layer(root), Steam.layer({ key, requestsPerMinute: 0, baseUrl: fixture.url })));
@@ -613,6 +641,11 @@ test("CLI commands work from a fresh root and reject invalid input with a nonzer
   try {
     const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
     assert.match((await execute(process.execPath, [cli, "--help"])).stdout, /resume RUN_ID/);
+    const untouched = join(root, "must-not-exist");
+    for (const args of [["profile-save", "extra", "unexpected"], ["recent", "unexpected"], ["profiles", "unexpected"], ["serve", "unexpected"], ["scan", seed, second]]) {
+      await assert.rejects(execute(process.execPath, [cli, ...args, "--root", untouched], { timeout: 5000 }), /accepts .*arguments?/);
+    }
+    await assert.rejects(readFile(join(untouched, "profiles", "extra.json")), { code: "ENOENT" });
     assert.match((await execute(process.execPath, [cli, "profile-save", "tiny", "--root", root, "--max-nodes", "1", "--depth", "5", "--skip-private"])).stdout, /Saved profile tiny/);
     const settings = Schema.decodeUnknownSync(Schema.fromJsonString(Settings))(await readFile(join(root, "profiles", "tiny.json"), "utf8"));
     assert.equal(settings.depth, 5); assert.equal(settings.skipPrivate, true);

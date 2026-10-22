@@ -103,7 +103,8 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
       return yield* unavailable(get("/ISteamUser/GetUserGroupList/v1/", { steamid: id }, Schema.Struct({ response: Schema.Struct({
         success: Schema.optionalKey(Schema.Boolean), groups: Schema.optionalKey(Schema.Array(Schema.Struct({ gid: Schema.String }))),
       }) })).pipe(Effect.map((r) => ({
-        status: r.response.success === false ? "unavailable" : "public", values: (r.response.groups ?? []).map((g) => g.gid),
+        status: r.response.success === false || r.response.groups === undefined ? "unavailable" : "public",
+        values: r.response.success === false ? [] : [...new Set((r.response.groups ?? []).map((g) => g.gid))],
       } satisfies Observation<string>)), Effect.catchIf((error) => error.status === 403, () => Effect.sync(() => {
         groupAccessDenied = true;
         return { status: "unavailable", values: [] } satisfies Observation<string>;
@@ -111,8 +112,12 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
     }),
     games: Effect.fn("Steam.games")((id: SteamId) => unavailable(get("/IPlayerService/GetOwnedGames/v1/", {
       input_json: JSON.stringify({ steamid: id, include_appinfo: false, include_played_free_games: true }),
-    }, Schema.Struct({ response: Schema.Struct({ game_count: Schema.optionalKey(Schema.Number), games: Schema.optionalKey(Schema.Array(Schema.Struct({ appid: AppId }))) }) })).pipe(
-      Effect.map((r) => ({ status: r.response.game_count === undefined ? "private" : "public", values: (r.response.games ?? []).map((g) => g.appid) } satisfies Observation<number>)),
+    }, Schema.Struct({ response: Schema.Struct({ game_count: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))), games: Schema.optionalKey(Schema.Array(Schema.Struct({ appid: AppId }))) }) })).pipe(
+      Effect.map((r) => {
+        const values = [...new Set((r.response.games ?? []).map((g) => g.appid))];
+        return { status: r.response.game_count === undefined ? values.length > 0 ? "unavailable" : "private"
+          : values.length === r.response.game_count ? "public" : "unavailable", values } satisfies Observation<number>;
+      }),
     ))),
   });
 })).pipe(Layer.provide(FetchHttpClient.layer));

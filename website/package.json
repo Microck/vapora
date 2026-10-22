@@ -10,18 +10,19 @@
     "build": "next build",
     "check": "fumadocs-mdx && tsc --noEmit",
     "check:links": "node scripts/check-links.mjs",
-    "verify": "npm run check && npm run build && npm run check:links && npm run check:search",
+    "verify": "npm run check:version && npm run check && npm run build && npm run check:links && npm run check:search",
     "postinstall": "fumadocs-mdx",
     "predev": "node scripts/assets.mjs",
     "prebuild": "node scripts/assets.mjs",
-    "check:search": "node scripts/check-search.mjs"
+    "check:search": "node scripts/check-search.mjs",
+    "check:version": "node scripts/check-version.mjs"
   },
   "dependencies": {
     "fumadocs-core": "^16.16.2",
     "fumadocs-mdx": "^15.4.6",
     "fumadocs-ui": "^16.16.2",
     "lucide-react": "^0.468.0",
-    "next": "^16.0.0",
+    "next": "16.4.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

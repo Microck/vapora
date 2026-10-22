@@ -8,6 +8,7 @@ import re
 import sys
 
 from pydoll import Chrome, ChromiumOptions
+from pydoll.exceptions import NoValidTabFound
 
 USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0"
 logging.basicConfig(level=logging.CRITICAL)
@@ -24,6 +25,15 @@ async def evaluate(tab, script):
     if "exceptionDetails" in response["result"]:
         raise RuntimeError("The browser is navigating or its request failed.")
     return response["result"]["result"]["value"]
+
+
+async def start_tab(browser):
+    try:
+        return await browser.start()
+    except NoValidTabFound:
+        # Chromium may answer CDP before its initial page target exists. The
+        # process is already running; create a blank tab, not another browser.
+        return await asyncio.wait_for(browser.new_tab(), 5)
 
 
 async def serve():
@@ -54,7 +64,7 @@ async def serve():
     if sandbox == "disabled":
         options.add_argument("--no-sandbox")
     async with Chrome(options=options) as browser:
-        tab = await browser.start()
+        tab = await start_tab(browser)
         async def navigate():
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=15):
                 await tab.go_to(f"{origin}/id/{account}", timeout=30)

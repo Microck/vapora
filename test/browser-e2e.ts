@@ -512,7 +512,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   // Account metadata and actions fit one toolbar at the normal desktop width.
   assert.equal(await page.$eval(".history-header", (header) => header.getBoundingClientRect().height <= 36), true);
   if (process.env.VAPORA_BROWSER_SCREENSHOTS) await page.screenshot({ path: join(process.env.VAPORA_BROWSER_SCREENSHOTS, "history-partial-comments.png") });
-  history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  history.setStatus(403); await page.click("#history-refresh"); await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   assert.equal(await page.$eval("#history-result", (element) => element instanceof HTMLElement && element.hidden), false);
   await page.click("#history-retry"); await page.waitForFunction(() => !document.querySelector<HTMLElement>("#history-retry")?.hidden);
   await page.setViewport({ width: 320, height: 800 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
@@ -561,7 +562,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   // A recovered refresh must update the open run, its attachment and its download without reopening it.
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   await page.click("#history-refresh");
-  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   history.rows.set("comments", [...history.document.historic.comments, { ID: "recovered", Commenter: second, Message: "Recovered attached comment", Timestamp: 1791360000 }]);
   history.counts.set("comments", 5); history.setStatus(200);
   await fill(page, "#history-search", ""); await page.click('[data-history="comments"]');
@@ -577,7 +579,8 @@ test("history account selection, all viewer tabs, filters, original downloads an
   await page.click('[data-screen="results"]'); await page.click("#open-history");
   assert.match(await visibleText(page, "#history-rows") ?? "", /Recovered attached comment/);
   history.setStatus(403); await page.click("#history-refresh");
-  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked"));
+  await page.waitForFunction(() => document.querySelector("#history-fetch-status")?.textContent?.includes("blocked")
+    && document.querySelector("#history-retry")?.checkVisibility());
   await page.click('[data-screen="scan"]');
   history.rows.set("comments", [...history.document.historic.comments, { ID: "target-recovered", Commenter: second, Message: "Recovered from target panel", Timestamp: 1791360000 }]);
   history.setStatus(200); await page.click("#target-history-retry");
@@ -686,6 +689,67 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   await page.click("#open-settings"); await page.select("#profiles", ""); await page.click("#load-profile");
   await page.waitForSelector("#load-dialog-error:not([hidden])"); assert.match(await visibleText(page, "#load-dialog-error"), /Choose a saved profile/);
   await page.select("#profiles", "ui-audit"); await page.click("#load-profile"); await page.waitForSelector("#load-dialog[open]", { hidden: true });
+  // A cancelled profile load must not overwrite subsequent edits or close a reopened dialog.
+  await fill(page, "#maxNodes", "123");
+  let captureProfile!: (request: HTTPRequest) => void;
+  const delayedProfile = new Promise<HTTPRequest>((resolve) => { captureProfile = resolve; });
+  let interceptedProfile = false;
+  const interceptProfile = (request: HTTPRequest) => {
+    if (!interceptedProfile && request.url().endsWith("/api/profiles/ui-audit")) {
+      interceptedProfile = true; captureProfile(request);
+    } else void request.continue();
+  };
+  await page.setRequestInterception(true); page.on("request", interceptProfile);
+  await page.click("#open-settings"); await page.select("#profiles", "ui-audit"); await page.click("#load-profile");
+  const pendingProfile = await delayedProfile;
+  await page.keyboard.press("Escape");
+  await fill(page, "#maxNodes", "456"); await page.click("#open-settings");
+  const loadedProfile = JSON.parse(await readFile(join(root, "profiles", "ui-audit.json"), "utf8"));
+  const receivedProfile = page.waitForResponse((response) => response.url().endsWith("/api/profiles/ui-audit"));
+  await pendingProfile.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 777 }) });
+  await receivedProfile;
+  await page.waitForFunction(() => document.querySelector("#load-dialog")?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "456");
+  assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), true);
+  page.off("request", interceptProfile); await page.setRequestInterception(false);
+  await page.keyboard.press("Escape");
+  // Force startup/default and explicit-profile response ordering independently of list rendering.
+  await writeFile(join(root, "profiles", "default.json"), JSON.stringify({ ...loadedProfile, maxNodes: 333 }));
+  let captureDefault!: (request: HTTPRequest) => void;
+  let captureExplicit!: (request: HTTPRequest) => void;
+  const delayedDefault = new Promise<HTTPRequest>((resolve) => { captureDefault = resolve; });
+  const delayedExplicit = new Promise<HTTPRequest>((resolve) => { captureExplicit = resolve; });
+  let heldDefault = false; let heldExplicit = false;
+  const interceptStartup = (request: HTTPRequest) => {
+    if (!heldDefault && request.url().endsWith("/api/profiles/default")) { heldDefault = true; captureDefault(request); }
+    else if (!heldExplicit && request.url().endsWith("/api/profiles/ui-audit")) { heldExplicit = true; captureExplicit(request); }
+    else void request.continue();
+  };
+  await page.setRequestInterception(true); page.on("request", interceptStartup);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const pendingDefault = await delayedDefault;
+  // Seed the known saved option because startup normally populates this list after loading defaults.
+  await page.$eval("#profiles", (element) => {
+    if (!(element instanceof HTMLSelectElement)) throw new Error("Expected saved profiles select");
+    element.append(new Option("ui-audit", "ui-audit"));
+  });
+  await page.click("#open-settings"); await page.select("#profiles", "ui-audit"); await page.click("#load-profile");
+  const pendingExplicit = await delayedExplicit;
+  await pendingDefault.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 333 }) });
+  await page.waitForFunction(() => document.querySelector("#key-indicator")?.textContent === "Key ready");
+  await pendingExplicit.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 777 }) });
+  await page.waitForFunction(() => document.querySelector("#load-dialog")?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "777");
+  assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), false);
+  page.off("request", interceptStartup); await page.setRequestInterception(false);
+  // A damaged optional default profile must not poison every startup state poll.
+  const damagedDefault = "{invalid default settings";
+  await writeFile(join(root, "profiles", "default.json"), damagedDefault);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#key-indicator")?.textContent === "Key ready"
+    && document.querySelector("#notice")?.textContent?.includes("Saved default settings were not loaded"));
+  assert.equal(await readFile(join(root, "profiles", "default.json"), "utf8"), damagedDefault);
+  assert.doesNotMatch(await visibleText(page, "#notice") ?? "", /Disconnected/);
   await page.click("#apply-settings");
   await page.waitForFunction(() => document.querySelector("#notice")?.textContent === "Saved default settings.");
   await page.setOfflineMode(true);

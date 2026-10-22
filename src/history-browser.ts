@@ -76,7 +76,7 @@ async function connect(id: SteamId, root: string, origin: string, sandbox: strin
       return Schema.decodeUnknownSync(Provider.Response)(await response);
     }, catch: (error) => error instanceof InputError ? error : new InputError({ message: "History's browser response could not be read. Retry the capture." }),
   }));
-  const ready = receive(0, 95000);
+  const ready = receive(0, 100000);
   return { request, close, ready };
 }
 
