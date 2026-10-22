@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import fs, { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { Cause, Effect, Layer, ManagedRuntime, Schema } from "effect";
@@ -16,23 +18,31 @@ import { key, player, scan, seed, steamFixture } from "./fixtures.js";
 // This is a real Windows sharing lock: reads remain allowed, replacement is denied.
 async function lockFile(path: string) {
   const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    '$stream = [IO.File]::Open($env:VAPORA_LOCK_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); [Console]::WriteLine("locked"); [Console]::ReadLine() | Out-Null; $stream.Dispose()',
+    '$ErrorActionPreference = "Stop"; $stream = $null; try { while ($null -ne ($command = [Console]::ReadLine())) { if ($command -eq "lock") { $stream = [IO.File]::Open($env:VAPORA_LOCK_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); [Console]::WriteLine("locked") } elseif ($command -eq "release") { $stream.Dispose(); $stream = $null; [Console]::WriteLine("released") } else { throw "Unknown lock command" } } } finally { if ($null -ne $stream) { $stream.Dispose() } }',
   ], { env: { ...process.env, VAPORA_LOCK_FILE: path }, stdio: ["pipe", "pipe", "pipe"] });
   const exited = once(child, "exit");
+  const replies = createInterface({ input: child.stdout });
   let diagnostic = "";
   child.stderr.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
-  const [ready] = await Promise.race([
-    once(child.stdout, "data"),
-    exited.then(() => { throw new Error(`Windows lock did not start: ${diagnostic}`); }),
-  ]);
-  assert.equal(ready.toString().trim(), "locked");
-  return { release: async () => {
-    child.stdin.end("\n");
-    const [code] = await exited; assert.equal(code, 0, diagnostic);
+  const command = async (value: string, expected: string) => {
+    const response = Promise.race([
+      once(replies, "line"),
+      exited.then(() => { throw new Error(`Windows lock helper exited: ${diagnostic}`); }),
+    ]);
+    child.stdin.write(`${value}\n`);
+    const [reply] = await response;
+    assert.equal(reply, expected);
+  };
+  // Reuse one PowerShell process: two cold starts can consume the test's fixed deadline.
+  // Each acknowledgement still follows acquiring or releasing the real OS sharing lock.
+  try { await command("lock", "locked"); } catch (error) { child.kill(); replies.close(); throw error; }
+  return { acquire: () => command("lock", "locked"), release: () => command("release", "released"), close: async () => {
+    child.stdin.end();
+    const [code] = await exited; replies.close(); assert.equal(code, 0, diagnostic);
   } };
 }
 
-if (process.platform === "win32") test("Windows replacement retries a real sharing lock and preserves a checkpoint on a persistent lock", { timeout: 20000 }, async () => {
+if (process.platform === "win32") test("Windows replacement retries a real sharing lock and preserves a checkpoint on a persistent lock", { timeout: 20000 }, async (t) => {
   const root = await mkdtemp(join(tmpdir(), "vapora windows storage-"));
   const runtime = ManagedRuntime.make(Storage.layer(root));
   let lock: Awaited<ReturnType<typeof lockFile>> | undefined;
@@ -48,12 +58,30 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
       console.log(`Windows sharing lock reproduces ${failure.code} on replacement`); return true;
     });
     await rm(probe);
-    const saved = runtime.runPromise(store.save({ ...original, status: "cancelled" }));
-    const releasing = delay(150).then(() => lock?.release());
-    await Promise.all([saved, releasing]); lock = undefined;
+    const heldLock = lock;
+    const nativeRename = fs.rename;
+    let sharingFailures = 0;
+    // Observe the real OS call without synthesizing failures. Release only after
+    // save itself encounters the lock, never on a timer that could beat its first rename.
+    const observedRename = t.mock.method(fs, "rename", async (...args: Parameters<typeof rename>) => {
+      try { return await nativeRename(...args); }
+      catch (error) {
+        if (args[1] === checkpoint && ++sharingFailures === 1) await heldLock.release();
+        throw error;
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      await runtime.runPromise(store.save({ ...original, status: "cancelled" }));
+      assert.ok(sharingFailures >= 1);
+      assert.ok(observedRename.mock.callCount() >= 2);
+    } finally {
+      observedRename.mock.restore();
+      syncBuiltinESMExports();
+    }
     assert.equal((await runtime.runPromise(store.read(original.id))).status, "cancelled");
     const lastGood = await readFile(checkpoint);
-    lock = await lockFile(checkpoint);
+    await lock.acquire();
     const blocked = await runtime.runPromise(store.save(original).pipe(Effect.result));
     assert.equal(blocked._tag, "Failure");
     if (blocked._tag !== "Failure") throw new Error("The persistent lock should block replacement");
@@ -62,7 +90,13 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
     assert.match(blocked.failure.message, /then retry/);
     assert.deepEqual(await readFile(checkpoint), lastGood);
     assert.ok(!(await readdir(join(root, "outputs", original.id))).some((name) => name.endsWith(".tmp")));
-  } finally { await lock?.release(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
+    } finally {
+      try { await lock?.close(); }
+      finally {
+        try { await runtime.dispose(); }
+        finally { await rm(root, { recursive: true, force: true }); }
+      }
+    }
 });
 
 test("permanent filesystem errors retain their cause and leave the valid checkpoint intact", async () => {
