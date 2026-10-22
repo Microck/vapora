@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { Cause, Effect, Layer, ManagedRuntime, Schema } from "effect";
@@ -19,23 +20,24 @@ async function lockFile(path: string) {
     '$ErrorActionPreference = "Stop"; $stream = $null; try { while ($null -ne ($command = [Console]::ReadLine())) { if ($command -eq "lock") { $stream = [IO.File]::Open($env:VAPORA_LOCK_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); [Console]::WriteLine("locked") } elseif ($command -eq "release") { $stream.Dispose(); $stream = $null; [Console]::WriteLine("released") } else { throw "Unknown lock command" } } } finally { if ($null -ne $stream) { $stream.Dispose() } }',
   ], { env: { ...process.env, VAPORA_LOCK_FILE: path }, stdio: ["pipe", "pipe", "pipe"] });
   const exited = once(child, "exit");
+  const replies = createInterface({ input: child.stdout });
   let diagnostic = "";
   child.stderr.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
   const command = async (value: string, expected: string) => {
     const response = Promise.race([
-      once(child.stdout, "data"),
+      once(replies, "line"),
       exited.then(() => { throw new Error(`Windows lock helper exited: ${diagnostic}`); }),
     ]);
     child.stdin.write(`${value}\n`);
     const [reply] = await response;
-    assert.equal(reply.toString().trim(), expected);
+    assert.equal(reply, expected);
   };
   // Reuse one PowerShell process: two cold starts can consume the test's fixed deadline.
   // Each acknowledgement still follows acquiring or releasing the real OS sharing lock.
-  try { await command("lock", "locked"); } catch (error) { child.kill(); throw error; }
+  try { await command("lock", "locked"); } catch (error) { child.kill(); replies.close(); throw error; }
   return { acquire: () => command("lock", "locked"), release: () => command("release", "released"), close: async () => {
     child.stdin.end();
-    const [code] = await exited; assert.equal(code, 0, diagnostic);
+    const [code] = await exited; replies.close(); assert.equal(code, 0, diagnostic);
   } };
 }
 
