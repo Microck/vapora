@@ -41,6 +41,8 @@ test("optional Steam observations distinguish incomplete payloads from public em
     assert.deepEqual(await games(), { status: "unavailable", values: [] });
     fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: 2, games: [{ appid: 10 }] } }));
     assert.deepEqual(await games(), { status: "unavailable", values: [10] });
+    fixture.malformed.set(gamesPath, JSON.stringify({ response: { games: [{ appid: 10 }, { appid: 10 }] } }));
+    assert.deepEqual(await games(), { status: "unavailable", values: [10] });
     fixture.malformed.set(gamesPath, JSON.stringify({ response: { game_count: 0 } }));
     assert.deepEqual(await games(), { status: "public", values: [] });
     fixture.malformed.set(gamesPath, JSON.stringify({ response: {} }));

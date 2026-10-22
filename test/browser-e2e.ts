@@ -710,6 +710,35 @@ test("Steam UI keeps ranking fields aligned, errors inside dialogs and help cont
   assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), true);
   page.off("request", interceptProfile); await page.setRequestInterception(false);
   await page.keyboard.press("Escape");
+  // Force startup/default and explicit-profile response ordering independently of list rendering.
+  await writeFile(join(root, "profiles", "default.json"), JSON.stringify({ ...loadedProfile, maxNodes: 333 }));
+  let captureDefault!: (request: HTTPRequest) => void;
+  let captureExplicit!: (request: HTTPRequest) => void;
+  const delayedDefault = new Promise<HTTPRequest>((resolve) => { captureDefault = resolve; });
+  const delayedExplicit = new Promise<HTTPRequest>((resolve) => { captureExplicit = resolve; });
+  let heldDefault = false; let heldExplicit = false;
+  const interceptStartup = (request: HTTPRequest) => {
+    if (!heldDefault && request.url().endsWith("/api/profiles/default")) { heldDefault = true; captureDefault(request); }
+    else if (!heldExplicit && request.url().endsWith("/api/profiles/ui-audit")) { heldExplicit = true; captureExplicit(request); }
+    else void request.continue();
+  };
+  await page.setRequestInterception(true); page.on("request", interceptStartup);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const pendingDefault = await delayedDefault;
+  // Seed the known saved option because startup normally populates this list after loading defaults.
+  await page.$eval("#profiles", (element) => {
+    if (!(element instanceof HTMLSelectElement)) throw new Error("Expected saved profiles select");
+    element.append(new Option("ui-audit", "ui-audit"));
+  });
+  await page.click("#open-settings"); await page.select("#profiles", "ui-audit"); await page.click("#load-profile");
+  const pendingExplicit = await delayedExplicit;
+  await pendingDefault.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 333 }) });
+  await page.waitForFunction(() => document.querySelector("#key-indicator")?.textContent === "Key ready");
+  await pendingExplicit.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ ...loadedProfile, maxNodes: 777 }) });
+  await page.waitForFunction(() => document.querySelector("#load-dialog")?.getAttribute("aria-busy") === "false");
+  assert.equal(await page.$eval("#maxNodes", (input) => input instanceof HTMLInputElement && input.value), "777");
+  assert.equal(await page.$eval("#load-dialog", (element) => element instanceof HTMLDialogElement && element.open), false);
+  page.off("request", interceptStartup); await page.setRequestInterception(false);
   // A damaged optional default profile must not poison every startup state poll.
   const damagedDefault = "{invalid default settings";
   await writeFile(join(root, "profiles", "default.json"), damagedDefault);

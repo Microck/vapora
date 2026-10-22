@@ -531,13 +531,14 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   const navigation = navigationVersion;
+  const settingsAtStart = settingsVersion; const profileAtStart = profileLoadRequest;
+  const mayApplyDefault = () => settingsAtStart === settingsVersion && profileAtStart === profileLoadRequest && profileLoadsPending === 0;
   try {
     currentState = await api("/api/state", Contracts.State);
     if (lastJob === null && currentState.profiles.includes("default")) {
-      const version = settingsVersion;
       try {
         const settings = await api("/api/profiles/default", Settings);
-        if (version === settingsVersion) applySettings(settings);
+        if (mayApplyDefault()) applySettings(settings);
       } catch (error) {
         notice(`Saved default settings were not loaded. ${error instanceof Error ? error.message : "Check the saved profile and try again."}`, "action-error");
       }

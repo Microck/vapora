@@ -115,8 +115,8 @@ export const layer = (options: Options) => Layer.effect(Service, Effect.gen(func
     }, Schema.Struct({ response: Schema.Struct({ game_count: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))), games: Schema.optionalKey(Schema.Array(Schema.Struct({ appid: AppId }))) }) })).pipe(
       Effect.map((r) => {
         const values = [...new Set((r.response.games ?? []).map((g) => g.appid))];
-        return { status: r.response.game_count === undefined ? "private" : values.length === r.response.game_count ? "public" : "unavailable",
-          values: r.response.game_count === undefined ? [] : values } satisfies Observation<number>;
+        return { status: r.response.game_count === undefined ? values.length > 0 ? "unavailable" : "private"
+          : values.length === r.response.game_count ? "public" : "unavailable", values } satisfies Observation<number>;
       }),
     ))),
   });
