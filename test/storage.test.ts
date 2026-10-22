@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import fs, { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -41,7 +42,7 @@ async function lockFile(path: string) {
   } };
 }
 
-if (process.platform === "win32") test("Windows replacement retries a real sharing lock and preserves a checkpoint on a persistent lock", { timeout: 20000 }, async () => {
+if (process.platform === "win32") test("Windows replacement retries a real sharing lock and preserves a checkpoint on a persistent lock", { timeout: 20000 }, async (t) => {
   const root = await mkdtemp(join(tmpdir(), "vapora windows storage-"));
   const runtime = ManagedRuntime.make(Storage.layer(root));
   let lock: Awaited<ReturnType<typeof lockFile>> | undefined;
@@ -57,9 +58,27 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
       console.log(`Windows sharing lock reproduces ${failure.code} on replacement`); return true;
     });
     await rm(probe);
-    const saved = runtime.runPromise(store.save({ ...original, status: "cancelled" }));
-    const releasing = delay(150).then(() => lock?.release());
-    await Promise.all([saved, releasing]);
+    const heldLock = lock;
+    const nativeRename = fs.rename;
+    let sharingFailures = 0;
+    // Observe the real OS call without synthesizing failures. Release only after
+    // save itself encounters the lock, never on a timer that could beat its first rename.
+    const observedRename = t.mock.method(fs, "rename", async (...args: Parameters<typeof rename>) => {
+      try { return await nativeRename(...args); }
+      catch (error) {
+        if (args[1] === checkpoint && ++sharingFailures === 1) await heldLock.release();
+        throw error;
+      }
+    });
+    syncBuiltinESMExports();
+    try {
+      await runtime.runPromise(store.save({ ...original, status: "cancelled" }));
+      assert.ok(sharingFailures >= 1);
+      assert.ok(observedRename.mock.callCount() >= 2);
+    } finally {
+      observedRename.mock.restore();
+      syncBuiltinESMExports();
+    }
     assert.equal((await runtime.runPromise(store.read(original.id))).status, "cancelled");
     const lastGood = await readFile(checkpoint);
     await lock.acquire();
