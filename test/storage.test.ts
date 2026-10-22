@@ -16,18 +16,25 @@ import { key, player, scan, seed, steamFixture } from "./fixtures.js";
 // This is a real Windows sharing lock: reads remain allowed, replacement is denied.
 async function lockFile(path: string) {
   const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    '$stream = [IO.File]::Open($env:VAPORA_LOCK_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); [Console]::WriteLine("locked"); [Console]::ReadLine() | Out-Null; $stream.Dispose()',
+    '$ErrorActionPreference = "Stop"; $stream = $null; try { while ($null -ne ($command = [Console]::ReadLine())) { if ($command -eq "lock") { $stream = [IO.File]::Open($env:VAPORA_LOCK_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); [Console]::WriteLine("locked") } elseif ($command -eq "release") { $stream.Dispose(); $stream = $null; [Console]::WriteLine("released") } else { throw "Unknown lock command" } } } finally { if ($null -ne $stream) { $stream.Dispose() } }',
   ], { env: { ...process.env, VAPORA_LOCK_FILE: path }, stdio: ["pipe", "pipe", "pipe"] });
   const exited = once(child, "exit");
   let diagnostic = "";
   child.stderr.on("data", (chunk: Buffer) => { diagnostic += chunk.toString(); });
-  const [ready] = await Promise.race([
-    once(child.stdout, "data"),
-    exited.then(() => { throw new Error(`Windows lock did not start: ${diagnostic}`); }),
-  ]);
-  assert.equal(ready.toString().trim(), "locked");
-  return { release: async () => {
-    child.stdin.end("\n");
+  const command = async (value: string, expected: string) => {
+    const response = Promise.race([
+      once(child.stdout, "data"),
+      exited.then(() => { throw new Error(`Windows lock helper exited: ${diagnostic}`); }),
+    ]);
+    child.stdin.write(`${value}\n`);
+    const [reply] = await response;
+    assert.equal(reply.toString().trim(), expected);
+  };
+  // Reuse one PowerShell process: two cold starts can consume the test's fixed deadline.
+  // Each acknowledgement still follows acquiring or releasing the real OS sharing lock.
+  try { await command("lock", "locked"); } catch (error) { child.kill(); throw error; }
+  return { acquire: () => command("lock", "locked"), release: () => command("release", "released"), close: async () => {
+    child.stdin.end();
     const [code] = await exited; assert.equal(code, 0, diagnostic);
   } };
 }
@@ -50,10 +57,10 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
     await rm(probe);
     const saved = runtime.runPromise(store.save({ ...original, status: "cancelled" }));
     const releasing = delay(150).then(() => lock?.release());
-    await Promise.all([saved, releasing]); lock = undefined;
+    await Promise.all([saved, releasing]);
     assert.equal((await runtime.runPromise(store.read(original.id))).status, "cancelled");
     const lastGood = await readFile(checkpoint);
-    lock = await lockFile(checkpoint);
+    await lock.acquire();
     const blocked = await runtime.runPromise(store.save(original).pipe(Effect.result));
     assert.equal(blocked._tag, "Failure");
     if (blocked._tag !== "Failure") throw new Error("The persistent lock should block replacement");
@@ -62,7 +69,7 @@ if (process.platform === "win32") test("Windows replacement retries a real shari
     assert.match(blocked.failure.message, /then retry/);
     assert.deepEqual(await readFile(checkpoint), lastGood);
     assert.ok(!(await readdir(join(root, "outputs", original.id))).some((name) => name.endsWith(".tmp")));
-  } finally { await lock?.release(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
+  } finally { await lock?.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("permanent filesystem errors retain their cause and leave the valid checkpoint intact", async () => {
