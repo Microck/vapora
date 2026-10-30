@@ -1,9 +1,13 @@
 name: Desktop packages
 on:
   pull_request:
+    # These files are not package inputs; website checks stay in docs.yml.
+    paths-ignore: ['README.md', 'docs/**', 'website/**', '.github/workflows/docs.yml']
   push:
     branches: [main]
     tags: ['[0-9]*']
+    # GitHub does not apply path filters to tags, so release validation stays complete.
+    paths-ignore: ['README.md', 'docs/**', 'website/**', '.github/workflows/docs.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -94,6 +98,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vapora-desktop-${{ runner.os }}-${{ runner.arch }}
+          # Installers already compress their payloads; avoid recompressing them for transport.
+          compression-level: 0
           path: |
             release/*.exe
             release/*.AppImage

@@ -2,6 +2,8 @@
 
 This runbook covers desktop downloads and source archives on GitHub. The package is private; do not publish it to npm. The Desktop packages workflow builds Windows NSIS installers and portable EXEs, Linux AppImages and macOS DMGs on their native operating systems.
 
+Core CI still runs on every push and pull request, including website changes because the root lint command checks them. Desktop packages skips branch pushes and pull requests only when every changed file is under `docs/` or `website/`, is `README.md`, or is `.github/workflows/docs.yml`. Application code, dependencies, assets and packaging workflow changes still run all three native jobs. Tag pushes bypass path filtering, and manual desktop runs remain available. If desktop jobs become required branch checks, revisit the path filters so documentation-only pull requests do not wait for checks that never start.
+
 ## release candidate
 
 The candidate is **2.2.6**, with [release notes](releases/2.2.6.md). It fixes settings races, incomplete Steam coverage, history export/import and packaged history startup. **2.2.5** remains the published release until this candidate passes review and native package checks. **2.2.1** was withdrawn; its tag remains fixed. Do not reuse either tag.
