@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Microck/vapora/releases"><img src="https://img.shields.io/github/v/release/Microck/vapora?display_name=tag&style=flat-square&label=release&color=000000" alt="release"></a>
-  <a href="https://github.com/Microck/vapora/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Microck/vapora/ci.yml?branch=main&style=flat-square&label=ci&color=000000" alt="ci"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-mit-000000?style=flat-square" alt="MIT license"></a>
+  <a href="https://github.com/Microck/vapora/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/release/Microck/vapora.svg?variant=secondary&amp;size=xs&amp;logo=false&amp;mode=dark"><img src="https://shieldcn.dev/github/release/Microck/vapora.svg?variant=secondary&amp;size=xs&amp;logo=false&amp;mode=light" alt="release"></picture></a>
+  <a href="https://github.com/Microck/vapora/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/ci/Microck/vapora.svg?workflow=ci.yml&amp;branch=main&amp;variant=secondary&amp;size=xs&amp;logo=false&amp;mode=dark"><img src="https://shieldcn.dev/github/ci/Microck/vapora.svg?workflow=ci.yml&amp;branch=main&amp;variant=secondary&amp;size=xs&amp;logo=false&amp;mode=light" alt="ci status"></picture></a>
+  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://shieldcn.dev/github/license/Microck/vapora.svg?variant=secondary&amp;size=xs&amp;logo=false&amp;mode=dark"><img src="https://shieldcn.dev/github/license/Microck/vapora.svg?variant=secondary&amp;size=xs&amp;logo=false&amp;mode=light" alt="license"></picture></a>
 </p>
 
 ---
